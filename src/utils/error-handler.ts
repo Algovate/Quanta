@@ -33,11 +33,11 @@ export class ErrorHandler {
 
   static logError(error: BetaArenaError): void {
     console.error(`\n[${error.code}] ${error.message}`);
-    
+
     // Show concise context if available
     if (error.context) {
       const context = error.context as Record<string, unknown>;
-      
+
       // Extract original error message if available
       if (context.originalError && typeof context.originalError === 'string') {
         // Extract just the important part of long error messages
@@ -47,7 +47,7 @@ export class ErrorHandler {
           console.error(`\nError details: ${cleanedMsg}`);
         }
       }
-      
+
       // Show context if it's not just repeating the error
       const otherContext = { ...context };
       delete otherContext.originalError;
@@ -60,15 +60,18 @@ export class ErrorHandler {
   private static cleanErrorMessage(errorMsg: string): string {
     // Remove excessive stack traces and redundant information
     let cleaned = errorMsg;
-    
+
     // Remove stack trace lines (they start with "   at ")
-    cleaned = cleaned.split('\n').filter(line => !line.trim().startsWith('at ')).join('\n');
-    
+    cleaned = cleaned
+      .split('\n')
+      .filter(line => !line.trim().startsWith('at '))
+      .join('\n');
+
     // Truncate very long messages
     if (cleaned.length > 500) {
       cleaned = cleaned.substring(0, 500) + '...';
     }
-    
+
     // Extract key error message from CCXT errors
     if (cleaned.includes('msg":')) {
       const match = cleaned.match(/"msg":\s*"([^"]+)"/);
@@ -76,7 +79,7 @@ export class ErrorHandler {
         cleaned = match[1];
       }
     }
-    
+
     return cleaned;
   }
 }

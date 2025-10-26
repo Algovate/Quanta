@@ -31,7 +31,58 @@ export class SimulatorExchange implements Exchange {
   }
 
   async getPositions(): Promise<Position[]> {
+    // Update all position prices and PnL
+    this.updateAllPositions();
     return [...this.positions];
+  }
+
+  async getPositionsBySymbol(symbol: string): Promise<Position[]> {
+    this.updateAllPositions();
+    return this.positions.filter(p => p.symbol === symbol);
+  }
+
+  async getTotalExposure(): Promise<{ totalValue: number; bySymbol: Record<string, number> }> {
+    this.updateAllPositions();
+    const bySymbol: Record<string, number> = {};
+    let totalValue = 0;
+
+    this.positions.forEach(position => {
+      const positionValue = position.size * position.markPrice;
+      bySymbol[position.symbol] = (bySymbol[position.symbol] || 0) + positionValue;
+      totalValue += positionValue;
+    });
+
+    return { totalValue, bySymbol };
+  }
+
+  async getPortfolioMetrics(): Promise<{
+    totalPositions: number;
+    totalExposure: number;
+    totalUnrealizedPnl: number;
+    exposureBySymbol: Record<string, number>;
+    pnlBySymbol: Record<string, number>;
+    leverage: number;
+  }> {
+    this.updateAllPositions();
+
+    const exposure = await this.getTotalExposure();
+    const totalUnrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
+
+    const pnlBySymbol: Record<string, number> = {};
+    this.positions.forEach(position => {
+      pnlBySymbol[position.symbol] = (pnlBySymbol[position.symbol] || 0) + position.unrealizedPnl;
+    });
+
+    const leverage = this.account.equity > 0 ? exposure.totalValue / this.account.equity : 0;
+
+    return {
+      totalPositions: this.positions.length,
+      totalExposure: exposure.totalValue,
+      totalUnrealizedPnl,
+      exposureBySymbol: exposure.bySymbol,
+      pnlBySymbol,
+      leverage,
+    };
   }
 
   async getCandlesticks(
@@ -69,10 +120,8 @@ export class SimulatorExchange implements Exchange {
 
     this.orders.push(order);
 
-    // Simulate order execution
-    setTimeout(() => {
-      this.executeOrder(order);
-    }, 100);
+    // Execute order immediately (synchronously)
+    this.executeOrder(order);
 
     return order;
   }
@@ -186,11 +235,12 @@ export class SimulatorExchange implements Exchange {
     if (order.side === 'buy') {
       // Check if we have enough balance
       if (value <= this.account.availableMargin) {
+        // Create position first
+        this.updatePosition(order.symbol, order.side, order.amount, executedPrice);
+        
+        // Update account balances
         this.account.availableMargin -= value;
         this.account.usedMargin += value;
-
-        // Update or create position
-        this.updatePosition(order.symbol, order.side, order.amount, executedPrice);
 
         order.status = 'filled';
         order.price = executedPrice;
@@ -198,20 +248,15 @@ export class SimulatorExchange implements Exchange {
         order.status = 'rejected';
       }
     } else {
-      // Handle sell orders
-      const position = this.positions.find(p => p.symbol === order.symbol && p.side === 'long');
-      if (position && position.size >= order.amount) {
-        const pnl = (executedPrice - position.entryPrice) * order.amount;
-        this.account.balance += pnl;
-        this.account.availableMargin += value;
-        this.account.usedMargin -= value;
-
-        // Update position
-        position.size -= order.amount;
-        if (position.size <= 0) {
-          const index = this.positions.indexOf(position);
-          this.positions.splice(index, 1);
-        }
+      // Handle sell orders (SHORT positions)
+      // Check if we have enough balance for margin
+      if (value <= this.account.availableMargin) {
+        // Create short position
+        this.updatePosition(order.symbol, order.side, order.amount, executedPrice);
+        
+        // Update account balances
+        this.account.availableMargin -= value;
+        this.account.usedMargin += value;
 
         order.status = 'filled';
         order.price = executedPrice;
@@ -227,7 +272,8 @@ export class SimulatorExchange implements Exchange {
     amount: number,
     price: number
   ): void {
-    const existingPosition = this.positions.find(p => p.symbol === symbol && p.side === 'long');
+    const positionSide = side === 'buy' ? 'long' : 'short';
+    const existingPosition = this.positions.find(p => p.symbol === symbol && p.side === positionSide);
 
     if (existingPosition) {
       // Update existing position
@@ -239,7 +285,7 @@ export class SimulatorExchange implements Exchange {
       // Create new position
       this.positions.push({
         symbol,
-        side: 'long',
+        side: positionSide,
         size: amount,
         entryPrice: price,
         markPrice: price,
@@ -251,16 +297,17 @@ export class SimulatorExchange implements Exchange {
     }
   }
 
-  private updateAccountEquity(): void {
-    let totalPnl = 0;
-
+  private updateAllPositions(): void {
     this.positions.forEach(position => {
       const currentPrice = this.getCurrentPrice(position.symbol);
       position.markPrice = currentPrice;
       position.unrealizedPnl = (currentPrice - position.entryPrice) * position.size;
-      totalPnl += position.unrealizedPnl;
     });
+  }
 
+  private updateAccountEquity(): void {
+    this.updateAllPositions();
+    const totalPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
     this.account.equity = this.account.balance + totalPnl;
   }
 }

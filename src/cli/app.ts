@@ -3,6 +3,7 @@ import { TradeCommands } from './commands/trade';
 import { TestCommands } from './commands/test';
 import { ConfigCommands } from './commands/config';
 import { HelpCommand } from './commands/help';
+import { SimulateCommands } from './commands/simulate';
 
 export class CLIApplication {
   private program: Command;
@@ -32,6 +33,10 @@ export class CLIApplication {
     // Configuration commands
     const config = this.program.command('config').description('Configuration management');
     ConfigCommands.register(config);
+
+    // Simulation commands
+    const simulate = this.program.command('simulate').description('Simulation and demonstration');
+    SimulateCommands.register(simulate);
 
     // Help command
     HelpCommand.register(this.program);
