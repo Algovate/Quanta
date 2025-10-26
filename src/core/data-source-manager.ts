@@ -1,6 +1,8 @@
 import { Exchange } from '../exchange/types';
 import { SimulatorExchange } from '../exchange/simulator';
-import { GenericExchange } from '../exchange/generic';
+import { OKXExchange } from '../exchange/okx';
+import { BinanceExchange } from '../exchange/binance';
+import { CoinbaseExchange } from '../exchange/coinbase';
 import { Config, getExchangeConfig } from '../config/settings';
 
 export interface DataSourceManager {
@@ -26,10 +28,21 @@ export class SimpleDataSourceManager implements DataSourceManager {
     apiSecret?: string;
     testnet?: boolean;
   }): Exchange {
-    if (config.name === 'simulator') {
-      return new SimulatorExchange(10000);
-    } else {
-      return new GenericExchange(config.name, config.apiKey, config.apiSecret, config.testnet);
+    const exchangeName = config.name.toLowerCase();
+
+    switch (exchangeName) {
+      case 'simulator':
+        return new SimulatorExchange(10000);
+      case 'okx':
+        return new OKXExchange(config.apiKey, config.apiSecret, config.testnet);
+      case 'binance':
+        return new BinanceExchange(config.apiKey, config.apiSecret, config.testnet);
+      case 'coinbase':
+        return new CoinbaseExchange(config.apiKey, config.apiSecret, config.testnet);
+      default:
+        throw new Error(
+          `Unsupported exchange: ${exchangeName}. Supported exchanges: simulator, okx, binance, coinbase`
+        );
     }
   }
 

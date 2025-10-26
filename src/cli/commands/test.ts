@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import { getConfig } from '../../config/settings';
 import { handleAsync } from '../../utils/error-handler';
 
-export class TestingCommands {
+export class TestCommands {
   static register(program: Command): void {
     program
       .command('kline')
@@ -13,9 +13,12 @@ export class TestingCommands {
       .option('-t, --timeframe <timeframe>', 'Timeframe to test', '3m')
       .option('-l, --limit <limit>', 'Number of candles to fetch', '20')
       .action(async (options) => {
-        await handleAsync(async () => {
-          await TestingCommands.testKline(options);
-        }, 'TestingCommands.kline');
+        try {
+          await TestCommands.testKline(options);
+        } catch (error) {
+          // Error already displayed in testKline, just exit
+          process.exit(1);
+        }
       });
 
     program
@@ -26,8 +29,8 @@ export class TestingCommands {
       .option('-l, --limit <limit>', 'Number of candles to fetch', '10')
       .action(async (options) => {
         await handleAsync(async () => {
-          await TestingCommands.testExchanges(options);
-        }, 'TestingCommands.exchanges');
+          await TestCommands.testExchanges(options);
+        }, 'TestCommands.exchanges');
       });
 
     program
@@ -38,8 +41,8 @@ export class TestingCommands {
       .option('-l, --limit <limit>', 'Number of candles to fetch', '5')
       .action(async (options) => {
         await handleAsync(async () => {
-          await TestingCommands.testDataSources(options);
-        }, 'TestingCommands.data-sources');
+          await TestCommands.testDataSources(options);
+        }, 'TestCommands.data-sources');
       });
   }
 
@@ -58,29 +61,74 @@ export class TestingCommands {
     let exchange: any;
     const { MarketDataProvider } = await import('../../data/market');
 
+    const apiKey = process.env[`${options.exchange.toUpperCase()}_API_KEY`];
+    const apiSecret = process.env[`${options.exchange.toUpperCase()}_API_SECRET`];
+
     if (options.exchange === 'simulator') {
       const { SimulatorExchange } = await import('../../exchange/simulator');
       exchange = new SimulatorExchange(10000);
+    } else if (options.exchange === 'okx') {
+      const { OKXExchange } = await import('../../exchange/okx');
+      exchange = new OKXExchange(apiKey, apiSecret, true);
+    } else if (options.exchange === 'coinbase') {
+      const { CoinbaseExchange } = await import('../../exchange/coinbase');
+      exchange = new CoinbaseExchange(apiKey, apiSecret, true);
+    } else if (options.exchange === 'binance') {
+      const { BinanceExchange } = await import('../../exchange/binance');
+      exchange = new BinanceExchange(apiKey, apiSecret, true);
     } else {
-      const { GenericExchange } = await import('../../exchange/generic');
-      const apiKey = process.env[`${options.exchange.toUpperCase()}_API_KEY`];
-      const apiSecret = process.env[`${options.exchange.toUpperCase()}_API_SECRET`];
+      throw new Error(`Unsupported exchange: ${options.exchange}`);
+    }
 
-      exchange = new GenericExchange(options.exchange, apiKey, apiSecret, true);
-
-      if (!apiKey || !apiSecret) {
-        console.log(chalk.yellow(`⚠️  No API credentials found for ${options.exchange}`));
-        console.log(chalk.gray(`   Using public data access (K-line data, market info)`));
-        console.log(chalk.gray(`   Trading operations will require API credentials\n`));
-      }
+    if (options.exchange !== 'simulator' && (!apiKey || !apiSecret)) {
+      console.log(chalk.yellow(`⚠️  No API credentials found for ${options.exchange}`));
+      console.log(chalk.gray(`   Using public data access (K-line data, market info)`));
+      console.log(chalk.gray(`   Trading operations will require API credentials\n`));
     }
 
     const provider = new MarketDataProvider(exchange);
 
     // Test 1: Basic K-line data
     console.log(chalk.yellow('🔍 Test 1: Basic K-line Data'));
-    const klines = await exchange.getCandlesticks(symbol, options.timeframe, parseInt(options.limit));
-    console.log(chalk.green(`✅ Retrieved ${klines.length} K-lines`));
+    let klines;
+    try {
+      klines = await exchange.getCandlesticks(symbol, options.timeframe, parseInt(options.limit));
+      console.log(chalk.green(`✅ Retrieved ${klines.length} K-lines`));
+    } catch (error: any) {
+      console.log(chalk.red(`❌ Failed to retrieve K-line data\n`));
+      
+      // Clean up error message
+      let errorMsg = error.message || String(error);
+      
+      // Extract key message from long error messages
+      if (errorMsg.length > 200) {
+        // Try to extract JSON message
+        const jsonMatch = errorMsg.match(/"msg":\s*"([^"]+)"/);
+        if (jsonMatch && jsonMatch[1]) {
+          errorMsg = jsonMatch[1];
+        } else {
+          // Get first 200 chars
+          errorMsg = errorMsg.substring(0, 200) + '...';
+        }
+      }
+      
+      console.log(chalk.red(`   Error: ${errorMsg}`));
+      
+      // Provide helpful suggestions
+      if (errorMsg.includes('restricted location') || errorMsg.includes('451')) {
+        console.log(chalk.yellow('\n💡 Suggestion: Binance may be restricted in your location'));
+        console.log(chalk.gray('   Try using OKX or Coinbase instead'));
+      } else if (errorMsg.includes('network') || errorMsg.includes('timeout')) {
+        console.log(chalk.yellow('\n💡 Suggestion: Network issue detected'));
+        console.log(chalk.gray('   Check your internet connection and try again'));
+      } else if (errorMsg.includes('rate limit')) {
+        console.log(chalk.yellow('\n💡 Suggestion: Rate limit exceeded'));
+        console.log(chalk.gray('   Wait a moment and try again'));
+      }
+      
+      console.log(''); // Empty line before stack trace
+      throw error;
+    }
 
     // Show data source information
     console.log(chalk.blue('📊 Data Source Information:'));
@@ -107,7 +155,10 @@ export class TestingCommands {
       const data = marketData[0];
       console.log(chalk.green('✅ Market data retrieved:'));
       console.log(chalk.blue('📊 Market Analysis:'));
-      console.log(`   Data Source: ${exchange.constructor.name === 'SimulatorExchange' ? 'Simulated Market' : `${exchange.getExchangeName ? exchange.getExchangeName() : 'Unknown'} Futures`}`);
+      const dataSource = exchange.constructor.name === 'SimulatorExchange' 
+        ? 'Simulated Market' 
+        : exchange.getExchangeName ? exchange.getExchangeName() : 'Unknown Exchange';
+      console.log(`   Data Source: ${dataSource}`);
       console.log(`   Analysis Method: Technical Indicators (100-period)`);
       console.log(`   Current Price: $${data.currentPrice.toFixed(2)}`);
       console.log(`   Trend: ${data.trend}`);
@@ -119,27 +170,35 @@ export class TestingCommands {
       console.log(`   ATR14: $${data.indicators.atr14.toFixed(2)}`);
     }
 
-    // Test 3: Account info
+    // Test 3: Account info (skip if no API credentials for non-simulator exchanges)
     console.log(chalk.yellow('\n🔍 Test 3: Account Information'));
-    const account = await exchange.getAccount();
-    console.log(chalk.green('✅ Account info retrieved:'));
-    console.log(chalk.blue('💰 Account Details:'));
-    console.log(`   Account Type: ${exchange.constructor.name === 'SimulatorExchange' ? 'Simulation Account' : 'Live Trading Account'}`);
-    console.log(`   Exchange: ${exchange.getExchangeName ? exchange.getExchangeName() : 'Simulator'}`);
-    console.log(`   Balance: $${account.balance.toFixed(2)}`);
-    console.log(`   Equity: $${account.equity.toFixed(2)}`);
-    console.log(`   Available Margin: $${account.availableMargin.toFixed(2)}`);
-    console.log(`   Used Margin: $${account.usedMargin.toFixed(2)}`);
-    console.log(`   Margin Ratio: ${account.marginRatio.toFixed(2)}%`);
+    const isSimulator = exchange.constructor.name === 'SimulatorExchange';
+    const hasApiKey = !!(options.exchange === 'simulator' || 
+                       process.env[`${options.exchange.toUpperCase()}_API_KEY`]);
+    
+    if (isSimulator || hasApiKey) {
+      try {
+        const account = await exchange.getAccount();
+        console.log(chalk.green('✅ Account info retrieved:'));
+        console.log(chalk.blue('💰 Account Details:'));
+        console.log(`   Account Type: ${isSimulator ? 'Simulation Account' : 'Live Trading Account'}`);
+        console.log(`   Exchange: ${exchange.getExchangeName ? exchange.getExchangeName() : 'Simulator'}`);
+        console.log(`   Balance: $${account.balance.toFixed(2)}`);
+        console.log(`   Equity: $${account.equity.toFixed(2)}`);
+        console.log(`   Available Margin: $${account.availableMargin.toFixed(2)}`);
+        console.log(`   Used Margin: $${account.usedMargin.toFixed(2)}`);
+        console.log(`   Margin Ratio: ${account.marginRatio.toFixed(2)}%`);
+      } catch (error: any) {
+        console.log(chalk.yellow('⚠️  Account info not available without API credentials'));
+        console.log(chalk.gray(`   ${error.message}`));
+      }
+    } else {
+      console.log(chalk.yellow('⚠️  Account info skipped (requires API credentials)'));
+      console.log(chalk.gray(`   Set ${options.exchange.toUpperCase()}_API_KEY and ${options.exchange.toUpperCase()}_API_SECRET to test account data`));
+    }
 
-    // Summary with data source info
+    // Summary
     console.log(chalk.green('\n🎯 All tests passed! K-line data retrieval is working correctly.'));
-    console.log(chalk.blue('\n📋 Data Source Summary:'));
-    console.log(`   Exchange: ${exchange.constructor.name}`);
-    console.log(`   Exchange Name: ${exchange.getExchangeName ? exchange.getExchangeName() : 'Simulator'}`);
-    console.log(`   Mode: ${exchange.constructor.name === 'SimulatorExchange' ? 'Simulation (Mock Data)' : 'Live Trading (Real Data)'}`);
-    console.log(`   Data Quality: ${exchange.constructor.name === 'SimulatorExchange' ? 'Simulated for Testing' : 'Real Market Data'}`);
-    console.log(`   API Status: ${exchange.constructor.name === 'SimulatorExchange' ? 'No API Required' : `Requires ${exchange.getExchangeName ? exchange.getExchangeName() : 'Exchange'} API Keys`}`);
   }
 
   private static async testExchanges(options: {
@@ -161,20 +220,35 @@ export class TestingCommands {
         let exchange: any;
         const { MarketDataProvider } = await import('../../data/market');
 
+        const apiKey = process.env[`${exchangeName.toUpperCase()}_API_KEY`];
+        const apiSecret = process.env[`${exchangeName.toUpperCase()}_API_SECRET`];
+
         if (exchangeName === 'simulator') {
           const { SimulatorExchange } = await import('../../exchange/simulator');
           exchange = new SimulatorExchange(10000);
-        } else {
-          const { GenericExchange } = await import('../../exchange/generic');
-          const apiKey = process.env[`${exchangeName.toUpperCase()}_API_KEY`];
-          const apiSecret = process.env[`${exchangeName.toUpperCase()}_API_SECRET`];
-
-          exchange = new GenericExchange(exchangeName, apiKey, apiSecret, true);
-
+        } else if (exchangeName === 'okx') {
+          const { OKXExchange } = await import('../../exchange/okx');
+          exchange = new OKXExchange(apiKey, apiSecret, true);
           if (!apiKey || !apiSecret) {
             console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
             console.log(chalk.gray(`   Using public data access\n`));
           }
+        } else if (exchangeName === 'coinbase') {
+          const { CoinbaseExchange } = await import('../../exchange/coinbase');
+          exchange = new CoinbaseExchange(apiKey, apiSecret, true);
+          if (!apiKey || !apiSecret) {
+            console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
+            console.log(chalk.gray(`   Using public data access\n`));
+          }
+        } else if (exchangeName === 'binance') {
+          const { BinanceExchange } = await import('../../exchange/binance');
+          exchange = new BinanceExchange(apiKey, apiSecret, true);
+          if (!apiKey || !apiSecret) {
+            console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
+            console.log(chalk.gray(`   Using public data access\n`));
+          }
+        } else {
+          throw new Error(`Unsupported exchange: ${exchangeName}`);
         }
 
         const provider = new MarketDataProvider(exchange);

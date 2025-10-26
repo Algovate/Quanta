@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import { TradingCommands } from './commands/trading';
-import { TestingCommands } from './commands/testing';
+import { TradeCommands } from './commands/trade';
+import { TestCommands } from './commands/test';
 import { ConfigCommands } from './commands/config';
 import { HelpCommand } from './commands/help';
 
@@ -23,11 +23,11 @@ export class CLIApplication {
   private registerCommands(): void {
     // Trading commands
     const trading = this.program.command('trade').description('Trading operations');
-    TradingCommands.register(trading);
+    TradeCommands.register(trading);
 
     // Testing commands
     const testing = this.program.command('test').description('Testing and validation');
-    TestingCommands.register(testing);
+    TestCommands.register(testing);
 
     // Configuration commands
     const config = this.program.command('config').description('Configuration management');

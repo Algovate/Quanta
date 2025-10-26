@@ -18,8 +18,9 @@ BetaArena is an AI-powered quantitative trading system that combines advanced ma
 - **🔄 Dual Operating Modes**: Live trading and simulation
 - **📈 Backtesting Engine**: Historical strategy validation
 - **⚡ Real-time Updates**: 3-minute cycle processing
-- **🔌 Multi-Exchange Support**: Simulator, OKX, Coinbase (and more via CCXT)
+- **🔌 Multi-Exchange Support**: Simulator, OKX, Binance, Coinbase
 - **🔧 Flexible Configuration**: JSON config + environment variables
+- **🔐 Secure API Handling**: Strict API key validation for account-sensitive operations
 
 ## 🚀 Quick Start
 
@@ -105,8 +106,10 @@ src/
 ├── ai/
 │   └── agent.ts         # OpenRouter AI integration
 ├── exchange/
-│   ├── generic.ts       # Generic exchange (CCXT)
-│   ├── simulator.ts     # Mock exchange for testing
+│   ├── simulator.ts     # Simulator exchange for testing
+│   ├── okx.ts           # OKX exchange implementation
+│   ├── binance.ts       # Binance exchange implementation
+│   ├── coinbase.ts      # Coinbase exchange implementation
 │   └── types.ts         # Type definitions
 └── execution/
     ├── risk.ts          # Risk management
@@ -121,10 +124,11 @@ src/
 ```bash
 # Exchange Configuration
 EXCHANGE_MODE=simulation          # live, simulation, backtest
-EXCHANGE_NAME=simulator           # simulator, okx, coinbase, etc.
+EXCHANGE_NAME=simulator           # simulator, okx, binance, coinbase
 EXCHANGE_TESTNET=true             # Use testnet
 EXCHANGE_API_KEY=your_api_key
 EXCHANGE_API_SECRET=your_secret
+OKX_PASSPHRASE=your_passphrase    # Required for OKX
 
 # AI Configuration
 OPENROUTER_API_KEY=your_key
@@ -198,6 +202,8 @@ beta-arena test exchanges --coin BTC --timeframe 3m
 beta-arena test data-sources --coin BTC --timeframe 3m
 ```
 
+**Note**: Testing exchanges without API credentials will only work for public data (candlestick data, ticker prices). Account information and trading operations require valid API credentials.
+
 ### Configuration Management
 
 ```bash
@@ -231,6 +237,54 @@ beta-arena test --help
 5. **Order Execution**: Place trades with stop-loss and take-profit
 6. **Position Monitoring**: Track P&L and exit conditions
 7. **Performance Update**: Calculate and log metrics
+
+## 🔐 API Credentials
+
+### Exchange API Keys
+
+To use real exchanges (OKX, Binance, Coinbase), you need valid API credentials:
+
+```bash
+# Environment variables (recommended)
+export OKX_API_KEY=your_key
+export OKX_API_SECRET=your_secret
+export OKX_PASSPHRASE=your_passphrase  # Required for OKX
+
+export BINANCE_API_KEY=your_key
+export BINANCE_API_SECRET=your_secret
+
+export COINBASE_API_KEY=your_key
+export COINBASE_API_SECRET=your_secret
+```
+
+### What Requires API Keys?
+
+**Requires API credentials:**
+
+- `getAccount()` - Account balance and equity
+- `getPositions()` - Current positions
+- `placeOrder()` - Order execution
+- `cancelOrder()` - Order cancellation
+
+**Public data (no API key needed):**
+
+- `getCandlesticks()` - Historical price data
+- `getTicker()` - Current market prices
+
+**Simulator:**
+
+- No API keys required - uses mock data for testing
+
+### Exchange-Specific Notes
+
+**Binance:**
+- May be restricted in certain geographic locations (HTTP 451 error)
+- If you encounter location restrictions, consider using OKX or Coinbase which have better global availability
+- Note: Binance restrictions are based on the exchange's terms of service and legal requirements
+
+**OKX & Coinbase:**
+- Generally have good global availability
+- OKX requires a passphrase in addition to API key and secret
 
 ## 🤖 Supported AI Models
 
@@ -322,19 +376,3 @@ This project demonstrates:
 ## 📝 License
 
 MIT License - see LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-BetaArena represents the next generation of AI-powered quantitative trading systems, combining advanced machine learning models with sophisticated risk management and real-time market analysis.
-
-**BetaArena** - Where AI meets quantitative trading in real-time.
-
-## 📞 Support
-
-- 📖 Documentation: Check `--help` for command options
-- 🐛 Issues: Report bugs via GitHub Issues
-- 💡 Contributions: Pull requests welcome!
-
----
-
-**Disclaimer**: This software is provided "as-is" without warranty. Trading cryptocurrencies carries significant risk. Always use simulation mode for testing and never invest more than you can afford to lose.

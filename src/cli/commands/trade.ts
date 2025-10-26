@@ -8,7 +8,7 @@ import { OpenRouterClient } from '../../ai/agent';
 import { TradingWorkflow } from '../../core/workflow';
 import { handleAsync } from '../../utils/error-handler';
 
-export class TradingCommands {
+export class TradeCommands {
   static register(program: Command): void {
     program
       .command('start')
@@ -18,8 +18,8 @@ export class TradingCommands {
       .option('--ui <ui>', 'UI mode: tui or cli', 'cli')
       .action(async (options) => {
         await handleAsync(async () => {
-          await TradingCommands.startTrading(options);
-        }, 'TradingCommands.start');
+          await TradeCommands.startTrading(options);
+        }, 'TradeCommands.start');
       });
 
     program
@@ -31,8 +31,8 @@ export class TradingCommands {
       .option('--initial-balance <amount>', 'Initial balance', '10000')
       .action(async (options) => {
         await handleAsync(async () => {
-          await TradingCommands.runBacktest(options);
-        }, 'TradingCommands.backtest');
+          await TradeCommands.runBacktest(options);
+        }, 'TradeCommands.backtest');
       });
 
     program
@@ -40,8 +40,8 @@ export class TradingCommands {
       .description('Show current trading status')
       .action(async () => {
         await handleAsync(async () => {
-          await TradingCommands.showStatus();
-        }, 'TradingCommands.status');
+          await TradeCommands.showStatus();
+        }, 'TradeCommands.status');
       });
   }
 
@@ -81,9 +81,27 @@ export class TradingCommands {
     // Initialize components
     const spinner = ora('Initializing trading system...').start();
 
-    const exchange = mode === 'simulation'
-      ? new SimulatorExchange(10000)
-      : new SimulatorExchange(10000); // TODO: Implement real exchange
+    // Create exchange based on mode and config
+    let exchange;
+    const exchangeName = updatedConfig.exchange?.name || 'simulator';
+    const exchangeApiKey = updatedConfig.exchange?.apiKey;
+    const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
+    const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
+
+    if (mode === 'simulation' || exchangeName === 'simulator') {
+      exchange = new SimulatorExchange(10000);
+    } else if (exchangeName === 'okx') {
+      const { OKXExchange } = await import('../../exchange/okx');
+      exchange = new OKXExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
+    } else if (exchangeName === 'binance') {
+      const { BinanceExchange } = await import('../../exchange/binance');
+      exchange = new BinanceExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
+    } else if (exchangeName === 'coinbase') {
+      const { CoinbaseExchange } = await import('../../exchange/coinbase');
+      exchange = new CoinbaseExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
+    } else {
+      throw new Error(`Unsupported exchange: ${exchangeName}`);
+    }
 
     const marketProvider = new MarketDataProvider(exchange);
     const aiClient = new OpenRouterClient(updatedConfig.ai.apiKey);

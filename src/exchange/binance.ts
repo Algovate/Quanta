@@ -1,0 +1,165 @@
+import * as ccxt from 'ccxt';
+import { Exchange, Account, Position, Candlestick, Order } from './types';
+
+export class BinanceExchange implements Exchange {
+  private exchange: ccxt.binance;
+  private isTestnet: boolean;
+
+  constructor(apiKey?: string, apiSecret?: string, testnet: boolean = true) {
+    this.isTestnet = testnet;
+
+    // Configure Binance exchange options
+    const exchangeOptions: Record<string, unknown> = {
+      apiKey,
+      secret: apiSecret,
+      options: {
+        defaultType: 'future', // Binance uses futures
+        adjustForTimeDifference: true,
+      },
+      enableRateLimit: true,
+    };
+
+    // Only set sandbox if the exchange supports it
+    try {
+      const tempExchange = new ccxt.binance();
+      if (tempExchange.urls && (tempExchange.urls as Record<string, unknown>).sandbox) {
+        exchangeOptions.sandbox = testnet;
+      }
+    } catch {
+      // If we can't determine sandbox support, don't set it
+    }
+
+    this.exchange = new ccxt.binance(exchangeOptions);
+  }
+
+  async getAccount(): Promise<Account> {
+    if (!this.exchange.apiKey || this.exchange.apiKey === 'test') {
+      throw new Error('Account information requires API credentials for Binance');
+    }
+
+    try {
+      const balance = await this.exchange.fetchBalance();
+      return {
+        balance: (balance.total as unknown as Record<string, number>)?.USDT || 0,
+        equity: (balance.total as unknown as Record<string, number>)?.USDT || 0,
+        availableMargin: (balance.free as unknown as Record<string, number>)?.USDT || 0,
+        usedMargin: (balance.used as unknown as Record<string, number>)?.USDT || 0,
+        marginRatio: 0,
+        timestamp: Date.now(),
+      };
+    } catch (error) {
+      console.error('Error fetching account from Binance:', error);
+      throw error;
+    }
+  }
+
+  async getPositions(): Promise<Position[]> {
+    try {
+      if (!this.exchange.apiKey || this.exchange.apiKey === 'test') {
+        return [];
+      }
+
+      const positions = await this.exchange.fetchPositions();
+      return (positions as unknown[]).map((pos: Record<string, unknown>) => ({
+        symbol: pos.symbol as string,
+        side: pos.side as 'long' | 'short',
+        size: pos.contracts as number,
+        entryPrice: (pos.entryPrice as number) || 0,
+        markPrice: (pos.markPrice as number) || 0,
+        unrealizedPnl: (pos.unrealizedPnl as number) || 0,
+        marginUsed: (pos.marginUsed as number) || 0,
+        leverage: (pos.leverage as number) || 1,
+        timestamp: Date.now(),
+      }));
+    } catch (error) {
+      console.error('Error fetching positions from Binance:', error);
+      return [];
+    }
+  }
+
+  async getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]> {
+    try {
+      const ohlcv = await this.exchange.fetchOHLCV(symbol, timeframe, undefined, limit);
+      return ohlcv.map((candle: number[]) => ({
+        timestamp: candle[0],
+        open: candle[1],
+        high: candle[2],
+        low: candle[3],
+        close: candle[4],
+        volume: candle[5],
+      }));
+    } catch (error) {
+      console.error('Error fetching candlesticks from Binance:', error);
+      throw error;
+    }
+  }
+
+  async placeOrder(
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    price?: number
+  ): Promise<Order> {
+    try {
+      if (!this.exchange.apiKey || this.exchange.apiKey === 'test') {
+        throw new Error('Trading operations require API credentials for Binance');
+      }
+
+      const order = await this.exchange.createOrder(
+        symbol,
+        'market',
+        side as 'buy' | 'sell',
+        amount,
+        price
+      );
+
+      return {
+        id: order.id,
+        symbol: order.symbol,
+        side: order.side as 'buy' | 'sell',
+        amount: order.amount,
+        price: order.price || 0,
+        status: order.status,
+        timestamp: Date.now(),
+      };
+    } catch (error) {
+      console.error('Error placing order on Binance:', error);
+      throw error;
+    }
+  }
+
+  async cancelOrder(orderId: string, symbol: string): Promise<boolean> {
+    try {
+      if (!this.exchange.apiKey || this.exchange.apiKey === 'test') {
+        throw new Error('Trading operations require API credentials for Binance');
+      }
+
+      await this.exchange.cancelOrder(orderId, symbol);
+      return true;
+    } catch (error) {
+      console.error('Error canceling order on Binance:', error);
+      return false;
+    }
+  }
+
+  async getTicker(symbol: string): Promise<{ price: number; [key: string]: unknown }> {
+    try {
+      const ticker = await this.exchange.fetchTicker(symbol);
+      return {
+        price: ticker.last || ticker.close || 0,
+        ...ticker,
+      };
+    } catch (error) {
+      console.error('Error fetching ticker from Binance:', error);
+      throw error;
+    }
+  }
+
+  getExchangeName(): string {
+    return 'binance';
+  }
+
+  isTestnetMode(): boolean {
+    return this.isTestnet;
+  }
+}
