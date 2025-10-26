@@ -2,62 +2,116 @@
 
 AI-powered quantitative trading system with real-time decision making.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
+
+## 🎯 Overview
+
+BetaArena is an AI-powered quantitative trading system that combines advanced machine learning models with sophisticated risk management to make real-time trading decisions. It uses a three-stage **Perception-Decision-Execution** architecture to analyze market data, generate trading signals, and execute trades with proper risk controls.
+
+## ✨ Key Features
+
+- **🤖 AI-Powered Decisions**: OpenRouter integration with multiple AI models
+- **📊 Multi-Timeframe Analysis**: 3-minute and 4-hour technical indicators
+- **🛡️ Advanced Risk Management**: Position sizing, stop-loss, take-profit
+- **🔄 Dual Operating Modes**: Live trading and simulation
+- **📈 Backtesting Engine**: Historical strategy validation
+- **⚡ Real-time Updates**: 3-minute cycle processing
+- **🔌 Multi-Exchange Support**: Simulator, OKX, Coinbase (and more via CCXT)
+- **🔧 Flexible Configuration**: JSON config + environment variables
+
 ## 🚀 Quick Start
 
+### Installation
+
 ```bash
+# Clone the repository
+git clone <repository-url>
+cd beta-arena
+
 # Install dependencies
 npm install
 
 # Build the project
 npm run build
-
-# Test K-line data
-node dist/index.js test kline --exchange simulator --coin BTC
-
-# Start simulation trading
-node dist/index.js trading start --mode simulation --coins BTC,ETH,SOL
-
-# Show configuration
-node dist/index.js config show
-
-# Get help
-node dist/index.js help
 ```
 
-## 📋 Features
+### First Steps
 
-- **🤖 AI Trading**: OpenRouter integration with configurable models
-- **📊 Multi-Timeframe**: 3-minute and 4-hour technical analysis
-- **🛡️ Risk Management**: Position sizing, stop-loss, take-profit
-- **🔄 Dual Mode**: Live trading and simulation
-- **📈 Backtesting**: Historical strategy validation
-- **⚡ Real-time**: 3-minute cycle updates
+```bash
+# Test K-line data retrieval
+beta-arena test kline --exchange simulator --coin BTC
+
+# Test multiple exchanges
+beta-arena test exchanges --coin BTC --timeframe 3m
+
+# Start simulation trading
+beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+
+# Show configuration
+beta-arena config show
+
+# Get help
+beta-arena help
+```
+
+## 📋 Table of Contents
+
+- [Architecture](#-architecture)
+- [Configuration](#-configuration)
+- [CLI Commands](#-cli-commands)
+- [Development](#-development)
+- [Risk Warning](#-risk-warning)
+- [Performance Metrics](#-performance-metrics)
+- [Supported Models](#-supported-ai-models)
 
 ## 🏗️ Architecture
 
-**Perception-Decision-Execution** three-stage system:
+### Three-Stage System
 
-1. **Perception**: Market data + technical indicators
-2. **Decision**: AI agent generates trading signals
-3. **Execution**: Order processing with risk management
+```
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│  Perception │ ────>│  Decision   │ ────>│ Execution   │
+│             │      │             │      │             │
+│ Market Data │      │ AI Analysis │      │ Risk Mgmt   │
+│ + Indicators│      │  + Signals  │      │ + Orders    │
+└─────────────┘      └─────────────┘      └─────────────┘
+```
 
-### Core Modules
+1. **Perception**: Fetch market data, calculate technical indicators
+2. **Decision**: AI agent generates trading signals based on analysis
+3. **Execution**: Validate with risk management, execute trades
+
+### Project Structure
 
 ```
 src/
 ├── index.ts              # CLI entry point
-├── config/settings.ts     # Configuration management
-├── data/market.ts         # Market data + indicators
-├── ai/agent.ts           # OpenRouter AI integration
+├── cli/
+│   ├── app.ts           # CLI application setup
+│   └── commands/        # Command handlers
+│       ├── trade.ts     # Trading operations
+│       ├── test.ts      # Testing commands
+│       ├── config.ts    # Configuration
+│       └── help.ts      # Help system
+├── config/
+│   └── settings.ts      # Configuration management
+├── core/
+│   ├── workflow.ts      # Main orchestration
+│   └── data-source-manager.ts  # Exchange management
+├── data/
+│   └── market.ts        # Market data + indicators
+├── ai/
+│   └── agent.ts         # OpenRouter AI integration
 ├── exchange/
-│   ├── generic.ts        # Generic exchange wrapper
-│   ├── simulator.ts      # Mock exchange
-│   └── types.ts          # Type definitions
-├── execution/
-│   ├── risk.ts           # Risk management
-│   ├── orders.ts         # Order execution
-│   └── monitor.ts        # Position monitoring
-└── core/workflow.ts      # Main orchestration
+│   ├── generic.ts       # Generic exchange (CCXT)
+│   ├── simulator.ts     # Mock exchange for testing
+│   └── types.ts         # Type definitions
+└── execution/
+    ├── risk.ts          # Risk management
+    ├── orders.ts        # Order execution
+    └── monitor.ts       # Position monitoring
 ```
 
 ## 🛠️ Configuration
@@ -65,58 +119,147 @@ src/
 ### Environment Variables
 
 ```bash
-# Exchange
-EXCHANGE_MODE=simulation
-BINANCE_API_KEY=your_key
-BINANCE_API_SECRET=your_secret
+# Exchange Configuration
+EXCHANGE_MODE=simulation          # live, simulation, backtest
+EXCHANGE_NAME=simulator           # simulator, okx, coinbase, etc.
+EXCHANGE_TESTNET=true             # Use testnet
+EXCHANGE_API_KEY=your_api_key
+EXCHANGE_API_SECRET=your_secret
 
-# AI
+# AI Configuration
 OPENROUTER_API_KEY=your_key
-AI_MODEL=deepseek/deepseek-chat
-AI_TEMPERATURE=0.7
+AI_MODEL=deepseek/deepseek-chat   # Model to use
+AI_TEMPERATURE=0.7                # Creativity level
 
-# Trading
-TRADING_COINS=BTC,ETH,SOL
-CYCLE_PERIOD=180000
-MAX_POSITIONS=6
-DEFAULT_STOP_LOSS=0.03
+# Trading Parameters
+TRADING_COINS=BTC,ETH,SOL         # Coins to trade
+CYCLE_PERIOD=180000               # 3 minutes in ms
+MAX_POSITIONS=6                   # Max concurrent positions
+LEVERAGE_MIN=5                    # Min leverage
+LEVERAGE_MAX=40                   # Max leverage
+STOP_LOSS=0.03                    # 3% stop loss
+MAX_RISK=0.05                     # 5% max risk per trade
+
+# UI Configuration
+UI_MODE=tui                       # tui or cli
+UI_REFRESH_RATE=1000              # Refresh rate in ms
 ```
 
-### CLI Commands
+### Configuration File
+
+```json
+{
+  "mode": "simulation",
+  "exchange": {
+    "name": "simulator",
+    "testnet": true
+  },
+  "ai": {
+    "apiKey": "your_openrouter_key",
+    "model": "deepseek/deepseek-chat",
+    "temperature": 0.7
+  },
+  "trading": {
+    "coins": ["BTC", "ETH", "SOL"],
+    "cyclePeriod": 180000,
+    "maxPositions": 6,
+    "leverageRange": [5, 40],
+    "stopLoss": 0.03,
+    "maxRisk": 0.05
+  }
+}
+```
+
+## 💻 CLI Commands
+
+### Trading Operations
 
 ```bash
-# Trading Operations
-beta-arena trading start --mode simulation --coins BTC,ETH,SOL
-beta-arena trading backtest --start 2024-01-01 --end 2024-12-31
-beta-arena trading status
+# Start trading system
+beta-arena trade start --mode simulation --coins BTC,ETH,SOL
 
-# Testing & Validation
+# Run backtest
+beta-arena trade backtest --start 2024-01-01 --end 2024-12-31
+
+# Show trading status
+beta-arena trade status
+```
+
+### Testing & Validation
+
+```bash
+# Test K-line data from specific exchange
 beta-arena test kline --exchange okx --coin BTC --timeframe 3m
+
+# Test multiple exchanges
 beta-arena test exchanges --coin BTC --timeframe 3m
+
+# Test data source configuration
 beta-arena test data-sources --coin BTC --timeframe 3m
-
-# Configuration Management
-beta-arena config show
-beta-arena config set ai.model deepseek/deepseek-chat
-beta-arena config validate
-
-# Help
-beta-arena help
 ```
 
-### Direct Execution (Recommended)
+### Configuration Management
 
 ```bash
-# Build first
-npm run build
+# Show current configuration
+beta-arena config show
 
-# Then run directly
-node dist/index.js trading start --mode simulation --coins BTC,ETH
-node dist/index.js test kline --exchange okx --coin BTC
-node dist/index.js config show
+# Set configuration value
+beta-arena config set ai.model deepseek/deepseek-chat
+
+# Validate configuration
+beta-arena config validate
 ```
+
+### Help
+
+```bash
+# Show help
+beta-arena help
+
+# Command-specific help
+beta-arena trade --help
+beta-arena test --help
+```
+
+## 🔄 Trading Workflow
+
+1. **Timer Trigger**: 3-minute cycle heartbeat
+2. **Market Data**: Fetch candlestick data and calculate indicators
+3. **AI Analysis**: Generate trading signals based on market conditions
+4. **Risk Validation**: Check position limits and risk parameters
+5. **Order Execution**: Place trades with stop-loss and take-profit
+6. **Position Monitoring**: Track P&L and exit conditions
+7. **Performance Update**: Calculate and log metrics
+
+## 🤖 Supported AI Models
+
+- **DeepSeek Chat**: Optimized for trading analysis (recommended)
+- **Claude 3 Sonnet**: Strong reasoning capabilities
+- **GPT-4 Turbo**: Balanced performance
+- **Gemini Pro**: Google's advanced model
+- **Grok Beta**: X.AI's conversational AI
+- **Qwen 2.5**: Alibaba's efficient model
+
+Configure via `AI_MODEL` environment variable or config file.
+
+## 📈 Performance Metrics
+
+- **Total Return**: Absolute and percentage returns
+- **Win Rate**: Percentage of profitable trades
+- **Max Drawdown**: Maximum peak-to-trough decline
+- **Sharpe Ratio**: Risk-adjusted return measure
+- **Trade Statistics**: Number of trades, average P&L, holding time
 
 ## 🔧 Development
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- TypeScript 5.3+
+
+### Setup
 
 ```bash
 # Install dependencies
@@ -125,49 +268,56 @@ npm install
 # Build TypeScript
 npm run build
 
-# Run in development
+# Run in development mode
 npm run dev
 
 # Watch for changes
 npm run watch
+
+# Run linter
+npm run lint
+
+# Format code
+npm run format
+```
+
+### Testing
+
+```bash
+# Test K-line data
+npm run dev -- test kline --exchange simulator --coin BTC
+
+# Test multiple exchanges
+npm run dev -- test exchanges --coin BTC
+
+# Test data sources
+npm run dev -- test data-sources
 ```
 
 ## ⚠️ Risk Warning
 
 **CRITICAL**: This software is for educational purposes only.
 
-- Cryptocurrency trading involves substantial risk
-- Never trade with money you cannot afford to lose
-- Always test in simulation mode first
-- AI can make incorrect decisions leading to losses
-- Leverage trading amplifies both gains and losses
+- ⚠️ Cryptocurrency trading involves substantial risk
+- 💰 Never trade with money you cannot afford to lose
+- 🧪 Always test in simulation mode first
+- 🤖 AI can make incorrect decisions leading to losses
+- 📊 Leverage trading amplifies both gains and losses
+- 🔍 Review all signals before executing in live mode
+- 🛡️ Use proper risk management at all times
 
-## 📈 Performance Metrics
+## 🎓 Educational Use
 
-- **Total Return**: Absolute and percentage returns
-- **Win Rate**: Percentage of profitable trades
-- **Max Drawdown**: Maximum peak-to-trough decline
-- **Sharpe Ratio**: Risk-adjusted return measure
-- **Trade Statistics**: Number of trades, average PnL
+This project demonstrates:
 
-## 🔄 Trading Workflow
+- AI integration with trading systems
+- Real-time data processing
+- Risk management strategies
+- Multi-exchange API integration
+- Technical indicator calculations
+- Backtesting methodologies
 
-1. **Timer Trigger**: 3-minute cycle heartbeat
-2. **Market Data**: Fetch candlesticks and indicators
-3. **AI Analysis**: Generate trading signals
-4. **Risk Validation**: Check position limits
-5. **Order Execution**: Place trades with stops
-6. **Position Monitoring**: Track P&L and exits
-7. **Performance Update**: Calculate metrics
-
-## 🤖 Supported AI Models
-
-- **DeepSeek Chat**: Optimized for trading analysis
-- **Claude 3 Sonnet**: Strong reasoning capabilities
-- **GPT-4 Turbo**: Balanced performance
-- **Gemini Pro**: Google's advanced model
-- **Grok Beta**: X.AI's model
-- **Qwen 2.5**: Alibaba's model
+**Not intended for production trading without extensive testing and validation.**
 
 ## 📝 License
 
@@ -175,6 +325,16 @@ MIT License - see LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
-BetaArena CLI represents the next generation of AI-powered quantitative trading systems, combining advanced machine learning models with sophisticated risk management and real-time market analysis.
+BetaArena represents the next generation of AI-powered quantitative trading systems, combining advanced machine learning models with sophisticated risk management and real-time market analysis.
 
 **BetaArena** - Where AI meets quantitative trading in real-time.
+
+## 📞 Support
+
+- 📖 Documentation: Check `--help` for command options
+- 🐛 Issues: Report bugs via GitHub Issues
+- 💡 Contributions: Pull requests welcome!
+
+---
+
+**Disclaimer**: This software is provided "as-is" without warranty. Trading cryptocurrencies carries significant risk. Always use simulation mode for testing and never invest more than you can afford to lose.

@@ -74,7 +74,7 @@ export class TradingCommands {
 
     if (mode === 'backtest') {
       console.log(chalk.yellow('⚠️  Backtest mode requires start and end dates'));
-      console.log(chalk.gray('   Use: beta-arena trading backtest --start 2024-01-01 --end 2024-12-31'));
+      console.log(chalk.gray('   Use: beta-arena trade backtest --start 2024-01-01 --end 2024-12-31'));
       return;
     }
 

@@ -19,9 +19,9 @@ export class HelpCommand {
     console.log('');
 
     console.log(chalk.yellow('🏦 Trading Commands:'));
-    console.log('  beta-arena trading start     Start AI trading system');
-    console.log('  beta-arena trading backtest   Run backtest with historical data');
-    console.log('  beta-arena trading status     Show current trading status');
+    console.log('  beta-arena trade start     Start AI trading system');
+    console.log('  beta-arena trade backtest   Run backtest with historical data');
+    console.log('  beta-arena trade status     Show current trading status');
     console.log('');
 
     console.log(chalk.yellow('🧪 Testing Commands:'));
@@ -39,7 +39,7 @@ export class HelpCommand {
     console.log(chalk.blue('💡 Examples:'));
     console.log('');
     console.log('  # Start simulation trading');
-    console.log('  beta-arena trading start --mode simulation --coins BTC,ETH');
+    console.log('  beta-arena trade start --mode simulation --coins BTC,ETH');
     console.log('');
     console.log('  # Test OKX K-line data');
     console.log('  beta-arena test kline --exchange okx --coin BTC --timeframe 3m');
@@ -48,7 +48,7 @@ export class HelpCommand {
     console.log('  beta-arena config show');
     console.log('');
     console.log('  # Run backtest');
-    console.log('  beta-arena trading backtest --start 2024-01-01 --end 2024-12-31');
+    console.log('  beta-arena trade backtest --start 2024-01-01 --end 2024-12-31');
     console.log('');
 
     console.log(chalk.red('⚠️  Risk Warning:'));

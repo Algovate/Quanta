@@ -22,7 +22,7 @@ export class CLIApplication {
 
   private registerCommands(): void {
     // Trading commands
-    const trading = this.program.command('trading').description('Trading operations');
+    const trading = this.program.command('trade').description('Trading operations');
     TradingCommands.register(trading);
 
     // Testing commands
