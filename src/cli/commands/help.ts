@@ -1,0 +1,59 @@
+import { Command } from 'commander';
+import chalk from 'chalk';
+
+export class HelpCommand {
+  static register(program: Command): void {
+    program
+      .command('help')
+      .description('Show detailed help information')
+      .action(() => {
+        HelpCommand.showHelp();
+      });
+  }
+
+  private static showHelp(): void {
+    console.log(chalk.cyan('🏆 BetaArena CLI Help'));
+    console.log(chalk.gray('AI-powered quantitative trading system\n'));
+
+    console.log(chalk.blue('📋 Available Commands:'));
+    console.log('');
+
+    console.log(chalk.yellow('🏦 Trading Commands:'));
+    console.log('  beta-arena trading start     Start AI trading system');
+    console.log('  beta-arena trading backtest   Run backtest with historical data');
+    console.log('  beta-arena trading status     Show current trading status');
+    console.log('');
+
+    console.log(chalk.yellow('🧪 Testing Commands:'));
+    console.log('  beta-arena test kline         Test K-line data retrieval');
+    console.log('  beta-arena test exchanges     Test multiple exchanges');
+    console.log('  beta-arena test data-sources  Test multi-data source configuration');
+    console.log('');
+
+    console.log(chalk.yellow('⚙️  Configuration Commands:'));
+    console.log('  beta-arena config show        Show current configuration');
+    console.log('  beta-arena config set         Set configuration values');
+    console.log('  beta-arena config validate     Validate configuration');
+    console.log('');
+
+    console.log(chalk.blue('💡 Examples:'));
+    console.log('');
+    console.log('  # Start simulation trading');
+    console.log('  beta-arena trading start --mode simulation --coins BTC,ETH');
+    console.log('');
+    console.log('  # Test OKX K-line data');
+    console.log('  beta-arena test kline --exchange okx --coin BTC --timeframe 3m');
+    console.log('');
+    console.log('  # Show configuration');
+    console.log('  beta-arena config show');
+    console.log('');
+    console.log('  # Run backtest');
+    console.log('  beta-arena trading backtest --start 2024-01-01 --end 2024-12-31');
+    console.log('');
+
+    console.log(chalk.red('⚠️  Risk Warning:'));
+    console.log('  This software is for educational purposes only.');
+    console.log('  Cryptocurrency trading involves substantial risk.');
+    console.log('  Never trade with money you cannot afford to lose.');
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "mode": "simulation",
+  "exchange": {
+    "name": "simulator",
+    "apiKey": "",
+    "apiSecret": "",
+    "testnet": true
+  },
+  "ai": {
+    "apiKey": "",
+    "model": "deepseek/deepseek-chat",
+    "temperature": 0.7
+  },
+  "trading": {
+    "coins": ["BTC", "ETH", "SOL"],
+    "cyclePeriod": 180000,
+    "maxPositions": 6,
+    "leverageRange": [5, 40],
+    "stopLoss": 0.03,
+    "maxRisk": 0.05
+  },
+  "ui": {
+    "mode": "tui",
+    "refreshRate": 1000
+  },
+  "backtest": {
+    "startDate": "",
+    "endDate": "",
+    "initialBalance": 10000
+  },
+  "notifications": {
+    "enabled": false,
+    "webhook": ""
+  }
+}
