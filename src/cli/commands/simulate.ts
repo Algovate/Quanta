@@ -441,12 +441,21 @@ export class SimulateCommands {
         });
 
         console.log(chalk.gray('\n  📊 Individual Positions:'));
+        
+        // Header
+        console.log(chalk.gray('\n    │ SIDE     │ COIN │ LEVERAGE │ NOTIONAL    │ UNREAL P&L'));
+        console.log(chalk.gray('    ├──────────┼──────┼──────────┼──────────────┼────────────'));
+        
+        // Position rows
         finalPositions.forEach(position => {
-          const pnlPercent = (position.unrealizedPnl / (position.size * position.entryPrice)) * 100;
-          console.log(chalk.gray(`    ✓ ${position.symbol}: ${position.side} ${position.size} @ $${position.entryPrice.toFixed(2)}`));
-          console.log(chalk.gray(`      - Current Price: $${position.markPrice.toFixed(2)}`));
-          console.log(chalk.gray(`      - Unrealized P&L: $${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`));
-          console.log(chalk.gray(`      - Margin Used: $${position.marginUsed.toFixed(2)}`));
+          const sideColor = position.side === 'long' ? chalk.green : chalk.red;
+          const sideText = position.side === 'long' ? 'LONG' : 'SHORT';
+          const leverageText = `${position.leverage}X`;
+          const notionalText = `$${position.notional.toFixed(2)}`;
+          const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
+          const pnlText = `$${position.unrealizedPnl.toFixed(2)}`;
+          
+          console.log(chalk.gray(`    │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.cyan(notionalText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(11))}`));
         });
       }
     } else {
@@ -454,7 +463,7 @@ export class SimulateCommands {
     }
 
     // Generate Summary
-    SimulateCommands.generateSummary(initialBalance, updatedAccount.equity, executedOrders, updatedPositions.length, totalPnl, coins.length);
+    SimulateCommands.generateSummary(initialBalance, updatedAccount, executedOrders, updatedPositions.length, totalPnl, coins.length);
   }
 
   private static async simulatePriceMovement(exchange: SimulatorExchange, symbol: string): Promise<void> {
@@ -472,7 +481,7 @@ export class SimulateCommands {
 
   private static generateSummary(
     initialBalance: number,
-    finalEquity: number,
+    finalAccount: any,
     executedOrders: number,
     openPositions: number,
     totalPnl: number,
@@ -484,9 +493,13 @@ export class SimulateCommands {
     const pnlPercent = (totalPnl / initialBalance) * 100;
     const pnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
     const pnlSign = totalPnl >= 0 ? '+' : '';
+    
+    // Available cash is the available margin (free to use)
+    const availableCash = finalAccount.availableMargin || 0;
 
+    console.log(chalk.magenta(`TOTAL ACCOUNT VALUE: $${finalAccount.equity.toFixed(2)}`));
     console.log(`Initial Balance:    $${initialBalance.toLocaleString()}`);
-    console.log(`Final Equity:       $${finalEquity.toLocaleString()}`);
+    console.log(`Available Cash:    $${availableCash.toFixed(2)}`);
     console.log(`Total P&L:          ${pnlColor(`${pnlSign}$${totalPnl.toFixed(2)} (${pnlSign}${pnlPercent.toFixed(2)}%)`)}`);
     console.log(`Coins Analyzed:     ${coinsAnalyzed}`);
     console.log(`Orders Executed:    ${executedOrders}`);

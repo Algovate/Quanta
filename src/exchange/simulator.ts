@@ -293,6 +293,7 @@ export class SimulatorExchange implements Exchange {
         markPrice: price,
         unrealizedPnl: 0,
         marginUsed: amount * price,
+        notional: amount * price, // Initial notional = size * entry price
         leverage: 1,
         timestamp: Date.now(),
       });
@@ -304,6 +305,7 @@ export class SimulatorExchange implements Exchange {
       const currentPrice = this.getCurrentPrice(position.symbol);
       position.markPrice = currentPrice;
       position.unrealizedPnl = (currentPrice - position.entryPrice) * position.size;
+      position.notional = position.size * currentPrice * position.leverage; // Update notional value
     });
   }
 

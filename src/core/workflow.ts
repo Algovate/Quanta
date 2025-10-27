@@ -5,6 +5,7 @@ import { RiskManager } from '../execution/risk';
 import { OrderExecutor } from '../execution/orders';
 import { PositionMonitorService } from '../execution/monitor';
 import { Account, Position, TradingSignal } from '../types';
+import chalk from 'chalk';
 
 export interface SystemState {
   isRunning: boolean;
@@ -190,11 +191,38 @@ export class TradingWorkflow {
     const runtime = Date.now() - this.state.startTime;
     const runtimeMinutes = Math.floor(runtime / (1000 * 60));
 
-    console.log(`📊 Cycle Summary:`);
+    console.log(`\n📊 Cycle Summary:`);
     console.log(`   Runtime: ${runtimeMinutes}m`);
     console.log(`   Signals: ${signals.length}`);
     console.log(`   Trades: ${this.state.totalTrades}`);
-    console.log(`   PnL: $${this.state.totalPnl.toFixed(2)}`);
+    console.log(`   Positions: ${positions.length}`);
+
+    // Display portfolio details
+    if (positions.length > 0) {
+      console.log(`\n📊 Portfolio Overview:`);
+      console.log(chalk.magenta(`   TOTAL ACCOUNT VALUE: $${account.equity.toFixed(2)}`));
+      console.log(`   Available Cash: $${account.availableMargin.toFixed(2)}`);
+      console.log(`   Total P&L: $${this.state.totalPnl.toFixed(2)}`);
+
+      // Display positions table
+      console.log(`\n   Positions:`);
+      console.log(`   │ SIDE     │ COIN │ LEVERAGE │ NOTIONAL    │ UNREAL P&L`);
+      console.log(`   ├──────────┼──────┼──────────┼──────────────┼────────────`);
+
+      positions.forEach(position => {
+        const sideColor = position.side === 'long' ? chalk.green : chalk.red;
+        const sideText = position.side === 'long' ? 'LONG' : 'SHORT';
+        const leverageText = `${position.leverage}X`;
+        const notionalText = `$${position.notional.toFixed(2)}`;
+        const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
+        const pnlText = `$${position.unrealizedPnl.toFixed(2)}`;
+
+        console.log(
+          `   │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.cyan(notionalText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(11))}`
+        );
+      });
+    }
+
     console.log(`   Win Rate: ${this.state.winRate.toFixed(1)}%`);
   }
 

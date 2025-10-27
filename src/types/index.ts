@@ -122,6 +122,7 @@ export interface Position {
   markPrice: number;
   unrealizedPnl: number;
   marginUsed: number;
+  notional: number; // Position value in USD (size * markPrice * leverage)
   leverage: number;
   timestamp: number;
 }

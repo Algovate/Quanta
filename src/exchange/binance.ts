@@ -60,17 +60,23 @@ export class BinanceExchange implements Exchange {
       }
 
       const positions = await this.exchange.fetchPositions();
-      return (positions as unknown[]).map((pos: Record<string, unknown>) => ({
-        symbol: pos.symbol as string,
-        side: pos.side as 'long' | 'short',
-        size: pos.contracts as number,
-        entryPrice: (pos.entryPrice as number) || 0,
-        markPrice: (pos.markPrice as number) || 0,
-        unrealizedPnl: (pos.unrealizedPnl as number) || 0,
-        marginUsed: (pos.marginUsed as number) || 0,
-        leverage: (pos.leverage as number) || 1,
-        timestamp: Date.now(),
-      }));
+      return (positions as unknown[]).map((pos: Record<string, unknown>) => {
+        const size = pos.contracts as number;
+        const markPrice = (pos.markPrice as number) || 0;
+        const leverage = (pos.leverage as number) || 1;
+        return {
+          symbol: pos.symbol as string,
+          side: pos.side as 'long' | 'short',
+          size,
+          entryPrice: (pos.entryPrice as number) || 0,
+          markPrice,
+          unrealizedPnl: (pos.unrealizedPnl as number) || 0,
+          marginUsed: (pos.marginUsed as number) || 0,
+          notional: size * markPrice * leverage,
+          leverage,
+          timestamp: Date.now(),
+        };
+      });
     } catch (error) {
       console.error('Error fetching positions from Binance:', error);
       return [];
