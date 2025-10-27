@@ -65,6 +65,8 @@ interface SimulateConfig {
 }
 
 export class SimulateCommands {
+  private static isRunning = false;
+
   private static loadSimulateConfig(): Partial<SimulateConfig> {
     try {
       const configPath = path.join(process.cwd(), 'config', 'simulate.json');
@@ -88,9 +90,19 @@ export class SimulateCommands {
       .option('-p, --max-positions <number>', 'Maximum number of concurrent positions', '3')
       .option('-a, --ai <type>', 'AI type: mock or real (requires API key in config/simulate.json)', 'mock')
       .action(async (options) => {
-        await handleAsync(async () => {
-          await SimulateCommands.simulateCycle(options);
-        }, 'SimulateCommands.cycle');
+        if (SimulateCommands.isRunning) {
+          return;
+        }
+
+        SimulateCommands.isRunning = true;
+
+        try {
+          await handleAsync(async () => {
+            await SimulateCommands.simulateCycle(options);
+          }, 'SimulateCommands.cycle');
+        } finally {
+          SimulateCommands.isRunning = false;
+        }
       });
   }
 
