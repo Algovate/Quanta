@@ -10,7 +10,7 @@ export class MockAIAgent {
     marketData: MarketData[],
     account: Account,
     existingPositions: Position[],
-    context?: AIContext
+    _context?: AIContext
   ): Promise<TradingSignal[]> {
     const signals: TradingSignal[] = [];
 

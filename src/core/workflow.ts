@@ -191,7 +191,12 @@ export class TradingWorkflow {
         defaultStopLoss: this.config.riskParams.defaultStopLoss,
       };
 
-      const signals = await this.aiAgent.generateTradingSignal(allMarketData, account, positions, context);
+      const signals = await this.aiAgent.generateTradingSignal(
+        allMarketData,
+        account,
+        positions,
+        context
+      );
       this.state.totalSignals += signals.length;
 
       // Emit TUI update events
