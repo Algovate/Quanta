@@ -405,7 +405,20 @@ export class TestCommands {
         const account = await exchange.getAccount();
         const positions = await exchange.getPositions();
 
-        const signals = await mockAI.generateTradingSignal(marketData, account, positions);
+        // Create minimal context for testing
+        const context = {
+          startTime: Date.now(),
+          currentTime: Date.now(),
+          invokeCount: 1,
+          tradableCoins: [options.coin],
+          maxPositions: 6,
+          maxRiskPerTrade: 0.05,
+          maxLeverage: 40,
+          minLeverage: 5,
+          defaultStopLoss: 0.03,
+        };
+
+        const signals = await mockAI.generateTradingSignal(marketData, account, positions, context);
 
         console.log(chalk.green(`✅ Mock AI generated ${signals.length} signal(s)`));
 
@@ -447,7 +460,20 @@ export class TestCommands {
           const account = await exchange.getAccount();
           const positions = await exchange.getPositions();
 
-          const signals = await realAI.generateTradingSignal(marketData, account, positions);
+          // Create minimal context for testing
+          const context = {
+            startTime: Date.now(),
+            currentTime: Date.now(),
+            invokeCount: 1,
+            tradableCoins: [options.coin],
+            maxPositions: 6,
+            maxRiskPerTrade: 0.05,
+            maxLeverage: 40,
+            minLeverage: 5,
+            defaultStopLoss: 0.03,
+          };
+
+          const signals = await realAI.generateTradingSignal(marketData, account, positions, context);
 
           console.log(chalk.green(`✅ Real AI generated ${signals.length} signal(s)`));
 

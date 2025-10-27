@@ -1,6 +1,6 @@
 import { Exchange } from '../exchange/types.js';
 import { MarketDataProvider } from '../data/market.js';
-import { OpenRouterClient } from '../ai/agent.js';
+import { OpenRouterClient, AIContext } from '../ai/agent.js';
 import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
@@ -179,7 +179,19 @@ export class TradingWorkflow {
       }
 
       // 4. Generate AI signals
-      const signals = await this.aiAgent.generateTradingSignal(allMarketData, account, positions);
+      const context: AIContext = {
+        startTime: this.state.startTime,
+        currentTime: Date.now(),
+        invokeCount: this.state.cycleCount,
+        tradableCoins: this.config.coins,
+        maxPositions: this.config.maxPositions,
+        maxRiskPerTrade: this.config.riskParams.maxRiskPerTrade,
+        maxLeverage: this.config.riskParams.maxLeverage,
+        minLeverage: this.config.riskParams.minLeverage,
+        defaultStopLoss: this.config.riskParams.defaultStopLoss,
+      };
+
+      const signals = await this.aiAgent.generateTradingSignal(allMarketData, account, positions, context);
       this.state.totalSignals += signals.length;
 
       // Emit TUI update events

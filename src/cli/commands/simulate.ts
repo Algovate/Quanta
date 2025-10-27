@@ -216,7 +216,8 @@ export class SimulateCommands {
         coins,
         verbose,
         initialBalance,
-        useRealAI
+        useRealAI,
+        maxPositions
       );
 
     } catch (error) {
@@ -250,7 +251,8 @@ export class SimulateCommands {
     coins: string[],
     verbose: boolean,
     initialBalance: number,
-    useRealAI: boolean
+    useRealAI: boolean,
+    maxPositions: number
   ): Promise<void> {
     let cycleStartTime = Date.now();
 
@@ -309,9 +311,22 @@ export class SimulateCommands {
     const account = await exchange.getAccount();
     const positions = await exchange.getPositions();
 
+    // Create context for AI
+    const context = {
+      startTime: cycleStartTime,
+      currentTime: Date.now(),
+      invokeCount: 1,
+      tradableCoins: coins,
+      maxPositions: maxPositions,
+      maxRiskPerTrade: 0.05,
+      maxLeverage: 1,
+      minLeverage: 1,
+      defaultStopLoss: 0.03,
+    };
+
     let signals;
     try {
-      signals = await aiAgent.generateTradingSignal(allMarketData, account, positions);
+      signals = await aiAgent.generateTradingSignal(allMarketData, account, positions, context);
     } catch (error) {
       spinner2.fail('AI analysis failed');
       console.error(chalk.red(`\n❌ Error: Failed to generate trading signals`));

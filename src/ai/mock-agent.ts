@@ -1,6 +1,7 @@
 import { MarketData } from '../data/market.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
 import { TechnicalIndicators } from '../types/index.js';
+import { AIContext } from './agent.js';
 
 export class MockAIAgent {
   private signalCounter: number = 0;
@@ -8,7 +9,8 @@ export class MockAIAgent {
   async generateTradingSignal(
     marketData: MarketData[],
     account: Account,
-    existingPositions: Position[]
+    existingPositions: Position[],
+    context?: AIContext
   ): Promise<TradingSignal[]> {
     const signals: TradingSignal[] = [];
 
