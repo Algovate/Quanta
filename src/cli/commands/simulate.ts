@@ -138,7 +138,7 @@ export class SimulateCommands {
       process.exit(1);
     }
 
-    console.log(chalk.cyan('🎯 BetaArena - Multi-Coin Trade Cycle Simulation'));
+    console.log(chalk.cyan('🎯 Quanta - Multi-Coin Trade Cycle Simulation'));
     console.log(chalk.gray('='.repeat(60)));
     console.log(`Coins: ${coins.join(', ')} | Initial Balance: $${initialBalance.toLocaleString()}`);
     console.log(`Max Positions: ${maxPositions}`);
@@ -169,7 +169,7 @@ export class SimulateCommands {
           console.log(chalk.gray('     export OPENROUTER_API_KEY="your_api_key_here"'));
           console.log(chalk.gray('     or edit config/simulate.json: ai.real.apiKey'));
           console.log(chalk.yellow('  3. Or use Mock AI (default):'));
-          console.log(chalk.gray('     beta-arena simulate cycle --coins BTC --ai mock'));
+          console.log(chalk.gray('     quanta simulate cycle --coins BTC --ai mock'));
           process.exit(1);
         }
         aiAgent = new OpenRouterClient(apiKey);
@@ -222,7 +222,7 @@ export class SimulateCommands {
         console.log(chalk.yellow('  4. Review verbose output with --verbose flag'));
 
         console.log(chalk.yellow('\n📚 For help:'));
-        console.log(chalk.gray('     beta-arena simulate cycle --help'));
+        console.log(chalk.gray('     quanta simulate cycle --help'));
       }
 
       throw error;
@@ -311,7 +311,7 @@ export class SimulateCommands {
         console.log(chalk.yellow('  2. Check API key is valid and has credits'));
         console.log(chalk.yellow('  3. Review error message above for details'));
         console.log(chalk.yellow('\n   Or use Mock AI instead:'));
-        console.log(chalk.gray('     beta-arena simulate cycle --coins BTC --ai mock'));
+        console.log(chalk.gray('     quanta simulate cycle --coins BTC --ai mock'));
       }
       throw error;
     }

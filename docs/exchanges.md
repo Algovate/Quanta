@@ -1,6 +1,12 @@
+---
+noteId: "526a3a72b2df11f0b5dcffd87852d11b"
+tags: []
+
+---
+
 # Supported Exchanges
 
-BetaArena supports multiple cryptocurrency exchanges with unified API.
+Quanta supports multiple cryptocurrency exchanges with unified API.
 
 ## Available Exchanges
 
@@ -52,21 +58,21 @@ BetaArena supports multiple cryptocurrency exchanges with unified API.
 
 ### Using Full Names
 ```bash
-beta-arena test kline --exchange binance --coin BTC
-beta-arena test kline --exchange coinbase --coin ETH
-beta-arena test kline --exchange hyperliquid --coin SOL
+quanta test kline --exchange binance --coin BTC
+quanta test kline --exchange coinbase --coin ETH
+quanta test kline --exchange hyperliquid --coin SOL
 ```
 
 ### Using Abbreviations
 ```bash
-beta-arena test kline --exchange bin --coin BTC
-beta-arena test kline --exchange cb --coin ETH
-beta-arena test kline --exchange hliq --coin SOL
+quanta test kline --exchange bin --coin BTC
+quanta test kline --exchange cb --coin ETH
+quanta test kline --exchange hliq --coin SOL
 ```
 
 ### Test All Exchanges
 ```bash
-beta-arena test exchanges --coin BTC --timeframe 1h
+quanta test exchanges --coin BTC --timeframe 1h
 ```
 
 ## Environment Variables
@@ -93,7 +99,7 @@ export HYPERLIQUID_API_SECRET=your_secret
 
 ## Symbol Format
 
-BetaArena uses standard `/USDT` symbol format for all exchanges. Special handling:
+Quanta uses standard `/USDT` symbol format for all exchanges. Special handling:
 
 - **Hyperliquid**: Automatically converts `BTC/USDT` → `BTC/USDC:USDC`
 - **Other exchanges**: Use symbols as provided
@@ -101,8 +107,8 @@ BetaArena uses standard `/USDT` symbol format for all exchanges. Special handlin
 Example:
 ```bash
 # Works with all exchanges automatically
-beta-arena test kline --exchange binance --coin BTC
-beta-arena test kline --exchange hliq --coin BTC  # auto-converts symbol
+quanta test kline --exchange binance --coin BTC
+quanta test kline --exchange hliq --coin BTC  # auto-converts symbol
 ```
 
 ## Features Supported
@@ -143,10 +149,10 @@ All exchanges support:
 ### API Errors
 ```bash
 # Check API credentials
-beta-arena config show
+quanta config show
 
 # Test exchange connection
-beta-arena test kline --exchange <exchange> --coin BTC
+quanta test kline --exchange <exchange> --coin BTC
 ```
 
 ### Symbol Errors

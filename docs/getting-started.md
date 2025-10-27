@@ -1,13 +1,19 @@
+---
+noteId: "4f08e700b2df11f0b5dcffd87852d11b"
+tags: []
+
+---
+
 # Getting Started
 
-Quick start guide for BetaArena CLI.
+Quick start guide for Quanta CLI.
 
 ## Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/beta-arena.git
-cd beta-arena
+git clone https://github.com/your-org/quanta.git
+cd quanta
 
 # Install dependencies
 npm install
@@ -22,18 +28,18 @@ npm run build
 
 ```bash
 # Test with Mock AI (no API key required)
-beta-arena simulate cycle --coins BTC --verbose
+quanta simulate cycle --coins BTC --verbose
 
 # Test AI integration
-beta-arena test ai --type mock --coin BTC
+quanta test ai --type mock --coin BTC
 
 # Test market data
-beta-arena test kline --exchange simulator --coin BTC
+quanta test kline --exchange simulator --coin BTC
 
 # Test different exchanges
-beta-arena test kline --exchange bin --coin BTC
-beta-arena test kline --exchange cb --coin ETH
-beta-arena test kline --exchange hliq --coin SOL
+quanta test kline --exchange bin --coin BTC
+quanta test kline --exchange cb --coin ETH
+quanta test kline --exchange hliq --coin SOL
 ```
 
 ### 2. Configure API Keys
@@ -50,13 +56,13 @@ echo "OPENROUTER_API_KEY=your_key_here" >> .env
 
 ```bash
 # Basic simulation
-beta-arena simulate cycle --coins BTC --verbose
+quanta simulate cycle --coins BTC --verbose
 
 # Multi-coin simulation
-beta-arena simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
+quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
 
 # With real AI
-beta-arena simulate cycle --coins BTC,ETH --ai real --verbose
+quanta simulate cycle --coins BTC,ETH --ai real --verbose
 ```
 
 ### 4. Interactive TUI (Terminal User Interface)
@@ -66,7 +72,7 @@ beta-arena simulate cycle --coins BTC,ETH --ai real --verbose
 npm run build
 
 # Start with interactive TUI
-beta-arena trade start --mode simulation --coins BTC,ETH --ui tui
+quanta trade start --mode simulation --coins BTC,ETH --ui tui
 
 # TUI Keyboard Shortcuts:
 # h / ?  - Show help overlay
@@ -76,7 +82,7 @@ beta-arena trade start --mode simulation --coins BTC,ETH --ui tui
 # 1-7    - Switch between views
 
 # Without TUI (CLI mode)
-beta-arena trade start --mode simulation --coins BTC,ETH
+quanta trade start --mode simulation --coins BTC,ETH
 ```
 
 ## Next Steps

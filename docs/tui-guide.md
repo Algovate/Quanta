@@ -1,6 +1,12 @@
+---
+noteId: "526a3a76b2df11f0b5dcffd87852d11b"
+tags: []
+
+---
+
 # Interactive TUI Guide
 
-BetaArena includes a comprehensive Terminal User Interface (TUI) powered by Ink for real-time trading visualization and control.
+Quanta includes a comprehensive Terminal User Interface (TUI) powered by Ink for real-time trading visualization and control.
 
 ## Features
 
@@ -45,7 +51,7 @@ node dist/index.js trade start --mode simulation --coins BTC,ETH --ui tui
 node dist/index.js trade start --mode simulation --coins BTC,ETH
 
 # Using npm script
-beta-arena trade start --mode simulation --coins BTC,ETH --ui tui
+quanta trade start --mode simulation --coins BTC,ETH --ui tui
 ```
 
 ### Running from Development
@@ -77,14 +83,14 @@ The TUI receives real-time updates from the trading workflow via EventEmitter:
 
 If TUI fails to start:
 1. Ensure project is built: `npm run build`
-2. Use compiled binary: `node dist/index.js ...` or `beta-arena ...`
+2. Use compiled binary: `node dist/index.js ...` or `quanta ...`
 3. Check terminal size (minimum 120x30 recommended)
 4. Verify ESM module system is active (check for `"type": "module"` in package.json)
 
 ### Ink/yoga-wasm Errors
 
 If you encounter `yoga-wasm-web` errors:
-- Use the compiled build (`npm run build` then run via `beta-arena`)
+- Use the compiled build (`npm run build` then run via `quanta`)
 - Development mode (`tsx src/index.ts`) will automatically fall back to CLI
 - TUI now works with ESM modules
 

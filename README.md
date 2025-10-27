@@ -1,4 +1,4 @@
-# BetaArena CLI
+# Quanta CLI
 
 AI-powered quantitative trading system with real-time decision making.
 
@@ -9,16 +9,16 @@ AI-powered quantitative trading system with real-time decision making.
 npm install && npm run build
 
 # Run a complete trade cycle simulation
-beta-arena simulate cycle --coins BTC,ETH,SOL --verbose
+quanta simulate cycle --coins BTC,ETH,SOL --verbose
 
 # Start live trading (simulation mode) with TUI
-beta-arena trade start --mode simulation --coins BTC,ETH --ui tui
+quanta trade start --mode simulation --coins BTC,ETH --ui tui
 
 # Start live trading (simulation mode) with CLI output
-beta-arena trade start --mode simulation --coins BTC,ETH
+quanta trade start --mode simulation --coins BTC,ETH
 
 # Test the system
-beta-arena test ai --type mock --coin BTC
+quanta test ai --type mock --coin BTC
 ```
 
 ## Core Features
@@ -36,16 +36,16 @@ beta-arena test ai --type mock --coin BTC
 ### Trading
 ```bash
 # Start with interactive TUI (recommended)
-beta-arena trade start --mode simulation --coins BTC,ETH,SOL --ui tui
+quanta trade start --mode simulation --coins BTC,ETH,SOL --ui tui
 
 # Start with CLI output
-beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+quanta trade start --mode simulation --coins BTC,ETH,SOL
 
 # Other trading commands
-beta-arena trade pause --reason "Maintenance"
-beta-arena trade stop --graceful
-beta-arena trade status
-beta-arena trade backtest --start 2024-01-01 --end 2024-12-31
+quanta trade pause --reason "Maintenance"
+quanta trade stop --graceful
+quanta trade status
+quanta trade backtest --start 2024-01-01 --end 2024-12-31
 ```
 
 **TUI Keyboard Shortcuts:**
@@ -58,24 +58,24 @@ beta-arena trade backtest --start 2024-01-01 --end 2024-12-31
 ### Simulation
 ```bash
 # Multi-coin portfolio simulation (Mock AI)
-beta-arena simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
+quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
 
 # Use real AI (requires OPENROUTER_API_KEY)
-beta-arena simulate cycle --coins BTC,ETH --ai real --verbose
+quanta simulate cycle --coins BTC,ETH --ai real --verbose
 ```
 
 ### Testing
 ```bash
-beta-arena test ai --type mock --coin BTC
-beta-arena test kline --exchange simulator --coin BTC
-beta-arena test exchanges --coin BTC --timeframe 3m
+quanta test ai --type mock --coin BTC
+quanta test kline --exchange simulator --coin BTC
+quanta test exchanges --coin BTC --timeframe 3m
 ```
 
 ### Configuration
 ```bash
-beta-arena config show
-beta-arena config set ai.model deepseek/deepseek-chat
-beta-arena config validate
+quanta config show
+quanta config set ai.model deepseek/deepseek-chat
+quanta config validate
 ```
 
 ## Configuration

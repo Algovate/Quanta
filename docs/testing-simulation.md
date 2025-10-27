@@ -1,6 +1,12 @@
+---
+noteId: "526a3a74b2df11f0b5dcffd87852d11b"
+tags: []
+
+---
+
 # Testing & Simulation Guide
 
-Complete guide to testing and simulation in BetaArena.
+Complete guide to testing and simulation in Quanta.
 
 ## Simulation Modes
 
@@ -8,10 +14,10 @@ Complete guide to testing and simulation in BetaArena.
 
 ```bash
 # Basic simulation
-beta-arena simulate cycle --coins BTC --verbose
+quanta simulate cycle --coins BTC --verbose
 
 # Multi-coin portfolio
-beta-arena simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
+quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
 ```
 
 **Features:**
@@ -24,7 +30,7 @@ beta-arena simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
 
 ```bash
 # Use real AI
-beta-arena simulate cycle --coins BTC --ai real --verbose
+quanta simulate cycle --coins BTC --ai real --verbose
 
 # Requires OPENROUTER_API_KEY in config/simulate.json
 ```
@@ -41,26 +47,26 @@ beta-arena simulate cycle --coins BTC --ai real --verbose
 
 ```bash
 # Test Mock AI
-beta-arena test ai --type mock --coin BTC
+quanta test ai --type mock --coin BTC
 
 # Test Real AI
-beta-arena test ai --type real --coin BTC
+quanta test ai --type real --coin BTC
 
 # Test both
-beta-arena test ai --type both --verbose
+quanta test ai --type both --verbose
 ```
 
 ### Test Market Data
 
 ```bash
 # Test K-line data
-beta-arena test kline --exchange simulator --coin BTC --timeframe 3m
+quanta test kline --exchange simulator --coin BTC --timeframe 3m
 
 # Test multiple exchanges
-beta-arena test exchanges --coin BTC --timeframe 3m
+quanta test exchanges --coin BTC --timeframe 3m
 
 # Test data sources
-beta-arena test data-sources --coin BTC
+quanta test data-sources --coin BTC
 ```
 
 ## Simulation Examples
@@ -68,7 +74,7 @@ beta-arena test data-sources --coin BTC
 ### Example 1: Single Coin Test
 
 ```bash
-beta-arena simulate cycle \
+quanta simulate cycle \
   --coins BTC \
   --verbose \
   --initial-balance 10000 \
@@ -77,7 +83,7 @@ beta-arena simulate cycle \
 
 **Output:**
 ```
-🎯 BetaArena - Trade Cycle Simulation
+🎯 Quanta - Trade Cycle Simulation
 ==========================================
 
 📊 PHASE 1: PERCEPTION
@@ -101,7 +107,7 @@ beta-arena simulate cycle \
 ### Example 2: Multi-Coin Portfolio
 
 ```bash
-beta-arena simulate cycle \
+quanta simulate cycle \
   --coins BTC,ETH,SOL \
   --verbose \
   --max-positions 5 \
@@ -110,7 +116,7 @@ beta-arena simulate cycle \
 
 **Output:**
 ```
-🎯 BetaArena - Multi-Coin Simulation
+🎯 Quanta - Multi-Coin Simulation
 ==========================================
 
 📊 PHASE 1: PERCEPTION
@@ -142,7 +148,7 @@ beta-arena simulate cycle \
 
 ```bash
 # Compare Mock vs Real AI
-beta-arena test ai --type both --verbose --coin BTC
+quanta test ai --type both --verbose --coin BTC
 
 # Results will show:
 # - Mock AI: deterministic signals
@@ -153,7 +159,7 @@ beta-arena test ai --type both --verbose --coin BTC
 
 ```bash
 # Validate data quality
-beta-arena test kline \
+quanta test kline \
   --exchange simulator \
   --coin BTC \
   --timeframe 3m \
@@ -169,7 +175,7 @@ beta-arena test kline \
 
 ```bash
 # Test risk controls
-beta-arena simulate cycle \
+quanta simulate cycle \
   --coins BTC \
   --verbose \
   --max-positions 1
@@ -214,29 +220,29 @@ beta-arena simulate cycle \
 
 ```bash
 # Start with simple tests
-beta-arena simulate cycle --coins BTC --verbose
+quanta simulate cycle --coins BTC --verbose
 
 # Gradually increase complexity
-beta-arena simulate cycle --coins BTC,ETH --verbose
+quanta simulate cycle --coins BTC,ETH --verbose
 
 # Test both AI types
-beta-arena test ai --type both
+quanta test ai --type both
 
 # Monitor all phases
-beta-arena simulate cycle --verbose
+quanta simulate cycle --verbose
 ```
 
 ### ❌ Avoid
 
 ```bash
 # Don't skip testing
-# ❌ beta-arena trade start --mode live (without testing)
+# ❌ quanta trade start --mode live (without testing)
 
 # Don't ignore verbose output
-# ❌ beta-arena simulate cycle
+# ❌ quanta simulate cycle
 
 # Don't test without proper config
-# ❌ beta-arena simulate cycle --ai real (without API key)
+# ❌ quanta simulate cycle --ai real (without API key)
 ```
 
 ## Troubleshooting
@@ -245,30 +251,30 @@ beta-arena simulate cycle --verbose
 
 ```bash
 # Check AI type
-beta-arena test ai --type mock --coin BTC
+quanta test ai --type mock --coin BTC
 
 # Check market data
-beta-arena test kline --exchange simulator --coin BTC
+quanta test kline --exchange simulator --coin BTC
 ```
 
 ### Issue: Simulation Too Fast
 
 ```bash
 # Increase verbose output
-beta-arena simulate cycle --verbose
+quanta simulate cycle --verbose
 
 # Test with specific balance
-beta-arena simulate cycle --initial-balance 100000
+quanta simulate cycle --initial-balance 100000
 ```
 
 ### Issue: API Key Not Working
 
 ```bash
 # Test AI with mock first
-beta-arena test ai --type mock
+quanta test ai --type mock
 
 # Validate API key
-beta-arena config show
+quanta config show
 
 # Check environment
 env | grep OPENROUTER_API_KEY
@@ -280,7 +286,7 @@ env | grep OPENROUTER_API_KEY
 
 ```bash
 # Multi-coin stress test
-beta-arena simulate cycle \
+quanta simulate cycle \
   --coins BTC,ETH,SOL,BNB,ADA \
   --max-positions 10 \
   --verbose
@@ -290,7 +296,7 @@ beta-arena simulate cycle \
 
 ```bash
 # Test risk limits
-beta-arena simulate cycle \
+quanta simulate cycle \
   --coins BTC \
   --initial-balance 1000 \
   --max-positions 1

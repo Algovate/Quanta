@@ -1,6 +1,12 @@
+---
+noteId: "526a3a70b2df11f0b5dcffd87852d11b"
+tags: []
+
+---
+
 # Configuration Guide
 
-Complete guide to configuring BetaArena.
+Complete guide to configuring Quanta.
 
 ## Configuration Files
 
@@ -105,22 +111,22 @@ MAX_RISK=0.05
 
 ```bash
 # Show current configuration
-beta-arena config show
+quanta config show
 
 # Set configuration values
-beta-arena config set ai.model deepseek/deepseek-chat
+quanta config set ai.model deepseek/deepseek-chat
 
 # Validate configuration
-beta-arena config validate
+quanta config validate
 
 # Save configuration
-beta-arena config save
+quanta config save
 
 # Reset to defaults
-beta-arena config reset
+quanta config reset
 
 # Initialize from example
-beta-arena config init
+quanta config init
 ```
 
 ## Key Settings
@@ -180,7 +186,7 @@ beta-arena config init
 cat config/config.json
 
 # Validate JSON
-beta-arena config validate
+quanta config validate
 
 # Check environment variables
 env | grep -E "(AI_|EXCHANGE_|TRADING_)"
@@ -193,10 +199,10 @@ env | grep -E "(AI_|EXCHANGE_|TRADING_)"
 unset OPENROUTER_API_KEY
 
 # Use config file only
-beta-arena config show
+quanta config show
 
 # Reset and reinit
-beta-arena config reset
-beta-arena config init
+quanta config reset
+quanta config init
 ```
 

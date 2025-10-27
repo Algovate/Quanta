@@ -1,6 +1,12 @@
-# BetaArena Documentation
+---
+noteId: "526a3a71b2df11f0b5dcffd87852d11b"
+tags: []
 
-Complete documentation index for the BetaArena AI trading system.
+---
+
+# Quanta Documentation
+
+Complete documentation index for the Quanta AI trading system.
 
 ## 📚 Documentation Index
 

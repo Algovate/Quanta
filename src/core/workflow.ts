@@ -99,7 +99,7 @@ export class TradingWorkflow {
       return;
     }
 
-    this.emitLog('info', '🚀 Starting BetaArena trading workflow...');
+    this.emitLog('info', '🚀 Starting Quanta trading workflow...');
     this.state.isRunning = true;
     this.state.startTime = Date.now();
     this.state.lastUpdate = Date.now();
@@ -119,7 +119,7 @@ export class TradingWorkflow {
       return;
     }
 
-    this.emitLog('info', '🛑 Stopping BetaArena trading workflow...');
+    this.emitLog('info', '🛑 Stopping Quanta trading workflow...');
     this.state.isRunning = false;
 
     if (this.intervalId) {

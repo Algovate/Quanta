@@ -154,8 +154,8 @@ ${pos.symbol}: ${pos.side} ${pos.size} @ $${pos.entryPrice}
           headers: {
             Authorization: `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://beta-arena-cli.com',
-            'X-Title': 'BetaArena CLI',
+            'HTTP-Referer': 'https://quanta-cli.com',
+            'X-Title': 'Quanta CLI',
           },
         }
       );

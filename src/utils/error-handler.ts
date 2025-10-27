@@ -1,19 +1,19 @@
-import { BetaArenaError, ExchangeError, AIError, ValidationError } from '../types/index.js';
+import { QuantaError, ExchangeError, AIError, ValidationError } from '../types/index.js';
 
 export class ErrorHandler {
-  static handle(error: unknown, context?: string): BetaArenaError {
-    if (error instanceof BetaArenaError) {
+  static handle(error: unknown, context?: string): QuantaError {
+    if (error instanceof QuantaError) {
       return error;
     }
 
     if (error instanceof Error) {
-      return new BetaArenaError(error.message, 'UNKNOWN_ERROR', {
+      return new QuantaError(error.message, 'UNKNOWN_ERROR', {
         originalError: error.message,
         context,
       });
     }
 
-    return new BetaArenaError('An unknown error occurred', 'UNKNOWN_ERROR', { error, context });
+    return new QuantaError('An unknown error occurred', 'UNKNOWN_ERROR', { error, context });
   }
 
   static createExchangeError(message: string, context?: Record<string, unknown>): ExchangeError {
@@ -31,7 +31,7 @@ export class ErrorHandler {
     return new ValidationError(message, context);
   }
 
-  static logError(error: BetaArenaError): void {
+  static logError(error: QuantaError): void {
     console.error(`\n[${error.code}] ${error.message}`);
     this.logContext(error.context);
   }

@@ -1,13 +1,19 @@
+---
+noteId: "526a3a77b2df11f0b5dcffd87852d11b"
+tags: []
+
+---
+
 # Trading Guide
 
-Complete guide to trading with BetaArena.
+Complete guide to trading with Quanta.
 
 ## Trading Modes
 
 ### Simulation Mode (Recommended for Testing)
 
 ```bash
-beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+quanta trade start --mode simulation --coins BTC,ETH,SOL
 ```
 
 **Features:**
@@ -19,7 +25,7 @@ beta-arena trade start --mode simulation --coins BTC,ETH,SOL
 ### Live Mode (Use with Caution)
 
 ```bash
-beta-arena trade start --mode live --coins BTC
+quanta trade start --mode live --coins BTC
 ```
 
 **Requirements:**
@@ -32,37 +38,37 @@ beta-arena trade start --mode live --coins BTC
 ### 1. Start Trading
 
 ```bash
-beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+quanta trade start --mode simulation --coins BTC,ETH,SOL
 ```
 
 ### 2. Monitor Status
 
 ```bash
 # Check current status
-beta-arena trade status
+quanta trade status
 
 # View in real-time
-beta-arena trade start --mode simulation --coins BTC
+quanta trade start --mode simulation --coins BTC
 ```
 
 ### 3. Control Trading
 
 ```bash
 # Pause trading system
-beta-arena trade pause --reason "Maintenance"
+quanta trade pause --reason "Maintenance"
 
 # Stop gracefully (finish current trades)
-beta-arena trade stop --graceful
+quanta trade stop --graceful
 
 # Force immediate stop
-beta-arena trade stop --force
+quanta trade stop --force
 ```
 
 ### 4. Review Results
 
 ```bash
 # Run backtest
-beta-arena trade backtest --start 2024-01-01 --end 2024-12-31
+quanta trade backtest --start 2024-01-01 --end 2024-12-31
 ```
 
 ## Trading Workflow
@@ -83,7 +89,7 @@ beta-arena trade backtest --start 2024-01-01 --end 2024-12-31
 
 ## Risk Management
 
-BetaArena automatically implements risk controls:
+Quanta automatically implements risk controls:
 
 - **Position Sizing**: Maximum 5% risk per trade
 - **Stop Loss**: 3% default
@@ -115,19 +121,19 @@ BetaArena automatically implements risk controls:
 **Issue**: Trading not executing
 ```bash
 # Check configuration
-beta-arena config show
+quanta config show
 
 # Validate settings
-beta-arena config validate
+quanta config validate
 ```
 
 **Issue**: API errors
 ```bash
 # Check API keys
-beta-arena test kline --exchange simulator --coin BTC
+quanta test kline --exchange simulator --coin BTC
 
 # Test AI
-beta-arena test ai --type mock --coin BTC
+quanta test ai --type mock --coin BTC
 ```
 
 ## Advanced Topics

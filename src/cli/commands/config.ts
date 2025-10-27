@@ -73,7 +73,7 @@ export class ConfigCommands {
     } else if (options.format === 'yaml') {
       console.log(chalk.yellow('⚠️  YAML format not yet implemented'));
     } else {
-      console.log(chalk.cyan('⚙️  BetaArena Configuration'));
+      console.log(chalk.cyan('⚙️  Quanta Configuration'));
       console.log(chalk.gray('Current system settings\n'));
 
       console.log(chalk.blue('🏦 Exchange Settings:'));

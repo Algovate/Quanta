@@ -1,11 +1,17 @@
+---
+noteId: "526a3a75b2df11f0b5dcffd87852d11b"
+tags: []
+
+---
+
 # Command Reference
 
-Complete reference for all BetaArena commands.
+Complete reference for all Quanta commands.
 
 ## Top-Level Commands
 
 ```
-beta-arena
+quanta
 ├── trade      Trading operations (5 sub-commands)
 ├── test       Testing and validation (4 sub-commands)
 ├── config     Configuration management (6 sub-commands)
@@ -19,7 +25,7 @@ beta-arena
 Start the trading system in live or simulation mode.
 
 ```bash
-beta-arena trade start [options]
+quanta trade start [options]
 
 Options:
   -m, --mode <mode>        Trading mode: live, simulation, backtest (default: "simulation")
@@ -31,10 +37,10 @@ Options:
 
 ```bash
 # Simulation mode (recommended)
-beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+quanta trade start --mode simulation --coins BTC,ETH,SOL
 
 # Live mode (use with caution)
-beta-arena trade start --mode live --coins BTC
+quanta trade start --mode live --coins BTC
 ```
 
 ---
@@ -44,7 +50,7 @@ beta-arena trade start --mode live --coins BTC
 Temporarily pause the trading system.
 
 ```bash
-beta-arena trade pause [options]
+quanta trade pause [options]
 
 Options:
   --reason <reason>  Reason for pausing (default: "Manual pause")
@@ -54,10 +60,10 @@ Options:
 
 ```bash
 # Pause with reason
-beta-arena trade pause --reason "Maintenance window"
+quanta trade pause --reason "Maintenance window"
 
 # Standard pause
-beta-arena trade pause
+quanta trade pause
 ```
 
 ---
@@ -67,7 +73,7 @@ beta-arena trade pause
 Stop the running trading system.
 
 ```bash
-beta-arena trade stop [options]
+quanta trade stop [options]
 
 Options:
   --graceful  Graceful shutdown (finish current trades) (default: false)
@@ -78,10 +84,10 @@ Options:
 
 ```bash
 # Graceful stop (recommended)
-beta-arena trade stop --graceful
+quanta trade stop --graceful
 
 # Force stop (emergency)
-beta-arena trade stop --force
+quanta trade stop --force
 ```
 
 ---
@@ -91,13 +97,13 @@ beta-arena trade stop --force
 Show current trading status.
 
 ```bash
-beta-arena trade status
+quanta trade status
 ```
 
 **Output:**
 
 ```
-📊 BetaArena Status
+📊 Quanta Status
 ==========================================
 ⚙️  Configuration:
    Mode: simulation
@@ -118,7 +124,7 @@ beta-arena trade status
 Run backtest with historical data.
 
 ```bash
-beta-arena trade backtest [options]
+quanta trade backtest [options]
 
 Options:
   -c, --coins <coins>        Comma-separated list of coins (default: "BTC,ETH,SOL")
@@ -131,10 +137,10 @@ Options:
 
 ```bash
 # Full year backtest
-beta-arena trade backtest --start 2024-01-01 --end 2024-12-31
+quanta trade backtest --start 2024-01-01 --end 2024-12-31
 
 # Last 30 days
-beta-arena trade backtest --start 2024-11-01 --end 2024-12-01
+quanta trade backtest --start 2024-11-01 --end 2024-12-01
 ```
 
 ---
@@ -146,7 +152,7 @@ beta-arena trade backtest --start 2024-11-01 --end 2024-12-01
 Test AI integration (Mock and Real AI).
 
 ```bash
-beta-arena test ai [options]
+quanta test ai [options]
 
 Options:
   -t, --type <type>  AI type to test: mock, real, or both (default: "both")
@@ -158,13 +164,13 @@ Options:
 
 ```bash
 # Test Mock AI
-beta-arena test ai --type mock --coin BTC
+quanta test ai --type mock --coin BTC
 
 # Test Real AI
-beta-arena test ai --type real --coin BTC
+quanta test ai --type real --coin BTC
 
 # Test both with details
-beta-arena test ai --type both --verbose
+quanta test ai --type both --verbose
 ```
 
 ---
@@ -174,7 +180,7 @@ beta-arena test ai --type both --verbose
 Test K-line data retrieval.
 
 ```bash
-beta-arena test kline [options]
+quanta test kline [options]
 
 Options:
   -e, --exchange <exchange>    Exchange to test (default: "simulator")
@@ -187,15 +193,15 @@ Options:
 
 ```bash
 # Test simulator
-beta-arena test kline --exchange simulator --coin BTC
+quanta test kline --exchange simulator --coin BTC
 
 # Test real exchange (full name)
-beta-arena test kline --exchange binance --coin BTC --timeframe 1h
+quanta test kline --exchange binance --coin BTC --timeframe 1h
 
 # Test with abbreviations
-beta-arena test kline --exchange bin --coin BTC
-beta-arena test kline --exchange cb --coin ETH
-beta-arena test kline --exchange hliq --coin SOL
+quanta test kline --exchange bin --coin BTC
+quanta test kline --exchange cb --coin ETH
+quanta test kline --exchange hliq --coin SOL
 
 # Supported exchanges: simulator, binance/bin, okx, coinbase/cb, hyperliquid/hliq
 ```
@@ -207,7 +213,7 @@ beta-arena test kline --exchange hliq --coin SOL
 Test multiple exchanges.
 
 ```bash
-beta-arena test exchanges [options]
+quanta test exchanges [options]
 
 Options:
   -c, --coin <coin>           Coin to test (default: "BTC")
@@ -222,7 +228,7 @@ Options:
 Test multi-data source configuration.
 
 ```bash
-beta-arena test data-sources [options]
+quanta test data-sources [options]
 
 Options:
   -c, --coin <coin>           Coin to test (default: "BTC")
@@ -239,7 +245,7 @@ Options:
 Simulate a complete trade cycle.
 
 ```bash
-beta-arena simulate cycle [options]
+quanta simulate cycle [options]
 
 Options:
   -c, --coins <coins>              Comma-separated list of coins (default: "BTC")
@@ -253,13 +259,13 @@ Options:
 
 ```bash
 # Basic simulation
-beta-arena simulate cycle --coins BTC --verbose
+quanta simulate cycle --coins BTC --verbose
 
 # Multi-coin simulation
-beta-arena simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
+quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
 
 # Real AI simulation
-beta-arena simulate cycle --coins BTC --ai real --verbose
+quanta simulate cycle --coins BTC --ai real --verbose
 ```
 
 ---
@@ -271,7 +277,7 @@ beta-arena simulate cycle --coins BTC --ai real --verbose
 Show current configuration.
 
 ```bash
-beta-arena config show [options]
+quanta config show [options]
 ```
 
 ---
@@ -281,17 +287,17 @@ beta-arena config show [options]
 Set configuration values.
 
 ```bash
-beta-arena config set <key> <value>
+quanta config set <key> <value>
 ```
 
 **Examples:**
 
 ```bash
 # Set AI model
-beta-arena config set ai.model deepseek/deepseek-chat
+quanta config set ai.model deepseek/deepseek-chat
 
 # Set temperature
-beta-arena config set ai.temperature 0.7
+quanta config set ai.temperature 0.7
 ```
 
 ---
@@ -301,7 +307,7 @@ beta-arena config set ai.temperature 0.7
 Validate current configuration.
 
 ```bash
-beta-arena config validate
+quanta config validate
 ```
 
 ---
@@ -311,7 +317,7 @@ beta-arena config validate
 Save current configuration to file.
 
 ```bash
-beta-arena config save
+quanta config save
 ```
 
 ---
@@ -321,7 +327,7 @@ beta-arena config save
 Reset configuration to defaults.
 
 ```bash
-beta-arena config reset
+quanta config reset
 ```
 
 ---
@@ -331,7 +337,7 @@ beta-arena config reset
 Initialize configuration file from example.
 
 ```bash
-beta-arena config init
+quanta config init
 ```
 
 ---
@@ -342,19 +348,19 @@ beta-arena config init
 
 ```bash
 # Quick test
-beta-arena test ai --type mock --coin BTC
+quanta test ai --type mock --coin BTC
 
 # Run simulation
-beta-arena simulate cycle --coins BTC,ETH,SOL --verbose
+quanta simulate cycle --coins BTC,ETH,SOL --verbose
 
 # Start trading
-beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+quanta trade start --mode simulation --coins BTC,ETH,SOL
 
 # Monitor status
-beta-arena trade status
+quanta trade status
 
 # Stop trading
-beta-arena trade stop --graceful
+quanta trade stop --graceful
 ```
 
 ---

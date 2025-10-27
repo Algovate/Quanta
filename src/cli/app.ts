@@ -16,8 +16,8 @@ export class CLIApplication {
 
   private setupProgram(): void {
     this.program
-      .name('beta-arena')
-      .description('BetaArena CLI - AI-powered quantitative trading system')
+      .name('quanta')
+      .description('Quanta CLI - AI-powered quantitative trading system')
       .version('0.1.0');
   }
 

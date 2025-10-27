@@ -71,7 +71,7 @@ export class TradeCommands {
     coins: string;
     ui: string;
   }): Promise<void> {
-    console.log(chalk.cyan('🏆 BetaArena Trading System'));
+    console.log(chalk.cyan('🏆 Quanta Trading System'));
     console.log(chalk.gray('AI-powered quantitative trading with real-time decision making\n'));
 
     const coins = options.coins.split(',').map((c: string) => c.trim());
@@ -95,7 +95,7 @@ export class TradeCommands {
 
     if (mode === 'backtest') {
       console.log(chalk.yellow('⚠️  Backtest mode requires start and end dates'));
-      console.log(chalk.gray('   Use: beta-arena trade backtest --start 2024-01-01 --end 2024-12-31'));
+      console.log(chalk.gray('   Use: quanta trade backtest --start 2024-01-01 --end 2024-12-31'));
       return;
     }
 
@@ -229,7 +229,7 @@ export class TradeCommands {
     end: string;
     initialBalance: string;
   }): Promise<void> {
-    console.log(chalk.cyan('📈 BetaArena Backtest'));
+    console.log(chalk.cyan('📈 Quanta Backtest'));
     console.log(chalk.gray('Historical strategy validation\n'));
 
     const coins = options.coins.split(',').map((c: string) => c.trim());
@@ -245,7 +245,7 @@ export class TradeCommands {
   }
 
   private static async showStatus(): Promise<void> {
-    console.log(chalk.cyan('📊 BetaArena Status'));
+    console.log(chalk.cyan('📊 Quanta Status'));
     console.log(chalk.gray('Current system state\n'));
 
     const config = getConfig();

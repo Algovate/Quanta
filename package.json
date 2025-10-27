@@ -1,11 +1,11 @@
 {
-  "name": "beta-arena",
+  "name": "quanta",
   "version": "0.1.0",
-  "description": "BetaArena CLI - AI-powered quantitative trading system with real-time decision making",
+  "description": "Quanta CLI - AI-powered quantitative trading system with real-time decision making",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "beta-arena": "dist/index.js"
+    "quanta": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -20,8 +20,7 @@
     "type-check": "tsc --noEmit"
   },
   "keywords": [
-    "beta-arena",
-    "alpha-arena",
+    "quanta",
     "ai-trading",
     "quantitative",
     "cryptocurrency",
@@ -30,9 +29,9 @@
     "deepseek",
     "trading-bot",
     "ai-quant",
-    "beta"
+    "quantitative-trading"
   ],
-  "author": "BetaArena CLI",
+  "author": "Quanta CLI",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.6.2",

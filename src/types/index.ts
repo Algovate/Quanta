@@ -1,4 +1,4 @@
-// Core types for BetaArena CLI
+// Core types for Quanta CLI
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
@@ -138,32 +138,32 @@ export interface Order {
 }
 
 // Error types
-export class BetaArenaError extends Error {
+export class QuantaError extends Error {
   constructor(
     message: string,
     public code: string,
     public context?: Record<string, unknown>
   ) {
     super(message);
-    this.name = 'BetaArenaError';
+    this.name = 'QuantaError';
   }
 }
 
-export class ExchangeError extends BetaArenaError {
+export class ExchangeError extends QuantaError {
   constructor(message: string, context?: Record<string, unknown>) {
     super(message, 'EXCHANGE_ERROR', context);
     this.name = 'ExchangeError';
   }
 }
 
-export class AIError extends BetaArenaError {
+export class AIError extends QuantaError {
   constructor(message: string, context?: Record<string, unknown>) {
     super(message, 'AI_ERROR', context);
     this.name = 'AIError';
   }
 }
 
-export class ValidationError extends BetaArenaError {
+export class ValidationError extends QuantaError {
   constructor(message: string, context?: Record<string, unknown>) {
     super(message, 'VALIDATION_ERROR', context);
     this.name = 'ValidationError';
