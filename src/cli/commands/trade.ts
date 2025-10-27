@@ -114,12 +114,15 @@ export class TradeCommands {
     } else if (exchangeName === 'okx') {
       const { OKXExchange } = await import('../../exchange/okx');
       exchange = new OKXExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
-    } else if (exchangeName === 'binance') {
+    } else if (exchangeName === 'binance' || exchangeName === 'bin') {
       const { BinanceExchange } = await import('../../exchange/binance');
       exchange = new BinanceExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
-    } else if (exchangeName === 'coinbase') {
+    } else if (exchangeName === 'coinbase' || exchangeName === 'cb') {
       const { CoinbaseExchange } = await import('../../exchange/coinbase');
       exchange = new CoinbaseExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
+    } else if (exchangeName === 'hyperliquid' || exchangeName === 'hliq') {
+      const { HyperliquidExchange } = await import('../../exchange/hyperliquid');
+      exchange = new HyperliquidExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
     } else {
       throw new Error(`Unsupported exchange: ${exchangeName}`);
     }

@@ -82,12 +82,15 @@ export class TestCommands {
     } else if (options.exchange === 'okx') {
       const { OKXExchange } = await import('../../exchange/okx');
       exchange = new OKXExchange(apiKey, apiSecret, true);
-    } else if (options.exchange === 'coinbase') {
+    } else if (options.exchange === 'coinbase' || options.exchange === 'cb') {
       const { CoinbaseExchange } = await import('../../exchange/coinbase');
       exchange = new CoinbaseExchange(apiKey, apiSecret, true);
-    } else if (options.exchange === 'binance') {
+    } else if (options.exchange === 'binance' || options.exchange === 'bin') {
       const { BinanceExchange } = await import('../../exchange/binance');
       exchange = new BinanceExchange(apiKey, apiSecret, true);
+    } else if (options.exchange === 'hyperliquid' || options.exchange === 'hliq') {
+      const { HyperliquidExchange } = await import('../../exchange/hyperliquid');
+      exchange = new HyperliquidExchange(apiKey, apiSecret, true);
     } else {
       throw new Error(`Unsupported exchange: ${options.exchange}`);
     }
@@ -222,7 +225,7 @@ export class TestCommands {
     console.log(chalk.gray(`Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`));
 
     const symbol = `${options.coin}/USDT`;
-    const exchanges = ['simulator', 'okx', 'coinbase'];
+    const exchanges = ['simulator', 'okx', 'coinbase', 'hyperliquid'];
 
     for (const exchangeName of exchanges) {
       console.log(chalk.yellow(`🔍 Testing ${exchangeName.toUpperCase()} Exchange:`));
@@ -245,16 +248,23 @@ export class TestCommands {
             console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
             console.log(chalk.gray(`   Using public data access\n`));
           }
-        } else if (exchangeName === 'coinbase') {
+        } else if (exchangeName === 'coinbase' || exchangeName === 'cb') {
           const { CoinbaseExchange } = await import('../../exchange/coinbase');
           exchange = new CoinbaseExchange(apiKey, apiSecret, true);
           if (!apiKey || !apiSecret) {
             console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
             console.log(chalk.gray(`   Using public data access\n`));
           }
-        } else if (exchangeName === 'binance') {
+        } else if (exchangeName === 'binance' || exchangeName === 'bin') {
           const { BinanceExchange } = await import('../../exchange/binance');
           exchange = new BinanceExchange(apiKey, apiSecret, true);
+          if (!apiKey || !apiSecret) {
+            console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
+            console.log(chalk.gray(`   Using public data access\n`));
+          }
+        } else if (exchangeName === 'hyperliquid' || exchangeName === 'hliq') {
+          const { HyperliquidExchange } = await import('../../exchange/hyperliquid');
+          exchange = new HyperliquidExchange(apiKey, apiSecret, true);
           if (!apiKey || !apiSecret) {
             console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
             console.log(chalk.gray(`   Using public data access\n`));
