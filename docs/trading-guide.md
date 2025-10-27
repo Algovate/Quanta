@@ -1,9 +1,3 @@
----
-noteId: "526a3a77b2df11f0b5dcffd87852d11b"
-tags: []
-
----
-
 # Trading Guide
 
 Complete guide to trading with Quanta.

@@ -1,9 +1,3 @@
----
-noteId: "526a3a71b2df11f0b5dcffd87852d11b"
-tags: []
-
----
-
 # Quanta Documentation
 
 Complete documentation index for the Quanta AI trading system.

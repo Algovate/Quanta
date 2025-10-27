@@ -1,4 +1,4 @@
-# Quanta CLI
+# Quanta
 
 AI-powered quantitative trading system with real-time decision making.
 
@@ -34,6 +34,7 @@ quanta test ai --type mock --coin BTC
 ## Commands
 
 ### Trading
+
 ```bash
 # Start with interactive TUI (recommended)
 quanta trade start --mode simulation --coins BTC,ETH,SOL --ui tui
@@ -49,13 +50,15 @@ quanta trade backtest --start 2024-01-01 --end 2024-12-31
 ```
 
 **TUI Keyboard Shortcuts:**
+
 - `h` / `?` - Show help overlay
 - `p` - Pause/Resume trading
-- `q` - Quit gracefully  
+- `q` - Quit gracefully
 - `r` - Refresh data
 - `1-7` - Switch between views
 
 ### Simulation
+
 ```bash
 # Multi-coin portfolio simulation (Mock AI)
 quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
@@ -65,6 +68,7 @@ quanta simulate cycle --coins BTC,ETH --ai real --verbose
 ```
 
 ### Testing
+
 ```bash
 quanta test ai --type mock --coin BTC
 quanta test kline --exchange simulator --coin BTC
@@ -72,6 +76,7 @@ quanta test exchanges --coin BTC --timeframe 3m
 ```
 
 ### Configuration
+
 ```bash
 quanta config show
 quanta config set ai.model deepseek/deepseek-chat
@@ -81,6 +86,7 @@ quanta config validate
 ## Configuration
 
 ### Environment Variables
+
 ```bash
 # AI
 OPENROUTER_API_KEY=your_key
@@ -91,6 +97,7 @@ EXCHANGE_API_SECRET=your_secret
 ```
 
 ### Configuration Files
+
 - **Trading**: `config/config.json`
 - **Simulation**: `config/simulate.json` (independent from trading config)
 
@@ -108,7 +115,7 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 - 📖 [Getting Started](docs/getting-started.md)
 - 🎯 [Trading Guide](docs/trading-guide.md)
 - 🔧 [Configuration](docs/configuration.md)
-- 🧪 [Testing & Simulation](docs/testing-simulation.md)
+- 🧪 [Testing &amp; Simulation](docs/testing-simulation.md)
 - 📚 [Command Reference](docs/commands.md)
 - 💡 [Core Concepts](docs/concepts.md)
 - 🏦 [Supported Exchanges](docs/exchanges.md)

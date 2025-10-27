@@ -1,9 +1,3 @@
----
-noteId: "526a3a70b2df11f0b5dcffd87852d11b"
-tags: []
-
----
-
 # Configuration Guide
 
 Complete guide to configuring Quanta.

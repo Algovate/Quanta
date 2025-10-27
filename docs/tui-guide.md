@@ -1,9 +1,3 @@
----
-noteId: "526a3a76b2df11f0b5dcffd87852d11b"
-tags: []
-
----
-
 # Interactive TUI Guide
 
 Quanta includes a comprehensive Terminal User Interface (TUI) powered by Ink for real-time trading visualization and control.

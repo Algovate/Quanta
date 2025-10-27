@@ -1,7 +1,7 @@
 {
   "name": "quanta",
   "version": "0.1.0",
-  "description": "Quanta CLI - AI-powered quantitative trading system with real-time decision making",
+  "description": "Quanta - AI-powered quantitative trading system with real-time decision making",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

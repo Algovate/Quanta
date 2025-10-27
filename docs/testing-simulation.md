@@ -1,9 +1,3 @@
----
-noteId: "526a3a74b2df11f0b5dcffd87852d11b"
-tags: []
-
----
-
 # Testing & Simulation Guide
 
 Complete guide to testing and simulation in Quanta.
@@ -21,6 +15,7 @@ quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
 ```
 
 **Features:**
+
 - No API keys needed
 - Fast execution
 - Deterministc behavior
@@ -36,6 +31,7 @@ quanta simulate cycle --coins BTC --ai real --verbose
 ```
 
 **Features:**
+
 - Actual AI analysis
 - Real market decisions
 - More realistic results
@@ -82,6 +78,7 @@ quanta simulate cycle \
 ```
 
 **Output:**
+
 ```
 🎯 Quanta - Trade Cycle Simulation
 ==========================================
@@ -115,6 +112,7 @@ quanta simulate cycle \
 ```
 
 **Output:**
+
 ```
 🎯 Quanta - Multi-Coin Simulation
 ==========================================
@@ -301,4 +299,3 @@ quanta simulate cycle \
   --initial-balance 1000 \
   --max-positions 1
 ```
-

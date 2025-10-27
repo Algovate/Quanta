@@ -1,9 +1,3 @@
----
-noteId: "526a3a72b2df11f0b5dcffd87852d11b"
-tags: []
-
----
-
 # Supported Exchanges
 
 Quanta supports multiple cryptocurrency exchanges with unified API.

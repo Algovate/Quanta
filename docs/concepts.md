@@ -1,9 +1,3 @@
----
-noteId: "526a3a73b2df11f0b5dcffd87852d11b"
-tags: []
-
----
-
 # Core Concepts and Terminology
 
 Complete guide to key terms, concepts, and algorithms in Quanta.

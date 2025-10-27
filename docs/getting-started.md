@@ -1,9 +1,3 @@
----
-noteId: "4f08e700b2df11f0b5dcffd87852d11b"
-tags: []
-
----
-
 # Getting Started
 
 Quick start guide for Quanta CLI.
