@@ -121,3 +121,6 @@ secrets.json
 # TypeScript cache
 *.tsbuildinfo
 .cursor/
+
+config/config.json
+config/simulate.json
