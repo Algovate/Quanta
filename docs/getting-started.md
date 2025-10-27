@@ -59,8 +59,29 @@ beta-arena simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
 beta-arena simulate cycle --coins BTC,ETH --ai real --verbose
 ```
 
+### 4. Interactive TUI (Terminal User Interface)
+
+```bash
+# Build first (required for TUI)
+npm run build
+
+# Start with interactive TUI
+beta-arena trade start --mode simulation --coins BTC,ETH --ui tui
+
+# TUI Keyboard Shortcuts:
+# h / ?  - Show help overlay
+# p      - Pause/Resume trading
+# q      - Quit gracefully
+# r      - Refresh data
+# 1-7    - Switch between views
+
+# Without TUI (CLI mode)
+beta-arena trade start --mode simulation --coins BTC,ETH
+```
+
 ## Next Steps
 
+- 🎨 [Learn about TUI](tui-guide.md) - Interactive terminal interface
 - 📖 [Read the Trading Guide](trading-guide.md)
 - 🔧 [Configure the System](configuration.md)
 - 🧪 [Learn Testing](testing-simulation.md)

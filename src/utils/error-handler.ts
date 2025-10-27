@@ -1,4 +1,4 @@
-import { BetaArenaError, ExchangeError, AIError, ValidationError } from '../types';
+import { BetaArenaError, ExchangeError, AIError, ValidationError } from '../types/index.js';
 
 export class ErrorHandler {
   static handle(error: unknown, context?: string): BetaArenaError {

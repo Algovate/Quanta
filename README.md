@@ -11,8 +11,11 @@ npm install && npm run build
 # Run a complete trade cycle simulation
 beta-arena simulate cycle --coins BTC,ETH,SOL --verbose
 
-# Start live trading (simulation mode)
-beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+# Start live trading (simulation mode) with TUI
+beta-arena trade start --mode simulation --coins BTC,ETH --ui tui
+
+# Start live trading (simulation mode) with CLI output
+beta-arena trade start --mode simulation --coins BTC,ETH
 
 # Test the system
 beta-arena test ai --type mock --coin BTC
@@ -22,21 +25,35 @@ beta-arena test ai --type mock --coin BTC
 
 - **🤖 AI Trading**: OpenRouter integration with multiple AI models
 - **📊 Technical Analysis**: Multi-timeframe indicators (EMA, MACD, RSI, ATR)
-- **🛡️ Risk Management**: Position sizing, stop-loss, take-profit
+- **🛡️ Smart Risk Management**: Optimized position sizing, dynamic minimums, 40% cash reserve
 - **🔄 Dual Modes**: Live trading and simulation
-- **💼 Portfolio Management**: Multi-coin multi-position support
+- **💼 Portfolio Management**: Multi-coin multi-position support (2-3 concurrent positions)
 - **🎯 Mock AI**: Built-in simulated AI for testing without API keys
+- **🎨 Interactive TUI**: Real-time terminal UI with live panels, charts, and keyboard controls
 
 ## Commands
 
 ### Trading
 ```bash
+# Start with interactive TUI (recommended)
+beta-arena trade start --mode simulation --coins BTC,ETH,SOL --ui tui
+
+# Start with CLI output
 beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+
+# Other trading commands
 beta-arena trade pause --reason "Maintenance"
 beta-arena trade stop --graceful
 beta-arena trade status
 beta-arena trade backtest --start 2024-01-01 --end 2024-12-31
 ```
+
+**TUI Keyboard Shortcuts:**
+- `h` / `?` - Show help overlay
+- `p` - Pause/Resume trading
+- `q` - Quit gracefully  
+- `r` - Refresh data
+- `1-7` - Switch between views
 
 ### Simulation
 ```bash
@@ -87,6 +104,7 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 
 ## Documentation
 
+- 🎨 [Interactive TUI Guide](docs/tui-guide.md) - Real-time terminal interface
 - 📖 [Getting Started](docs/getting-started.md)
 - 🎯 [Trading Guide](docs/trading-guide.md)
 - 🔧 [Configuration](docs/configuration.md)

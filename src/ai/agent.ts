@@ -1,6 +1,6 @@
 import axios from 'axios';
-import { MarketData } from '../data/market';
-import { Account, Position, TradingSignal } from '../exchange/types';
+import { MarketData } from '../data/market.js';
+import { Account, Position, TradingSignal } from '../types/index.js';
 
 export interface AIResponse {
   coin: string;

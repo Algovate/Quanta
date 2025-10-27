@@ -1,6 +1,6 @@
-import { MarketData } from '../data/market';
-import { Account, Position, TradingSignal } from '../exchange/types';
-import { TechnicalIndicators } from '../types';
+import { MarketData } from '../data/market.js';
+import { Account, Position, TradingSignal } from '../types/index.js';
+import { TechnicalIndicators } from '../types/index.js';
 
 export class MockAIAgent {
   private signalCounter: number = 0;

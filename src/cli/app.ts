@@ -1,9 +1,9 @@
 import { Command } from 'commander';
-import { TradeCommands } from './commands/trade';
-import { TestCommands } from './commands/test';
-import { ConfigCommands } from './commands/config';
-import { HelpCommand } from './commands/help';
-import { SimulateCommands } from './commands/simulate';
+import { TradeCommands } from './commands/trade.js';
+import { TestCommands } from './commands/test.js';
+import { ConfigCommands } from './commands/config.js';
+import { HelpCommand } from './commands/help.js';
+import { SimulateCommands } from './commands/simulate.js';
 
 export class CLIApplication {
   private program: Command;
@@ -48,7 +48,5 @@ export class CLIApplication {
 }
 
 // Main entry point
-if (require.main === module) {
-  const app = new CLIApplication();
-  app.run();
-}
+const app = new CLIApplication();
+app.run();

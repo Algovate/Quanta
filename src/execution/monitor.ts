@@ -1,6 +1,6 @@
-import { Exchange, Position } from '../exchange/types';
-import { RiskManager } from './risk';
-import { OrderExecutor } from './orders';
+import { Exchange, Position } from '../exchange/types.js';
+import { RiskManager } from './risk.js';
+import { OrderExecutor } from './orders.js';
 
 export interface PositionMonitor {
   checkStopLoss(position: Position, currentPrice: number): boolean;

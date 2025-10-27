@@ -3,14 +3,14 @@ import chalk from 'chalk';
 import ora from 'ora';
 import fs from 'fs';
 import path from 'path';
-import { SimulatorExchange } from '../../exchange/simulator';
-import { MarketDataProvider } from '../../data/market';
-import { MockAIAgent } from '../../ai/mock-agent';
-import { OpenRouterClient } from '../../ai/agent';
-import { RiskManager } from '../../execution/risk';
-import { OrderExecutor } from '../../execution/orders';
-import { PositionMonitorService } from '../../execution/monitor';
-import { handleAsync } from '../../utils/error-handler';
+import { SimulatorExchange } from '../../exchange/simulator.js';
+import { MarketDataProvider } from '../../data/market.js';
+import { MockAIAgent } from '../../ai/mock-agent.js';
+import { OpenRouterClient } from '../../ai/agent.js';
+import { RiskManager } from '../../execution/risk.js';
+import { OrderExecutor } from '../../execution/orders.js';
+import { PositionMonitorService } from '../../execution/monitor.js';
+import { handleAsync } from '../../utils/error-handler.js';
 
 interface SimulateConfig {
   simulation: {
@@ -437,13 +437,14 @@ export class SimulateCommands {
         console.log(chalk.gray('\n  📊 Position Details by Symbol:'));
         Object.entries(portfolioMetrics.exposureBySymbol).forEach(([symbol, exposure]) => {
           const pnl = portfolioMetrics.pnlBySymbol[symbol] || 0;
-          // Calculate P&L percentage relative to total account value, not exposure
-          const pnlPercent = portfolioMetrics.totalExposure > 0
-            ? (pnl / portfolioMetrics.totalExposure) * 100
+          // Calculate P&L percentage as ROI on invested capital (exposure)
+          // For accurate ROI: P&L / exposure * 100
+          const pnlPercent = exposure > 0
+            ? (pnl / exposure) * 100
             : 0;
           console.log(chalk.gray(`    📈 ${symbol}:`));
           console.log(chalk.gray(`      - Exposure: $${exposure.toFixed(2)}`));
-          console.log(chalk.gray(`      - P&L: $${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`));
+          console.log(chalk.gray(`      - P&L: $${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}% ROI)`));
         });
 
         console.log(chalk.gray('\n  📊 Individual Positions:'));

@@ -1,9 +1,9 @@
-import { Exchange } from '../exchange/types';
-import { SimulatorExchange } from '../exchange/simulator';
-import { OKXExchange } from '../exchange/okx';
-import { BinanceExchange } from '../exchange/binance';
-import { CoinbaseExchange } from '../exchange/coinbase';
-import { Config, getExchangeConfig } from '../config/settings';
+import { Exchange } from '../exchange/types.js';
+import { SimulatorExchange } from '../exchange/simulator.js';
+import { OKXExchange } from '../exchange/okx.js';
+import { BinanceExchange } from '../exchange/binance.js';
+import { CoinbaseExchange } from '../exchange/coinbase.js';
+import { Config, getExchangeConfig } from '../config/settings.js';
 
 export interface DataSourceManager {
   getExchange(): Exchange;

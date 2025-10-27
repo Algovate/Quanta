@@ -1,4 +1,4 @@
-import { Exchange } from '../exchange/types';
+import { Exchange } from '../exchange/types.js';
 
 export interface Candlestick {
   timestamp: number;

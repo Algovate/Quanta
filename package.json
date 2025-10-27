@@ -2,6 +2,7 @@
   "name": "beta-arena",
   "version": "0.1.0",
   "description": "BetaArena CLI - AI-powered quantitative trading system with real-time decision making",
+  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "beta-arena": "dist/index.js"

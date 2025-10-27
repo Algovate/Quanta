@@ -1,6 +1,6 @@
-import { Exchange, TradingSignal, Order, Position, Account } from '../exchange/types';
-import { RiskManager, PositionSizing } from './risk';
-import { ensureUsdtSuffix } from '../utils/symbol-utils';
+import { Exchange, TradingSignal, Order, Position, Account } from '../exchange/types.js';
+import { RiskManager, PositionSizing } from './risk.js';
+import { ensureUsdtSuffix } from '../utils/symbol-utils.js';
 
 export interface OrderResult {
   success: boolean;

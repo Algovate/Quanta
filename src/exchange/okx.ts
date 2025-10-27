@@ -1,5 +1,5 @@
 import * as ccxt from 'ccxt';
-import { Exchange, Account, Position, Candlestick, Order } from './types';
+import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 
 export class OKXExchange implements Exchange {
   private exchange: ccxt.okx;

@@ -2,8 +2,8 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import fs from 'fs';
 import path from 'path';
-import { getConfig, saveConfig, resetConfig, getConfigFilePath, getConfigExamplePath, validateConfig } from '../../config/settings';
-import { handleAsync } from '../../utils/error-handler';
+import { getConfig, saveConfig, resetConfig, getConfigFilePath, getConfigExamplePath, validateConfig } from '../../config/settings.js';
+import { handleAsync } from '../../utils/error-handler.js';
 
 export class ConfigCommands {
   static register(program: Command): void {

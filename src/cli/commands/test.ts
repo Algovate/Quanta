@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { getConfig } from '../../config/settings';
-import { handleAsync } from '../../utils/error-handler';
+import { getConfig } from '../../config/settings.js';
+import { handleAsync } from '../../utils/error-handler.js';
 
 export class TestCommands {
   static register(program: Command): void {
@@ -71,25 +71,25 @@ export class TestCommands {
     const symbol = `${options.coin}/USDT`;
 
     let exchange: any;
-    const { MarketDataProvider } = await import('../../data/market');
+    const { MarketDataProvider } = await import('../../data/market.js');
 
     const apiKey = process.env[`${options.exchange.toUpperCase()}_API_KEY`];
     const apiSecret = process.env[`${options.exchange.toUpperCase()}_API_SECRET`];
 
     if (options.exchange === 'simulator') {
-      const { SimulatorExchange } = await import('../../exchange/simulator');
+      const { SimulatorExchange } = await import('../../exchange/simulator.js');
       exchange = new SimulatorExchange(10000);
     } else if (options.exchange === 'okx') {
-      const { OKXExchange } = await import('../../exchange/okx');
+      const { OKXExchange } = await import('../../exchange/okx.js');
       exchange = new OKXExchange(apiKey, apiSecret, true);
     } else if (options.exchange === 'coinbase' || options.exchange === 'cb') {
-      const { CoinbaseExchange } = await import('../../exchange/coinbase');
+      const { CoinbaseExchange } = await import('../../exchange/coinbase.js');
       exchange = new CoinbaseExchange(apiKey, apiSecret, true);
     } else if (options.exchange === 'binance' || options.exchange === 'bin') {
-      const { BinanceExchange } = await import('../../exchange/binance');
+      const { BinanceExchange } = await import('../../exchange/binance.js');
       exchange = new BinanceExchange(apiKey, apiSecret, true);
     } else if (options.exchange === 'hyperliquid' || options.exchange === 'hliq') {
-      const { HyperliquidExchange } = await import('../../exchange/hyperliquid');
+      const { HyperliquidExchange } = await import('../../exchange/hyperliquid.js');
       exchange = new HyperliquidExchange(apiKey, apiSecret, true);
     } else {
       throw new Error(`Unsupported exchange: ${options.exchange}`);
@@ -233,37 +233,37 @@ export class TestCommands {
 
       try {
         let exchange: any;
-        const { MarketDataProvider } = await import('../../data/market');
+        const { MarketDataProvider } = await import('../../data/market.js');
 
         const apiKey = process.env[`${exchangeName.toUpperCase()}_API_KEY`];
         const apiSecret = process.env[`${exchangeName.toUpperCase()}_API_SECRET`];
 
         if (exchangeName === 'simulator') {
-          const { SimulatorExchange } = await import('../../exchange/simulator');
+          const { SimulatorExchange } = await import('../../exchange/simulator.js');
           exchange = new SimulatorExchange(10000);
         } else if (exchangeName === 'okx') {
-          const { OKXExchange } = await import('../../exchange/okx');
+          const { OKXExchange } = await import('../../exchange/okx.js');
           exchange = new OKXExchange(apiKey, apiSecret, true);
           if (!apiKey || !apiSecret) {
             console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
             console.log(chalk.gray(`   Using public data access\n`));
           }
         } else if (exchangeName === 'coinbase' || exchangeName === 'cb') {
-          const { CoinbaseExchange } = await import('../../exchange/coinbase');
+          const { CoinbaseExchange } = await import('../../exchange/coinbase.js');
           exchange = new CoinbaseExchange(apiKey, apiSecret, true);
           if (!apiKey || !apiSecret) {
             console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
             console.log(chalk.gray(`   Using public data access\n`));
           }
         } else if (exchangeName === 'binance' || exchangeName === 'bin') {
-          const { BinanceExchange } = await import('../../exchange/binance');
+          const { BinanceExchange } = await import('../../exchange/binance.js');
           exchange = new BinanceExchange(apiKey, apiSecret, true);
           if (!apiKey || !apiSecret) {
             console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
             console.log(chalk.gray(`   Using public data access\n`));
           }
         } else if (exchangeName === 'hyperliquid' || exchangeName === 'hliq') {
-          const { HyperliquidExchange } = await import('../../exchange/hyperliquid');
+          const { HyperliquidExchange } = await import('../../exchange/hyperliquid.js');
           exchange = new HyperliquidExchange(apiKey, apiSecret, true);
           if (!apiKey || !apiSecret) {
             console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
@@ -315,7 +315,7 @@ export class TestCommands {
     const config = getConfig();
     const symbol = `${options.coin}/USDT`;
 
-    const { createDataSourceManager } = await import('../../core/data-source-manager');
+    const { createDataSourceManager } = await import('../../core/data-source-manager.js');
     const manager = createDataSourceManager(config);
 
     const exchangeInfo = (manager as any).getExchangeInfo();
@@ -393,9 +393,9 @@ export class TestCommands {
     if (options.type === 'mock' || options.type === 'both') {
       console.log(chalk.yellow('📝 Testing Mock AI...'));
       try {
-        const { MockAIAgent } = await import('../../ai/mock-agent');
-        const { SimulatorExchange } = await import('../../exchange/simulator');
-        const { MarketDataProvider } = await import('../../data/market');
+        const { MockAIAgent } = await import('../../ai/mock-agent.js');
+        const { SimulatorExchange } = await import('../../exchange/simulator.js');
+        const { MarketDataProvider } = await import('../../data/market.js');
 
         const exchange = new SimulatorExchange(10000);
         const marketProvider = new MarketDataProvider(exchange);
@@ -435,9 +435,9 @@ export class TestCommands {
           console.log(chalk.gray('   Skipping real AI test'));
           console.log(chalk.gray('   Set OPENROUTER_API_KEY to test real AI\n'));
         } else {
-          const { OpenRouterClient } = await import('../../ai/agent');
-          const { SimulatorExchange } = await import('../../exchange/simulator');
-          const { MarketDataProvider } = await import('../../data/market');
+          const { OpenRouterClient } = await import('../../ai/agent.js');
+          const { SimulatorExchange } = await import('../../exchange/simulator.js');
+          const { MarketDataProvider } = await import('../../data/market.js');
 
           const exchange = new SimulatorExchange(10000);
           const marketProvider = new MarketDataProvider(exchange);

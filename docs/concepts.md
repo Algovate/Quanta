@@ -160,18 +160,31 @@ Signal   P&L Update  Stop/Target
 
 **Key Principle**: Never risk more than you can afford to lose
 
-**Formula:**
+**Position Sizing Formula:**
 ```
-Position Size = (Account Balance × Risk %) / (Entry Price - Stop Loss)
+1. Risk-based sizing: Position Value = Risk Amount / Stop Loss %
+2. Capital-based sizing: Max 30% of 60% available capital (40% reserve)
+3. Minimum position: Max($200, 1% of account equity)
+4. Final size = Max of risk-based and minimum, capped at capital-based
 ```
 
 **Example:**
 - Account Balance: $10,000
-- Risk per Trade: 2%
-- Risk Amount: $200
-- Entry Price: $50,000
-- Stop Loss: $48,500 (3%)
-- Position Size: $200 / $1,500 = 0.133 BTC
+- Available Capital: $6,000 (after reserve)
+- Risk per Trade: 5% = $500
+- Stop Loss: 3%
+- Risk-Based Value: $500 / 0.03 = $16,667
+- Capital-Based Value: $6,000 × 30% = $1,800
+- Minimum Value: Max($200, $100) = $200
+- Final Position Value: $1,800 (capped at capital)
+- BTC Entry Price: $50,000
+- BTC Position Size: $1,800 / $50,000 = 0.036 BTC
+
+**Optimization Features:**
+- **Dynamic Minimum**: Scales with account size (1% of equity or $200 minimum)
+- **Capital Reserve**: Maintains 40% cash reserve for additional positions
+- **Capital Allocation**: Uses 30% of available trading capital per position
+- **Risk Consistency**: Ensures meaningful position sizes even during drawdowns
 
 ### Stop Loss
 
@@ -201,13 +214,27 @@ Position Size = (Account Balance × Risk %) / (Entry Price - Stop Loss)
 
 **Max Risk per Trade**: 5% (configurable)
 - Protects against single bad trade
+- Calculated as equity × 5%
 
 **Max Total Risk**: 30%
 - Limits total portfolio exposure
+- Prevents over-leveraging
 
-**Max Positions**: 6 concurrent positions
+**Max Positions**: 5-6 concurrent positions
 - Prevents over-diversification
 - Maintains manageable portfolio
+- Enables 2-3 meaningful positions
+
+**Confidence Threshold**: 0.55 (55%)
+- Minimum signal confidence to execute
+- Optimized from 0.60 for more trading opportunities
+- Filters weak signals while allowing valid trades
+
+**Capital Allocation**:
+- **Per Position**: Max 30% of available trading capital
+- **Cash Reserve**: Maintains 40% of available margin as reserve
+- **Available Capital**: 60% of available margin for trading
+- **Total Exposure**: Max 60% of account equity
 
 ### Leverage
 
@@ -576,18 +603,51 @@ Timer (3 minutes)
 
 ## Algorithms
 
-### Position Sizing Algorithm
+### Position Sizing Algorithm (Optimized)
 
 ```typescript
 function calculatePositionSize(
-  accountBalance: number,
-  riskPercentage: number,
-  entryPrice: number,
-  stopLoss: number
-): number {
-  const riskAmount = accountBalance * riskPercentage
-  const priceDistance = Math.abs(entryPrice - stopLoss)
-  return riskAmount / priceDistance
+  signal: TradingSignal,
+  account: Account,
+  currentPrice: number
+): PositionSizing {
+  // Step 1: Calculate risk amount
+  const riskAmount = account.equity * maxRiskPerTrade
+  
+  // Step 2: Calculate risk-based position value
+  const stopLoss = signal.stop_loss || 0.03
+  const riskBasedPositionValue = riskAmount / stopLoss
+  
+  // Step 3: Calculate capital-based position value
+  // 40% reserve for additional positions
+  const minReservePercent = 0.4
+  const availableForTrade = account.availableMargin * (1 - minReservePercent)
+  const maxCapitalBasedValue = availableForTrade * 0.3
+  
+  // Step 4: Choose smaller value for safety
+  const finalPositionValue = Math.min(
+    maxCapitalBasedValue, 
+    riskBasedPositionValue
+  )
+  
+  // Step 5: Apply minimum position size
+  // Dynamic minimum: 1% of equity or $200
+  const minPositionValue = Math.max(200, account.equity * 0.01)
+  const adjustedPositionValue = Math.max(
+    minPositionValue, 
+    finalPositionValue
+  )
+  
+  // Step 6: Convert to position units
+  const pricePerUnit = signal.entry_price || currentPrice
+  const positionSize = adjustedPositionValue / pricePerUnit
+  
+  return {
+    coin: signal.coin,
+    suggestedSize: positionSize,
+    riskAmount,
+    stopLossPrice: calculateStopLoss(signal.action, pricePerUnit, stopLoss)
+  }
 }
 ```
 
@@ -599,26 +659,40 @@ function validateRisk(
   currentPositions: Position[],
   account: Account
 ): boolean {
+  // Check signal format
+  if (!signal.coin || !signal.action || !signal.confidence) {
+    return false
+  }
+  
+  // Check confidence threshold (optimized to 0.55)
+  if (signal.confidence < 0.55) {
+    return false
+  }
+  
   // Check max positions
   if (currentPositions.length >= maxPositions) {
     return false
   }
   
-  // Check position size
-  const positionSize = calculatePositionSize(...)
-  if (positionSize > maxPositionSize) {
+  // Check existing position (properly normalized symbol comparison)
+  const positionSymbol = `${signal.coin}/USDT`
+  const existingPosition = currentPositions.find(
+    p => p.symbol === positionSymbol
+  )
+  if (existingPosition && 
+      (signal.action === 'LONG' || signal.action === 'SHORT')) {
     return false
   }
   
   // Check total exposure
-  const totalExposure = calculateTotalExposure(currentPositions)
-  if (totalExposure > maxTotalRisk) {
+  const totalRisk = calculateTotalRisk(currentPositions, account)
+  if (totalRisk >= maxTotalRisk) {
     return false
   }
   
-  // Check stop-loss distance
-  const stopLossDistance = calculateStopLossDistance(signal)
-  if (stopLossDistance > maxStopLoss) {
+  // Check stop-loss validity
+  if (signal.stop_loss && 
+      (signal.stop_loss < 0.01 || signal.stop_loss > 0.1)) {
     return false
   }
   

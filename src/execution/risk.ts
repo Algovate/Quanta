@@ -1,4 +1,4 @@
-import { Account, Position, TradingSignal } from '../exchange/types';
+import { Account, Position, TradingSignal } from '../exchange/types.js';
 
 export interface RiskParams {
   maxRiskPerTrade: number; // 0.05 = 5%
@@ -68,15 +68,23 @@ export class RiskManager {
       const riskBasedPositionValue = riskAmount / actualStopLoss;
 
       // Step 2: Limit position size to avoid over-leveraging
-      // Use max 20% of available capital per trade to ensure we can open multiple positions
-      const maxCapitalPercent = 0.2;
-      const maxCapitalBasedValue = account.availableMargin * maxCapitalPercent;
+      // Use max 30% of available capital per trade to ensure we can open multiple positions
+      // But ensure we leave at least 40% available for other trades
+      const maxCapitalPercent = 0.3;
+      const minReservePercent = 0.4;
+      const availableForTrade = account.availableMargin * (1 - minReservePercent);
+      const maxCapitalBasedValue = availableForTrade * maxCapitalPercent;
 
-      // Step 3: Choose the smaller value (risk-based or capital-based)
+      // Step 3: Choose the smaller value (risk-based or capital-based) but ensure minimum size
       const finalPositionValue = Math.min(maxCapitalBasedValue, riskBasedPositionValue);
 
+      // Ensure minimum position value (1% of account or $200, whichever is higher)
+      // This scales with account size and prevents tiny positions
+      const minPositionValue = Math.max(200, account.equity * 0.01);
+      const adjustedPositionValue = Math.max(minPositionValue, finalPositionValue);
+
       // Step 4: Calculate position size in units
-      const suggestedSizeWithoutLeverage = finalPositionValue / pricePerUnit;
+      const suggestedSizeWithoutLeverage = adjustedPositionValue / pricePerUnit;
 
       // Step 5: Apply leverage (currently set to 1 for simulations)
       const leverage = Math.min(this.params.maxLeverage, Math.max(this.params.minLeverage, 1));
@@ -111,16 +119,18 @@ export class RiskManager {
         return false;
       }
 
-      // Check confidence threshold
-      if (signal.confidence < 0.6) {
+      // Check confidence threshold (lowered to 0.55 to allow more trading opportunities)
+      if (signal.confidence < 0.55) {
         console.log(`Signal confidence (${signal.confidence}) too low`);
         return false;
       }
 
       // Check if we already have a position in this coin
-      const existingPosition = currentPositions.find(p => p.symbol === signal.coin);
-      if (existingPosition && signal.action === 'LONG') {
-        console.log(`Already have position in ${signal.coin}`);
+      // Normalize symbol comparison (e.g., "BTC/USDT" vs "BTC")
+      const positionSymbol = `${signal.coin}/USDT`;
+      const existingPosition = currentPositions.find(p => p.symbol === positionSymbol);
+      if (existingPosition && (signal.action === 'LONG' || signal.action === 'SHORT')) {
+        console.log(`Already have position in ${signal.coin} (${existingPosition.side})`);
         return false;
       }
 

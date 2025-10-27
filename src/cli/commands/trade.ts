@@ -1,12 +1,12 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
-import { getConfig } from '../../config/settings';
-import { SimulatorExchange } from '../../exchange/simulator';
-import { MarketDataProvider } from '../../data/market';
-import { OpenRouterClient } from '../../ai/agent';
-import { TradingWorkflow } from '../../core/workflow';
-import { handleAsync } from '../../utils/error-handler';
+import { getConfig } from '../../config/settings.js';
+import { SimulatorExchange } from '../../exchange/simulator.js';
+import { MarketDataProvider } from '../../data/market.js';
+import { OpenRouterClient } from '../../ai/agent.js';
+import { TradingWorkflow } from '../../core/workflow.js';
+import { handleAsync } from '../../utils/error-handler.js';
 
 export class TradeCommands {
   static register(program: Command): void {
@@ -112,16 +112,16 @@ export class TradeCommands {
     if (mode === 'simulation' || exchangeName === 'simulator') {
       exchange = new SimulatorExchange(10000);
     } else if (exchangeName === 'okx') {
-      const { OKXExchange } = await import('../../exchange/okx');
+      const { OKXExchange } = await import('../../exchange/okx.js');
       exchange = new OKXExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
     } else if (exchangeName === 'binance' || exchangeName === 'bin') {
-      const { BinanceExchange } = await import('../../exchange/binance');
+      const { BinanceExchange } = await import('../../exchange/binance.js');
       exchange = new BinanceExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
     } else if (exchangeName === 'coinbase' || exchangeName === 'cb') {
-      const { CoinbaseExchange } = await import('../../exchange/coinbase');
+      const { CoinbaseExchange } = await import('../../exchange/coinbase.js');
       exchange = new CoinbaseExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
     } else if (exchangeName === 'hyperliquid' || exchangeName === 'hliq') {
-      const { HyperliquidExchange } = await import('../../exchange/hyperliquid');
+      const { HyperliquidExchange } = await import('../../exchange/hyperliquid.js');
       exchange = new HyperliquidExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
     } else {
       throw new Error(`Unsupported exchange: ${exchangeName}`);
@@ -152,13 +152,75 @@ export class TradeCommands {
     spinner.succeed('Trading system initialized');
 
     if (uiMode === 'tui') {
-      console.log(chalk.yellow('🎨 TUI mode not yet implemented, falling back to CLI mode'));
+      try {
+        console.log(chalk.yellow('🎨 Starting interactive TUI...'));
+        
+        // Import and start TUI (now works with ESM)
+        const tuiManagerModule = await import('../../tui/manager.js');
+        const { TUIManager } = tuiManagerModule;
+        const appModule = await import('../../tui/app.js');
+        const { renderTUI } = appModule;
+        
+        const tuiManager = new TUIManager();
+        workflow.setEventEmitter(tuiManager);
+        tuiManager.start(); // Initialize TUI with startup logs
+
+        // Start the workflow in background
+        workflow.start().catch(error => {
+          console.error('Workflow error:', error);
+          tuiManager.addLog('error', `Workflow error: ${error}`);
+        });
+
+        // Render TUI
+        renderTUI(tuiManager, {
+          onExit: () => {
+            workflow.stop();
+            process.exit(0);
+          },
+          onPause: () => {
+            workflow.pause();
+          },
+          onResume: () => {
+            workflow.resume();
+          },
+          onStop: () => {
+            workflow.stop();
+            process.exit(0);
+          },
+        });
+
+      } catch (tuiError) {
+        console.error(chalk.red('❌ Failed to start TUI mode'));
+        
+        if (tuiError instanceof Error) {
+          const errorMsg = tuiError.message.toLowerCase();
+          
+          if (errorMsg.includes('yoga-wasm') || errorMsg.includes('native module')) {
+            console.error(chalk.yellow('   Reason: Ink/yoga-wasm dependency issue'));
+            console.log(chalk.gray('   Solution: Ensure project is built with npm run build'));
+          } else if (errorMsg.includes('display') || errorMsg.includes('stdout')) {
+            console.error(chalk.yellow('   Reason: Terminal display issue'));
+            console.log(chalk.gray('   Solution: Try a larger terminal window (min 120x30)'));
+          } else {
+            console.error(chalk.yellow('   Error:'), tuiError.message);
+          }
+        } else {
+          console.error(chalk.yellow('   Error:'), String(tuiError));
+        }
+        
+        console.log(chalk.gray('\n💡 Falling back to CLI mode...'));
+        console.log('');
+        console.log(chalk.green('🚀 Starting trading workflow...'));
+        console.log(chalk.gray('Press Ctrl+C to stop\n'));
+
+        await workflow.start();
+      }
+    } else {
+      console.log(chalk.green('🚀 Starting trading workflow...'));
+      console.log(chalk.gray('Press Ctrl+C to stop\n'));
+
+      await workflow.start();
     }
-
-    console.log(chalk.green('🚀 Starting trading workflow...'));
-    console.log(chalk.gray('Press Ctrl+C to stop\n'));
-
-    await workflow.start();
   }
 
   private static async runBacktest(options: {

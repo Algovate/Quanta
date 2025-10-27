@@ -1,5 +1,5 @@
-import { Exchange, Account, Position, Candlestick, Order } from './types';
-import { normalizeSymbol, calculatePositionPnl } from '../utils/symbol-utils';
+import { Exchange, Account, Position, Candlestick, Order } from './types.js';
+import { normalizeSymbol, calculatePositionPnl } from '../utils/symbol-utils.js';
 
 export class SimulatorExchange implements Exchange {
   private account: Account;
@@ -362,6 +362,15 @@ export class SimulatorExchange implements Exchange {
         const totalSize = existingPosition.size + amount;
         existingPosition.entryPrice = totalValue / totalSize;
         existingPosition.size = totalSize;
+
+        // Update margin used for the additional position
+        const additionalMargin = amount * price;
+        existingPosition.marginUsed += additionalMargin;
+        existingPosition.notional = totalSize * this.getCurrentPrice(symbol);
+
+        // Update account margins
+        this.account.availableMargin -= additionalMargin;
+        this.account.usedMargin += additionalMargin;
       } else {
         // Create new position
         this.createNewPosition(symbol, positionSide, amount, price);
@@ -415,7 +424,15 @@ export class SimulatorExchange implements Exchange {
     // Calculate total P&L from all open positions (unrealized)
     const unrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
 
-    // Total equity = initial balance + unrealized P&L from open positions
+    // Total equity = balance (includes all realized P&L) + unrealized P&L from open positions
     this.account.equity = this.account.balance + unrealizedPnl;
+
+    // Update margin ratio and ensure available margin reflects true available cash
+    // Available = equity - used margin (margin actually locked in positions)
+    this.account.availableMargin = Math.max(0, this.account.equity - this.account.usedMargin);
+
+    // Margin ratio should be calculated from exposure, not just used margin
+    this.account.marginRatio =
+      this.account.equity > 0 ? this.account.usedMargin / this.account.equity : 0;
   }
 }

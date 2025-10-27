@@ -1,11 +1,17 @@
-import { Exchange } from '../exchange/types';
-import { MarketDataProvider } from '../data/market';
-import { OpenRouterClient } from '../ai/agent';
-import { RiskManager } from '../execution/risk';
-import { OrderExecutor } from '../execution/orders';
-import { PositionMonitorService } from '../execution/monitor';
-import { Account, Position, TradingSignal } from '../types';
+import { Exchange } from '../exchange/types.js';
+import { MarketDataProvider } from '../data/market.js';
+import { OpenRouterClient } from '../ai/agent.js';
+import { RiskManager } from '../execution/risk.js';
+import { OrderExecutor } from '../execution/orders.js';
+import { PositionMonitorService } from '../execution/monitor.js';
+import { Account, Position, TradingSignal } from '../types/index.js';
 import chalk from 'chalk';
+
+export interface WorkflowEventEmitter {
+  emit(event: string, ...args: any[]): boolean;
+  on(event: string, listener: (...args: any[]) => void): void;
+  off(event: string, listener: (...args: any[]) => void): void;
+}
 
 export interface SystemState {
   isRunning: boolean;
@@ -42,17 +48,20 @@ export class TradingWorkflow {
   private config: WorkflowConfig;
   private state: SystemState;
   private intervalId?: NodeJS.Timeout;
+  private eventEmitter?: WorkflowEventEmitter;
 
   constructor(
     exchange: Exchange,
     marketDataProvider: MarketDataProvider,
     aiAgent: OpenRouterClient,
-    config: WorkflowConfig
+    config: WorkflowConfig,
+    eventEmitter?: WorkflowEventEmitter
   ) {
     this.exchange = exchange;
     this.marketDataProvider = marketDataProvider;
     this.aiAgent = aiAgent;
     this.config = config;
+    this.eventEmitter = eventEmitter;
 
     this.riskManager = new RiskManager(config.riskParams);
     this.orderExecutor = new OrderExecutor(exchange, this.riskManager);
@@ -70,13 +79,27 @@ export class TradingWorkflow {
     };
   }
 
+  private emitLog(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
+    if (this.eventEmitter) {
+      this.eventEmitter.emit('log', { level, message, timestamp: Date.now() });
+    }
+    // Still log to console in CLI mode
+    if (level === 'error') {
+      console.error(message);
+    } else if (level === 'warn') {
+      console.warn(message);
+    } else {
+      console.log(message);
+    }
+  }
+
   async start(): Promise<void> {
     if (this.state.isRunning) {
-      console.log('Workflow is already running');
+      this.emitLog('warn', 'Workflow is already running');
       return;
     }
 
-    console.log('🚀 Starting BetaArena trading workflow...');
+    this.emitLog('info', '🚀 Starting BetaArena trading workflow...');
     this.state.isRunning = true;
     this.state.startTime = Date.now();
     this.state.lastUpdate = Date.now();
@@ -92,11 +115,11 @@ export class TradingWorkflow {
 
   async stop(): Promise<void> {
     if (!this.state.isRunning) {
-      console.log('Workflow is not running');
+      this.emitLog('warn', 'Workflow is not running');
       return;
     }
 
-    console.log('🛑 Stopping BetaArena trading workflow...');
+    this.emitLog('info', '🛑 Stopping BetaArena trading workflow...');
     this.state.isRunning = false;
 
     if (this.intervalId) {
@@ -113,13 +136,34 @@ export class TradingWorkflow {
       this.state.cycleCount++;
       this.state.lastUpdate = Date.now();
 
-      console.log(`\n🔄 Cycle ${this.state.cycleCount} - ${new Date().toLocaleTimeString()}`);
+      this.emitLog(
+        'info',
+        `🔄 Cycle ${this.state.cycleCount} - ${new Date().toLocaleTimeString()}`
+      );
 
       // 1. Get account and positions
       const account = await this.exchange.getAccount();
       const positions = await this.exchange.getPositions();
 
-      console.log(`💰 Account: $${account.equity.toFixed(2)} | Positions: ${positions.length}`);
+      // Emit TUI update events
+      if (this.eventEmitter) {
+        this.eventEmitter.emit('account:update', account);
+        this.eventEmitter.emit('positions:update', positions);
+        this.eventEmitter.emit('system:status', {
+          isRunning: this.state.isRunning,
+          cycleCount: this.state.cycleCount,
+          startTime: this.state.startTime,
+          lastUpdate: this.state.lastUpdate,
+          totalSignals: this.state.totalSignals,
+          totalTrades: this.state.totalTrades,
+          winRate: this.state.winRate,
+        });
+      }
+
+      this.emitLog(
+        'info',
+        `💰 Account: $${account.equity.toFixed(2)} | Positions: ${positions.length}`
+      );
 
       // 2. Monitor existing positions
       if (positions.length > 0) {
@@ -138,7 +182,13 @@ export class TradingWorkflow {
       const signals = await this.aiAgent.generateTradingSignal(allMarketData, account, positions);
       this.state.totalSignals += signals.length;
 
-      console.log(`🤖 Generated ${signals.length} signals`);
+      // Emit TUI update events
+      if (this.eventEmitter) {
+        this.eventEmitter.emit('marketdata:update', allMarketData);
+        signals.forEach(signal => this.eventEmitter?.emit('signal:new', signal));
+      }
+
+      this.emitLog('info', `🤖 Generated ${signals.length} signals`);
 
       // 5. Execute signals
       for (const signal of signals) {
@@ -156,12 +206,20 @@ export class TradingWorkflow {
 
           if (result.success) {
             this.state.totalTrades++;
-            console.log(`✅ Executed ${signal.action} signal for ${signal.coin}`);
+            this.emitLog('success', `✅ Executed ${signal.action} signal for ${signal.coin}`);
+
+            // Emit TUI update events
+            if (this.eventEmitter && result.order) {
+              this.eventEmitter.emit('order:new', result.order);
+            }
           } else {
-            console.log(`❌ Failed to execute signal for ${signal.coin}: ${result.error}`);
+            this.emitLog(
+              'error',
+              `❌ Failed to execute signal for ${signal.coin}: ${result.error}`
+            );
           }
         } catch (error) {
-          console.error(`Error executing signal for ${signal.coin}:`, error);
+          this.emitLog('error', `Error executing signal for ${signal.coin}: ${error}`);
         }
       }
 
@@ -171,7 +229,7 @@ export class TradingWorkflow {
       // 7. Log cycle summary
       this.logCycleSummary(account, positions, signals);
     } catch (error) {
-      console.error('Error in trading cycle:', error);
+      this.emitLog('error', `Error in trading cycle: ${error}`);
     }
   }
 
@@ -243,6 +301,25 @@ export class TradingWorkflow {
 
   getState(): SystemState {
     return { ...this.state };
+  }
+
+  setEventEmitter(emitter: WorkflowEventEmitter): void {
+    this.eventEmitter = emitter;
+  }
+
+  async pause(): Promise<void> {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = undefined;
+    }
+  }
+
+  async resume(): Promise<void> {
+    if (!this.intervalId) {
+      this.intervalId = setInterval(async () => {
+        await this.executeCycle();
+      }, this.config.cyclePeriod);
+    }
   }
 
   updateConfig(newConfig: Partial<WorkflowConfig>): void {
