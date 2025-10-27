@@ -411,10 +411,10 @@ export class SimulatorExchange implements Exchange {
 
   private updateAccountEquity(): void {
     this.updateAllPositions();
-    
+
     // Calculate total P&L from all open positions (unrealized)
     const unrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
-    
+
     // Total equity = initial balance + unrealized P&L from open positions
     this.account.equity = this.account.balance + unrealizedPnl;
   }
