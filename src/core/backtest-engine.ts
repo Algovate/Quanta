@@ -14,7 +14,6 @@ import {
   Position,
   TradingSignal,
   PerformanceMetrics,
-  SignalStatistics,
 } from '../types/index.js';
 import { PerformanceAnalytics } from '../analytics/performance.js';
 import { SimulatorExchange } from '../exchange/simulator.js';
@@ -308,7 +307,7 @@ export class BacktestEngine {
 
     // Generate AI signals
     const signals = await this.generateSignals(marketData, context);
-    
+
     // Only count actionable signals (exclude HOLD)
     const actionableSignals = signals.filter(s => s.action !== 'HOLD');
     this.signalStats.generated += actionableSignals.length;
@@ -407,14 +406,14 @@ export class BacktestEngine {
           context.positions,
           currentPrice
         );
-        
+
         // Record result - result is always defined, but success may be false
         if (result.success) {
           this.signalStats.accepted++;
         } else {
           this.signalStats.rejected++;
         }
-      } catch (error) {
+      } catch {
         // Count exceptions as rejected signals
         this.signalStats.rejected++;
       }

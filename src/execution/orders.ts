@@ -74,12 +74,21 @@ export class OrderExecutor {
       const side = 'buy';
       const amount = sizing.suggestedSize;
       const price = signal.entry_price || currentPrice;
+      const leverage = sizing.leverage;
 
       // Silent during backtest
 
-      const order = await this.exchange.placeOrder(symbol, side, amount, price);
+      const order = await this.exchange.placeOrder(symbol, side, amount, price, leverage);
 
-      return { success: true, order };
+      // Check if order was actually filled
+      if (order.status === 'filled') {
+        return { success: true, order };
+      } else {
+        return {
+          success: false,
+          error: `Order ${order.status}: ${order.status === 'rejected' ? 'Insufficient margin' : 'Unknown reason'}`,
+        };
+      }
     } catch (error) {
       console.error('Error executing LONG order:', error);
       return {
@@ -99,12 +108,21 @@ export class OrderExecutor {
       const side = 'sell';
       const amount = sizing.suggestedSize;
       const price = signal.entry_price || currentPrice;
+      const leverage = sizing.leverage;
 
       // Silent during backtest
 
-      const order = await this.exchange.placeOrder(symbol, side, amount, price);
+      const order = await this.exchange.placeOrder(symbol, side, amount, price, leverage);
 
-      return { success: true, order };
+      // Check if order was actually filled
+      if (order.status === 'filled') {
+        return { success: true, order };
+      } else {
+        return {
+          success: false,
+          error: `Order ${order.status}: ${order.status === 'rejected' ? 'Insufficient margin' : 'Unknown reason'}`,
+        };
+      }
     } catch (error) {
       console.error('Error executing SHORT order:', error);
       return {

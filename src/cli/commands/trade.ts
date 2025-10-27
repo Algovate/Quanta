@@ -71,9 +71,6 @@ export class TradeCommands {
     coins: string;
     ui: string;
   }): Promise<void> {
-    console.log(chalk.cyan('🏆 Quanta Trading System'));
-    console.log(chalk.gray('AI-powered quantitative trading with real-time decision making\n'));
-
     const coins = options.coins.split(',').map((c: string) => c.trim());
     const mode = options.mode as 'live' | 'simulation' | 'backtest';
     const uiMode = options.ui as 'tui' | 'cli';
@@ -87,20 +84,27 @@ export class TradeCommands {
     const config = getConfig();
     const updatedConfig = { ...config, ...configUpdates };
 
-    console.log(chalk.blue('📊 Configuration:'));
-    console.log(`   Mode: ${mode}`);
-    console.log(`   Coins: ${coins.join(', ')}`);
-    console.log(`   UI: ${uiMode}`);
-    console.log('');
+    // Only show banner/config in CLI mode
+    if (uiMode === 'cli') {
+      console.log(chalk.cyan('🏆 Quanta Trading System'));
+      console.log(chalk.gray('AI-powered quantitative trading with real-time decision making\n'));
+      console.log(chalk.blue('📊 Configuration:'));
+      console.log(`   Mode: ${mode}`);
+      console.log(`   Coins: ${coins.join(', ')}`);
+      console.log(`   UI: ${uiMode}`);
+      console.log('');
+    }
 
     if (mode === 'backtest') {
-      console.log(chalk.yellow('⚠️  Backtest mode requires start and end dates'));
-      console.log(chalk.gray('   Use: quanta trade backtest --start 2024-01-01 --end 2024-12-31'));
+      if (uiMode === 'cli') {
+        console.log(chalk.yellow('⚠️  Backtest mode requires start and end dates'));
+        console.log(chalk.gray('   Use: quanta trade backtest --start 2024-01-01 --end 2024-12-31'));
+      }
       return;
     }
 
     // Initialize components
-    const spinner = ora('Initializing trading system...').start();
+    const spinner = uiMode === 'cli' ? ora('Initializing trading system...').start() : null;
 
     // Create exchange based on mode and config
     let exchange;
@@ -140,7 +144,7 @@ export class TradeCommands {
         maxPositions: config.trading.maxPositions,
         riskParams: {
           maxRiskPerTrade: config.trading.maxRisk,
-          maxTotalRisk: config.trading.maxRisk,
+          maxTotalRisk: 0.30, // Total margin usage limit (30% of account)
           defaultStopLoss: config.trading.stopLoss,
           maxLeverage: config.trading.leverageRange[1],
           minLeverage: config.trading.leverageRange[0],
@@ -149,11 +153,14 @@ export class TradeCommands {
       }
     );
 
-    spinner.succeed('Trading system initialized');
+    if (spinner) {
+      spinner.succeed('Trading system initialized');
+    }
 
     if (uiMode === 'tui') {
       try {
-        console.log(chalk.yellow('🎨 Starting interactive TUI...'));
+        // Clear screen for clean TUI display
+        console.clear();
         
         // Import and start TUI (now works with ESM)
         const tuiManagerModule = await import('../../tui/manager.js');

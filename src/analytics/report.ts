@@ -27,13 +27,25 @@ export class BacktestReport {
    * Display the report header
    */
   private displayHeader(): void {
-    console.log('\n' + chalk.cyan.bold('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓'));
-    console.log(chalk.cyan.bold('┃') + chalk.cyan.bold('  📈 Quanta Backtest Results'.padEnd(68)) + chalk.cyan.bold('┃'));
-    console.log(chalk.cyan.bold('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛'));
-    console.log(`  Period:         ${chalk.white.bold(this.result.config.startDate)} ${chalk.gray('→')} ${chalk.white.bold(this.result.config.endDate)}`);
+    console.log(
+      '\n' + chalk.cyan.bold('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓')
+    );
+    console.log(
+      chalk.cyan.bold('┃') +
+        chalk.cyan.bold('  📈 Quanta Backtest Results'.padEnd(68)) +
+        chalk.cyan.bold('┃')
+    );
+    console.log(
+      chalk.cyan.bold('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛')
+    );
+    console.log(
+      `  Period:         ${chalk.white.bold(this.result.config.startDate)} ${chalk.gray('→')} ${chalk.white.bold(this.result.config.endDate)}`
+    );
     console.log(`  Duration:       ${chalk.white.bold(this.formatDuration(this.result.duration))}`);
     console.log(`  Coins:          ${chalk.white.bold(this.result.config.coins.join(', '))}`);
-    console.log(`  Initial:        ${chalk.white.bold('$' + this.result.config.initialBalance.toLocaleString())}`);
+    console.log(
+      `  Initial:        ${chalk.white.bold('$' + this.result.config.initialBalance.toLocaleString())}`
+    );
     console.log('');
   }
 
@@ -43,17 +55,20 @@ export class BacktestReport {
   private displaySignalStatistics(): void {
     console.log(chalk.blue.bold('🤖 Signal Statistics'));
     console.log(chalk.gray('━'.repeat(70)));
-    
+
     const stats = this.result.signalStats;
-    const acceptanceRate = stats.generated > 0 
-      ? (stats.accepted / stats.generated * 100).toFixed(1) 
-      : '0.0';
-    
+    const acceptanceRate =
+      stats.generated > 0 ? ((stats.accepted / stats.generated) * 100).toFixed(1) : '0.0';
+
     console.log(`  Generated:        ${chalk.white.bold(stats.generated.toLocaleString())}`);
-    console.log(`  Accepted:         ${chalk.green.bold('✓')} ${chalk.green(stats.accepted.toLocaleString())}`);
-    console.log(`  Rejected:         ${chalk.red.bold('✗')} ${chalk.red(stats.rejected.toLocaleString())}`);
+    console.log(
+      `  Accepted:         ${chalk.green.bold('✓')} ${chalk.green(stats.accepted.toLocaleString())}`
+    );
+    console.log(
+      `  Rejected:         ${chalk.red.bold('✗')} ${chalk.red(stats.rejected.toLocaleString())}`
+    );
     console.log(`  Acceptance Rate:  ${this.formatAcceptanceRate(parseFloat(acceptanceRate))}`);
-    
+
     console.log('');
   }
 
@@ -67,11 +82,19 @@ export class BacktestReport {
     const totalReturnColor = this.metrics.totalReturn >= 0 ? chalk.green : chalk.red;
     const pnlSign = this.metrics.totalPnL >= 0 ? '+' : '';
 
-    console.log(`  Total Return:     ${totalReturnColor.bold(`${pnlSign}${this.metrics.totalReturn.toFixed(2)}%`)}`);
-    console.log(`  Total P&L:        ${totalReturnColor.bold(`${pnlSign}$${Math.abs(this.metrics.totalPnL).toFixed(2)}`)}`);
-    console.log(`  Final Balance:    ${chalk.white.bold('$' + this.result.finalEquity.toFixed(2))}`);
+    console.log(
+      `  Total Return:     ${totalReturnColor.bold(`${pnlSign}${this.metrics.totalReturn.toFixed(2)}%`)}`
+    );
+    console.log(
+      `  Total P&L:        ${totalReturnColor.bold(`${pnlSign}$${Math.abs(this.metrics.totalPnL).toFixed(2)}`)}`
+    );
+    console.log(
+      `  Final Balance:    ${chalk.white.bold('$' + this.result.finalEquity.toFixed(2))}`
+    );
     console.log(chalk.gray('  ' + '─'.repeat(68)));
-    console.log(`  Annual Return:    ${totalReturnColor(`${pnlSign}${this.metrics.annualizedReturn.toFixed(2)}%`)}`);
+    console.log(
+      `  Annual Return:    ${totalReturnColor(`${pnlSign}${this.metrics.annualizedReturn.toFixed(2)}%`)}`
+    );
     console.log(`  Sharpe Ratio:     ${this.formatSharpe(this.metrics.sharpeRatio)}`);
     console.log(`  Max Drawdown:     ${chalk.red.bold(this.metrics.maxDrawdown.toFixed(2) + '%')}`);
 
@@ -86,21 +109,27 @@ export class BacktestReport {
     console.log(chalk.gray('━'.repeat(70)));
 
     console.log(`  Total Trades:     ${chalk.white.bold(this.metrics.totalTrades)}`);
-    console.log(`  ${chalk.green('Wins:')} ${chalk.green(this.metrics.winningTrades)} ${chalk.gray('|')} ${chalk.red('Losses:')} ${chalk.red(this.metrics.losingTrades)}`);
+    console.log(
+      `  ${chalk.green('Wins:')} ${chalk.green(this.metrics.winningTrades)} ${chalk.gray('|')} ${chalk.red('Losses:')} ${chalk.red(this.metrics.losingTrades)}`
+    );
     console.log(`  Win Rate:         ${this.formatWinRateWithBar(this.metrics.winRate)}`);
     console.log(`  Profit Factor:    ${this.formatProfitFactor(this.metrics.profitFactor)}`);
 
     console.log(chalk.gray('  ' + '─'.repeat(68)));
-    
+
     if (this.metrics.avgWin > 0) {
       console.log(`  Average Win:      ${chalk.green.bold('$' + this.metrics.avgWin.toFixed(2))}`);
     }
     if (this.metrics.avgLoss < 0) {
-      console.log(`  Average Loss:     ${chalk.red.bold('$' + Math.abs(this.metrics.avgLoss).toFixed(2))}`);
+      console.log(
+        `  Average Loss:     ${chalk.red.bold('$' + Math.abs(this.metrics.avgLoss).toFixed(2))}`
+      );
     }
     console.log(`  Best Trade:       ${chalk.green('$' + this.metrics.bestTrade.toFixed(2))}`);
-    console.log(`  Worst Trade:      ${chalk.red('$' + Math.abs(this.metrics.worstTrade).toFixed(2))}`);
-    
+    console.log(
+      `  Worst Trade:      ${chalk.red('$' + Math.abs(this.metrics.worstTrade).toFixed(2))}`
+    );
+
     console.log(chalk.gray('  ' + '─'.repeat(68)));
     console.log(`  Avg Hold Period:  ${this.formatHoldingPeriod(this.metrics.avgHoldingPeriod)}`);
 
@@ -116,10 +145,16 @@ export class BacktestReport {
 
     console.log(`  Volatility:       ${this.formatVolatility(this.metrics.volatility)}`);
     console.log(`  VaR (95%):        ${chalk.red('$' + Math.abs(this.metrics.var95).toFixed(2))}`);
-    console.log(`  Max Drawdown:     ${chalk.red.bold('$' + Math.abs(this.metrics.maxDrawdownValue).toFixed(2))}`);
+    console.log(
+      `  Max Drawdown:     ${chalk.red.bold('$' + Math.abs(this.metrics.maxDrawdownValue).toFixed(2))}`
+    );
     console.log(chalk.gray('  ' + '─'.repeat(68)));
-    console.log(`  Largest Win:      ${chalk.green.bold('$' + this.metrics.largestWin.toFixed(2))}`);
-    console.log(`  Largest Loss:     ${chalk.red.bold('$' + Math.abs(this.metrics.largestLoss).toFixed(2))}`);
+    console.log(
+      `  Largest Win:      ${chalk.green.bold('$' + this.metrics.largestWin.toFixed(2))}`
+    );
+    console.log(
+      `  Largest Loss:     ${chalk.red.bold('$' + Math.abs(this.metrics.largestLoss).toFixed(2))}`
+    );
 
     console.log('');
   }

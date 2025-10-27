@@ -56,3 +56,31 @@ export function formatDuration(ms: number): string {
     return `${seconds}s`;
   }
 }
+
+export function formatChangePercent(value: number): string {
+  const sign = value >= 0 ? '+' : '';
+  const color = value >= 0 ? 'green' : 'red';
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+export function formatVolume(value: number): string {
+  if (value >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toFixed(2)}B`;
+  } else if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(2)}M`;
+  } else if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(2)}K`;
+  } else {
+    return value.toFixed(2);
+  }
+}
+
+export function formatDateTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}

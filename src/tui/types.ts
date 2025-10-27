@@ -48,6 +48,7 @@ export interface MarketDataSnapshot {
   };
   trend: 'bullish' | 'bearish' | 'sideways';
   volatility: 'low' | 'medium' | 'high';
+  timestamp?: number;
 }
 
 export interface SignalSnapshot {
@@ -85,6 +86,12 @@ export interface SystemStatus {
   totalTrades: number;
   winRate: number;
   riskLevel: 'low' | 'medium' | 'high';
+  // Performance metrics
+  avgPnL?: number;
+  largestWin?: number;
+  largestLoss?: number;
+  sharpeRatio?: number;
+  profitFactor?: number;
 }
 
 export interface ActiveView {

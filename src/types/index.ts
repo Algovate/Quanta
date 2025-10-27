@@ -106,11 +106,11 @@ export interface Candlestick {
 }
 
 export interface Account {
-  balance: number;
-  equity: number;
-  availableMargin: number;
-  usedMargin: number;
-  marginRatio: number;
+  balance: number; // Initial cash + all realized P&L (changes only on position close)
+  equity: number; // balance + unrealized P&L (real-time account value)
+  availableMargin: number; // Available for trading
+  usedMargin: number; // Margin locked in positions
+  marginRatio: number; // usedMargin / equity
   timestamp: number;
 }
 
@@ -325,7 +325,13 @@ export interface Exchange {
   getAccount(): Promise<Account>;
   getPositions(): Promise<Position[]>;
   getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]>;
-  placeOrder(symbol: string, side: 'buy' | 'sell', amount: number, price?: number): Promise<Order>;
+  placeOrder(
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    price?: number,
+    leverage?: number
+  ): Promise<Order>;
   cancelOrder(orderId: string, symbol: string): Promise<boolean>;
   getTicker(symbol: string): Promise<unknown>;
 }

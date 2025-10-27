@@ -38,10 +38,11 @@ export class RiskManager {
         return null;
       }
 
-      // Check total risk exposure
-      const totalRisk = this.calculateTotalRisk(currentPositions, account);
-      if (totalRisk >= this.params.maxTotalRisk) {
-        // Silent rejection
+      // Check total margin usage to prevent over-leveraging
+      const totalMarginUsed = currentPositions.reduce((sum, pos) => sum + pos.marginUsed, 0);
+      const currentMarginUsage = totalMarginUsed / account.equity;
+      if (currentMarginUsage >= this.params.maxTotalRisk) {
+        // Silent rejection - margin limit reached
         return null;
       }
 
@@ -81,13 +82,12 @@ export class RiskManager {
       const minPositionValue = Math.max(200, account.equity * 0.01);
       const adjustedPositionValue = Math.max(minPositionValue, finalPositionValue);
 
-      // Step 4: Calculate position size in units
-      const suggestedSizeWithoutLeverage = adjustedPositionValue / pricePerUnit;
+      // Step 4: Calculate position size in units (this is the amount we'll buy/sell)
+      const suggestedSize = adjustedPositionValue / pricePerUnit;
 
-      // Step 5: Apply leverage (currently set to 1 for simulations)
-      const leverage = Math.min(this.params.maxLeverage, Math.max(this.params.minLeverage, 1));
-
-      const leveragedSize = suggestedSizeWithoutLeverage * leverage;
+      // Step 5: Determine leverage to use
+      // For simulation/safety, use minimum leverage from config
+      const leverage = this.params.minLeverage;
 
       // Calculate stop loss price
       const stopLossPrice =
@@ -97,11 +97,11 @@ export class RiskManager {
 
       return {
         coin: signal.coin,
-        suggestedSize: leveragedSize,
-        maxSize: leveragedSize,
+        suggestedSize: suggestedSize, // Size in units (coins), NOT leveraged
+        maxSize: suggestedSize,
         riskAmount,
         stopLossPrice,
-        leverage,
+        leverage, // This is for reference, actual leverage applied by exchange
       };
     } catch (error) {
       console.error('Error calculating position sizing:', error);

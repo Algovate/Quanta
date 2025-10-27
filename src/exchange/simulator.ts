@@ -106,7 +106,8 @@ export class SimulatorExchange implements Exchange {
     symbol: string,
     side: 'buy' | 'sell',
     amount: number,
-    price?: number
+    price?: number,
+    leverage: number = 1
   ): Promise<Order> {
     const normalizedSymbol = normalizeSymbol(symbol);
     const orderPrice = price || this.getCurrentPrice(normalizedSymbol);
@@ -123,8 +124,8 @@ export class SimulatorExchange implements Exchange {
 
     this.orders.push(order);
 
-    // Execute order immediately (synchronously)
-    this.executeOrder(order);
+    // Execute order immediately (synchronously) with leverage
+    this.executeOrder(order, leverage);
 
     return order;
   }
@@ -244,36 +245,23 @@ export class SimulatorExchange implements Exchange {
     return this.getBasePrice(symbol);
   }
 
-  private executeOrder(order: Order): void {
+  private executeOrder(order: Order, leverage: number = 1): void {
     const currentPrice = this.getCurrentPrice(order.symbol);
     const executedPrice = order.price || currentPrice;
-    const value = order.amount * executedPrice;
+    const notionalValue = order.amount * executedPrice; // Total position value
+    const marginRequired = notionalValue / leverage; // Margin needed with leverage
 
-    if (order.side === 'buy') {
-      // Check if we have enough balance
-      if (value <= this.account.availableMargin) {
+    if (order.side === 'buy' || order.side === 'sell') {
+      // Check if we have enough margin
+      if (marginRequired <= this.account.availableMargin) {
         // Create position first
-        this.updatePosition(order.symbol, order.side, order.amount, executedPrice);
+        this.updatePosition(order.symbol, order.side, order.amount, executedPrice, leverage);
 
         // Update account balances
-        this.account.availableMargin -= value;
-        this.account.usedMargin += value;
-
-        order.status = 'filled';
-        order.price = executedPrice;
-      } else {
-        order.status = 'rejected';
-      }
-    } else {
-      // Handle sell orders (SHORT positions)
-      // Check if we have enough balance for margin
-      if (value <= this.account.availableMargin) {
-        // Create short position
-        this.updatePosition(order.symbol, order.side, order.amount, executedPrice);
-
-        // Update account balances
-        this.account.availableMargin -= value;
-        this.account.usedMargin += value;
+        // For futures: balance stays the same, only used margin increases
+        // balance = initial cash - realized P&L only (not affected by opening positions)
+        this.account.availableMargin -= marginRequired;
+        this.account.usedMargin += marginRequired;
 
         order.status = 'filled';
         order.price = executedPrice;
@@ -287,7 +275,8 @@ export class SimulatorExchange implements Exchange {
     symbol: string,
     side: 'buy' | 'sell',
     amount: number,
-    price: number
+    price: number,
+    leverage: number = 1
   ): void {
     const positionSide = side === 'buy' ? 'long' : 'short';
     const oppositeSide = positionSide === 'long' ? 'short' : 'long';
@@ -327,7 +316,7 @@ export class SimulatorExchange implements Exchange {
 
         // If there's remaining amount, open new position
         if (remainingAmount > 0) {
-          this.createNewPosition(symbol, positionSide, remainingAmount, price);
+          this.createNewPosition(symbol, positionSide, remainingAmount, price, leverage);
         }
       } else {
         // Partial close: reduce position size
@@ -367,13 +356,14 @@ export class SimulatorExchange implements Exchange {
         const additionalMargin = amount * price;
         existingPosition.marginUsed += additionalMargin;
         existingPosition.notional = totalSize * this.getCurrentPrice(symbol);
+        existingPosition.leverage = leverage; // Update leverage
 
         // Update account margins
         this.account.availableMargin -= additionalMargin;
         this.account.usedMargin += additionalMargin;
       } else {
         // Create new position
-        this.createNewPosition(symbol, positionSide, amount, price);
+        this.createNewPosition(symbol, positionSide, amount, price, leverage);
       }
     }
   }
@@ -382,9 +372,12 @@ export class SimulatorExchange implements Exchange {
     symbol: string,
     side: 'long' | 'short',
     amount: number,
-    price: number
+    price: number,
+    leverage: number = 1
   ): void {
     const normalizedSymbol = normalizeSymbol(symbol);
+    const notionalValue = amount * price;
+    const marginRequired = notionalValue / leverage;
 
     this.positions.push({
       symbol: normalizedSymbol,
@@ -393,9 +386,9 @@ export class SimulatorExchange implements Exchange {
       entryPrice: price,
       markPrice: price,
       unrealizedPnl: 0,
-      marginUsed: amount * price,
-      notional: amount * price,
-      leverage: 1,
+      marginUsed: marginRequired, // Only margin, not full notional
+      notional: notionalValue, // Full position value
+      leverage: leverage, // Actual leverage used
       timestamp: Date.now(),
     });
   }
@@ -424,15 +417,27 @@ export class SimulatorExchange implements Exchange {
     // Calculate total P&L from all open positions (unrealized)
     const unrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
 
-    // Total equity = balance (includes all realized P&L) + unrealized P&L from open positions
+    // Total equity = balance (initial cash + realized P&L from closed positions) + unrealized P&L from open positions
     this.account.equity = this.account.balance + unrealizedPnl;
 
-    // Update margin ratio and ensure available margin reflects true available cash
-    // Available = equity - used margin (margin actually locked in positions)
+    // Available margin = equity - used margin (margin locked in positions)
     this.account.availableMargin = Math.max(0, this.account.equity - this.account.usedMargin);
 
-    // Margin ratio should be calculated from exposure, not just used margin
+    // Margin ratio = used margin / equity
     this.account.marginRatio =
       this.account.equity > 0 ? this.account.usedMargin / this.account.equity : 0;
+
+    // Verify: equity - usedMargin = availableMargin
+    if (
+      Math.abs(this.account.equity - this.account.usedMargin - this.account.availableMargin) > 0.01
+    ) {
+      console.warn('Account calculation mismatch!', {
+        equity: this.account.equity,
+        usedMargin: this.account.usedMargin,
+        availableMargin: this.account.availableMargin,
+        balance: this.account.balance,
+        unrealizedPnl,
+      });
+    }
   }
 }

@@ -1,7 +1,10 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
 import { AccountSnapshot } from '../../types.js';
 import { formatCurrency, formatPercent } from '../../utils/format-utils.js';
+import { PanelHeader } from '../shared/panel-header.js';
+import { EmptyState } from '../shared/empty-state.js';
+import { KeyValueRow } from '../shared/key-value-row.js';
 
 interface AccountPanelProps {
   account: AccountSnapshot | null;
@@ -10,8 +13,9 @@ interface AccountPanelProps {
 export function AccountPanel({ account }: AccountPanelProps) {
   if (!account) {
     return (
-      <Box flexDirection="column" padding={1}>
-        <Text color="gray">No account data</Text>
+      <Box flexDirection="column">
+        <PanelHeader title="Account" icon="📊" />
+        <EmptyState message="No account data" />
       </Box>
     );
   }
@@ -20,54 +24,26 @@ export function AccountPanel({ account }: AccountPanelProps) {
   const pnlSign = account.totalPnL >= 0 ? '+' : '';
 
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box flexDirection="row" justifyContent="space-between">
-        <Text bold color="cyan">
-          📊 Account
-        </Text>
-        <Text color="gray">{new Date(account.timestamp).toLocaleTimeString()}</Text>
-      </Box>
+    <Box flexDirection="column">
+      <PanelHeader title="Account" icon="📊" timestamp={account.timestamp} />
 
       <Box marginTop={1} flexDirection="column">
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text>Balance:</Text>
-          <Text bold color="white">
-            {formatCurrency(account.balance)}
-          </Text>
-        </Box>
-
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text>Equity:</Text>
-          <Text bold color="magenta">
-            {formatCurrency(account.equity)}
-          </Text>
-        </Box>
-
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text>Available:</Text>
-          <Text color="green">{formatCurrency(account.availableMargin)}</Text>
-        </Box>
-
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text>Used Margin:</Text>
-          <Text color="yellow">{formatCurrency(account.usedMargin)}</Text>
-        </Box>
-
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text>Margin Ratio:</Text>
-          <Text color={account.marginRatio > 0.9 ? 'red' : 'green'}>
-            {(account.marginRatio * 100).toFixed(1)}%
-          </Text>
-        </Box>
-
-        <Box marginTop={1} flexDirection="row" justifyContent="space-between">
-          <Text bold>Total P&L:</Text>
-          <Text bold color={pnlColor}>
-            {pnlSign}
-            {formatCurrency(account.totalPnL)} ({pnlSign}
-            {formatPercent((account.totalPnL / account.balance) * 100)})
-          </Text>
-        </Box>
+        <KeyValueRow label="Balance:" value={formatCurrency(account.balance)} valueColor="white" bold />
+        <KeyValueRow label="Equity:" value={formatCurrency(account.equity)} valueColor="magenta" bold />
+        <KeyValueRow label="Available:" value={formatCurrency(account.availableMargin)} valueColor="green" />
+        <KeyValueRow label="Used Margin:" value={formatCurrency(account.usedMargin)} valueColor="yellow" />
+        <KeyValueRow 
+          label="Margin Ratio:" 
+          value={`${(account.marginRatio * 100).toFixed(1)}%`}
+          valueColor={account.marginRatio > 0.9 ? 'red' : 'green'} 
+          marginBottom={1}
+        />
+        <KeyValueRow 
+          label="Total P&L:" 
+          value={`${pnlSign}${formatCurrency(account.totalPnL)} (${pnlSign}${formatPercent((account.totalPnL / account.balance) * 100)})`}
+          valueColor={pnlColor}
+          bold 
+        />
       </Box>
     </Box>
   );

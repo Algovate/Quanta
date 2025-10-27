@@ -13,7 +13,7 @@ export function StatusBar({ status }: StatusBarProps) {
   const statusText = status.isPaused ? 'PAUSED' : status.isRunning ? 'RUNNING' : 'STOPPED';
 
   return (
-    <Box flexDirection="row" paddingX={1} paddingY={1} borderStyle="single">
+    <Box flexDirection="row" paddingX={1} paddingY={1} borderStyle="round" borderColor="cyan">
       <Box flexDirection="row" marginRight={2}>
         <Text>Status: </Text>
         <Text bold color={statusColor}>

@@ -195,14 +195,14 @@ export class PerformanceAnalytics {
    */
   private calculateAvgHoldingPeriod(trades: CompletedTrade[]): number {
     if (trades.length === 0) return 0;
-    
+
     // Validate and filter out invalid holding periods
     const validTrades = trades.filter(
       t => t.holdingPeriod > 0 && t.holdingPeriod < 1000000000 // Max 1 billion seconds (31+ years)
     );
-    
+
     if (validTrades.length === 0) return 0;
-    
+
     const totalSeconds = validTrades.reduce((sum, t) => sum + t.holdingPeriod, 0);
     const totalHours = totalSeconds / (60 * 60);
     return totalHours / validTrades.length;
