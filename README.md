@@ -93,6 +93,7 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 - 🧪 [Testing & Simulation](docs/testing-simulation.md)
 - 📚 [Command Reference](docs/commands.md)
 - 💡 [Core Concepts](docs/concepts.md)
+- 🏦 [Supported Exchanges](docs/exchanges.md)
 
 ## Development
 

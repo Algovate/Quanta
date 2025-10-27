@@ -29,6 +29,11 @@ beta-arena test ai --type mock --coin BTC
 
 # Test market data
 beta-arena test kline --exchange simulator --coin BTC
+
+# Test different exchanges
+beta-arena test kline --exchange bin --coin BTC
+beta-arena test kline --exchange cb --coin ETH
+beta-arena test kline --exchange hliq --coin SOL
 ```
 
 ### 2. Configure API Keys

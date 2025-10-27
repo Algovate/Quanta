@@ -189,8 +189,15 @@ Options:
 # Test simulator
 beta-arena test kline --exchange simulator --coin BTC
 
-# Test real exchange
+# Test real exchange (full name)
 beta-arena test kline --exchange binance --coin BTC --timeframe 1h
+
+# Test with abbreviations
+beta-arena test kline --exchange bin --coin BTC
+beta-arena test kline --exchange cb --coin ETH
+beta-arena test kline --exchange hliq --coin SOL
+
+# Supported exchanges: simulator, binance/bin, okx, coinbase/cb, hyperliquid/hliq
 ```
 
 ---

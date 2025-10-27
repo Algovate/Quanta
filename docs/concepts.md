@@ -29,7 +29,8 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 **1. Exchange Interface**
 - Abstract interface for multiple exchanges
 - Unified API for trading operations
-- Supported: Simulator, OKX, Binance, Coinbase
+- Supported: Simulator, OKX, Binance, Coinbase, Hyperliquid
+- All exchanges support abbreviations: bin (binance), cb (coinbase), hliq (hyperliquid)
 
 **2. Market Data Provider**
 - Fetches candlestick data
