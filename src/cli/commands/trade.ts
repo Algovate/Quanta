@@ -43,6 +43,27 @@ export class TradeCommands {
           await TradeCommands.showStatus();
         }, 'TradeCommands.status');
       });
+
+    program
+      .command('pause')
+      .description('Temporarily pause the trading system')
+      .option('--reason <reason>', 'Reason for pausing', 'Manual pause')
+      .action(async (options) => {
+        await handleAsync(async () => {
+          await TradeCommands.pauseTrading(options);
+        }, 'TradeCommands.pause');
+      });
+
+    program
+      .command('stop')
+      .description('Stop the running trading system')
+      .option('--graceful', 'Graceful shutdown (finish current trades)', false)
+      .option('--force', 'Force immediate stop', false)
+      .action(async (options) => {
+        await handleAsync(async () => {
+          await TradeCommands.stopTrading(options);
+        }, 'TradeCommands.stop');
+      });
   }
 
   private static async startTrading(options: {
@@ -178,5 +199,79 @@ export class TradeCommands {
     console.log('');
 
     console.log(chalk.yellow('⚠️  Live status monitoring not yet implemented'));
+  }
+
+  private static async pauseTrading(options: {
+    reason: string;
+  }): Promise<void> {
+    console.log(chalk.cyan('⏸️  Pausing Trading System'));
+    console.log(chalk.gray('='.repeat(60)));
+    console.log(`Reason: ${options.reason}\n`);
+
+    try {
+      // Check if trading system is running
+      console.log(chalk.blue('📊 Checking system status...'));
+      
+      // In a real implementation, this would:
+      // 1. Check for running workflow
+      // 2. Set pause flag
+      // 3. Save current state
+      // 4. Notify monitoring systems
+      
+      console.log(chalk.yellow('⚠️  Pause functionality not yet implemented'));
+      console.log(chalk.gray('   This will:'));
+      console.log(chalk.gray('   - Pause trading cycles'));
+      console.log(chalk.gray('   - Keep positions open'));
+      console.log(chalk.gray('   - Save state for resumption'));
+      
+    } catch (error) {
+      console.error(chalk.red('❌ Error pausing trading system'));
+      throw error;
+    }
+  }
+
+  private static async stopTrading(options: {
+    graceful?: boolean;
+    force?: boolean;
+  }): Promise<void> {
+    const graceful = options.graceful || false;
+    const force = options.force || false;
+
+    console.log(chalk.cyan('🛑 Stopping Trading System'));
+    console.log(chalk.gray('='.repeat(60)));
+    console.log(`Mode: ${graceful ? 'Graceful' : force ? 'Force' : 'Standard'}\n`);
+
+    try {
+      console.log(chalk.blue('📊 Checking active positions...'));
+      
+      if (graceful) {
+        console.log(chalk.yellow('⏳ Graceful shutdown: Finishing current trades...'));
+        console.log(chalk.gray('   - Waiting for open orders to complete'));
+        console.log(chalk.gray('   - Closing positions safely'));
+        console.log(chalk.gray('   - Saving final state'));
+      } else if (force) {
+        console.log(chalk.red('⚠️  Force stop: Immediate termination'));
+        console.log(chalk.gray('   - Stopping all trading activity immediately'));
+        console.log(chalk.gray('   - Positions may remain open'));
+      } else {
+        console.log(chalk.yellow('⏹️  Standard stop: Safe shutdown'));
+        console.log(chalk.gray('   - Stopping new trade cycles'));
+        console.log(chalk.gray('   - Completing current operations'));
+      }
+
+      console.log('');
+      console.log(chalk.yellow('⚠️  Stop functionality not yet implemented'));
+      console.log(chalk.gray('   This will:'));
+      console.log(chalk.gray('   - Stop trading workflow'));
+      console.log(chalk.gray('   - Close or keep positions (based on mode)'));
+      console.log(chalk.gray('   - Save session summary'));
+      
+      console.log('');
+      console.log(chalk.green('💡 Tip: Use Ctrl+C to interrupt running trade commands'));
+      
+    } catch (error) {
+      console.error(chalk.red('❌ Error stopping trading system'));
+      throw error;
+    }
   }
 }

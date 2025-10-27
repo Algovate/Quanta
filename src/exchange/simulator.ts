@@ -237,7 +237,7 @@ export class SimulatorExchange implements Exchange {
       if (value <= this.account.availableMargin) {
         // Create position first
         this.updatePosition(order.symbol, order.side, order.amount, executedPrice);
-        
+
         // Update account balances
         this.account.availableMargin -= value;
         this.account.usedMargin += value;
@@ -253,7 +253,7 @@ export class SimulatorExchange implements Exchange {
       if (value <= this.account.availableMargin) {
         // Create short position
         this.updatePosition(order.symbol, order.side, order.amount, executedPrice);
-        
+
         // Update account balances
         this.account.availableMargin -= value;
         this.account.usedMargin += value;
@@ -273,7 +273,9 @@ export class SimulatorExchange implements Exchange {
     price: number
   ): void {
     const positionSide = side === 'buy' ? 'long' : 'short';
-    const existingPosition = this.positions.find(p => p.symbol === symbol && p.side === positionSide);
+    const existingPosition = this.positions.find(
+      p => p.symbol === symbol && p.side === positionSide
+    );
 
     if (existingPosition) {
       // Update existing position

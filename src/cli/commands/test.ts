@@ -44,6 +44,18 @@ export class TestCommands {
           await TestCommands.testDataSources(options);
         }, 'TestCommands.data-sources');
       });
+
+    program
+      .command('ai')
+      .description('Test AI integration (Mock and Real AI)')
+      .option('-t, --type <type>', 'AI type to test: mock, real, or both', 'both')
+      .option('-c, --coin <coin>', 'Coin to test', 'BTC')
+      .option('-v, --verbose', 'Show detailed output', false)
+      .action(async (options) => {
+        await handleAsync(async () => {
+          await TestCommands.testAI(options);
+        }, 'TestCommands.ai');
+      });
   }
 
   private static async testKline(options: {
@@ -96,10 +108,10 @@ export class TestCommands {
       console.log(chalk.green(`✅ Retrieved ${klines.length} K-lines`));
     } catch (error: any) {
       console.log(chalk.red(`❌ Failed to retrieve K-line data\n`));
-      
+
       // Clean up error message
       let errorMsg = error.message || String(error);
-      
+
       // Extract key message from long error messages
       if (errorMsg.length > 200) {
         // Try to extract JSON message
@@ -111,9 +123,9 @@ export class TestCommands {
           errorMsg = errorMsg.substring(0, 200) + '...';
         }
       }
-      
+
       console.log(chalk.red(`   Error: ${errorMsg}`));
-      
+
       // Provide helpful suggestions
       if (errorMsg.includes('restricted location') || errorMsg.includes('451')) {
         console.log(chalk.yellow('\n💡 Suggestion: Binance may be restricted in your location'));
@@ -125,7 +137,7 @@ export class TestCommands {
         console.log(chalk.yellow('\n💡 Suggestion: Rate limit exceeded'));
         console.log(chalk.gray('   Wait a moment and try again'));
       }
-      
+
       console.log(''); // Empty line before stack trace
       throw error;
     }
@@ -155,8 +167,8 @@ export class TestCommands {
       const data = marketData[0];
       console.log(chalk.green('✅ Market data retrieved:'));
       console.log(chalk.blue('📊 Market Analysis:'));
-      const dataSource = exchange.constructor.name === 'SimulatorExchange' 
-        ? 'Simulated Market' 
+      const dataSource = exchange.constructor.name === 'SimulatorExchange'
+        ? 'Simulated Market'
         : exchange.getExchangeName ? exchange.getExchangeName() : 'Unknown Exchange';
       console.log(`   Data Source: ${dataSource}`);
       console.log(`   Analysis Method: Technical Indicators (100-period)`);
@@ -173,9 +185,9 @@ export class TestCommands {
     // Test 3: Account info (skip if no API credentials for non-simulator exchanges)
     console.log(chalk.yellow('\n🔍 Test 3: Account Information'));
     const isSimulator = exchange.constructor.name === 'SimulatorExchange';
-    const hasApiKey = !!(options.exchange === 'simulator' || 
+    const hasApiKey = !!(options.exchange === 'simulator' ||
                        process.env[`${options.exchange.toUpperCase()}_API_KEY`]);
-    
+
     if (isSimulator || hasApiKey) {
       try {
         const account = await exchange.getAccount();
@@ -353,5 +365,102 @@ export class TestCommands {
     console.log('   - Performance optimization');
     console.log('   - Cost control');
     console.log('   - Security isolation');
+  }
+
+  private static async testAI(options: {
+    type: string;
+    coin: string;
+    verbose: boolean;
+  }): Promise<void> {
+    console.log(chalk.cyan('🤖 Testing AI Integration'));
+    console.log(chalk.gray('='.repeat(60)));
+    console.log(`AI Type: ${options.type} | Coin: ${options.coin}\n`);
+
+    const config = getConfig();
+    const symbol = `${options.coin}/USDT`;
+
+    // Test Mock AI
+    if (options.type === 'mock' || options.type === 'both') {
+      console.log(chalk.yellow('📝 Testing Mock AI...'));
+      try {
+        const { MockAIAgent } = await import('../../ai/mock-agent');
+        const { SimulatorExchange } = await import('../../exchange/simulator');
+        const { MarketDataProvider } = await import('../../data/market');
+
+        const exchange = new SimulatorExchange(10000);
+        const marketProvider = new MarketDataProvider(exchange);
+        const mockAI = new MockAIAgent();
+
+        const marketData = await marketProvider.getMarketData(symbol, ['3m', '4h']);
+        const account = await exchange.getAccount();
+        const positions = await exchange.getPositions();
+
+        const signals = await mockAI.generateTradingSignal(marketData, account, positions);
+
+        console.log(chalk.green(`✅ Mock AI generated ${signals.length} signal(s)`));
+
+        if (options.verbose) {
+          signals.forEach((signal, index) => {
+            console.log(chalk.gray(`  Signal ${index + 1}:`));
+            console.log(chalk.gray(`    - Action: ${signal.action}`));
+            console.log(chalk.gray(`    - Confidence: ${(signal.confidence * 100).toFixed(1)}%`));
+            console.log(chalk.gray(`    - Reasoning: ${signal.reasoning}`));
+          });
+        }
+        console.log('');
+      } catch (error) {
+        console.log(chalk.red(`❌ Mock AI test failed: ${error}`));
+        console.log('');
+      }
+    }
+
+    // Test Real AI
+    if (options.type === 'real' || options.type === 'both') {
+      console.log(chalk.yellow('🤖 Testing Real AI (OpenRouter)...'));
+      try {
+        const apiKey = process.env.OPENROUTER_API_KEY || config.ai.apiKey;
+
+        if (!apiKey) {
+          console.log(chalk.yellow('⚠️  OPENROUTER_API_KEY not found'));
+          console.log(chalk.gray('   Skipping real AI test'));
+          console.log(chalk.gray('   Set OPENROUTER_API_KEY to test real AI\n'));
+        } else {
+          const { OpenRouterClient } = await import('../../ai/agent');
+          const { SimulatorExchange } = await import('../../exchange/simulator');
+          const { MarketDataProvider } = await import('../../data/market');
+
+          const exchange = new SimulatorExchange(10000);
+          const marketProvider = new MarketDataProvider(exchange);
+          const realAI = new OpenRouterClient(apiKey);
+
+          const marketData = await marketProvider.getMarketData(symbol, ['3m', '4h']);
+          const account = await exchange.getAccount();
+          const positions = await exchange.getPositions();
+
+          const signals = await realAI.generateTradingSignal(marketData, account, positions);
+
+          console.log(chalk.green(`✅ Real AI generated ${signals.length} signal(s)`));
+
+          if (options.verbose) {
+            signals.forEach((signal, index) => {
+              console.log(chalk.gray(`  Signal ${index + 1}:`));
+              console.log(chalk.gray(`    - Action: ${signal.action}`));
+              console.log(chalk.gray(`    - Confidence: ${(signal.confidence * 100).toFixed(1)}%`));
+              console.log(chalk.gray(`    - Reasoning: ${signal.reasoning}`));
+            });
+          }
+          console.log('');
+        }
+      } catch (error) {
+        console.log(chalk.red(`❌ Real AI test failed: ${error}`));
+        console.log('');
+      }
+    }
+
+    console.log(chalk.green('✅ AI Integration Test Complete'));
+    console.log('');
+    console.log(chalk.yellow('💡 Available AI Types:'));
+    console.log('   - mock: Fast testing without API key');
+    console.log('   - real: Actual AI analysis (requires OPENROUTER_API_KEY)');
   }
 }

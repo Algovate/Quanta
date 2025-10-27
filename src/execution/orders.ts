@@ -144,7 +144,9 @@ export class OrderExecutor {
 
   async executeStopLoss(position: Position, currentPrice: number): Promise<OrderResult> {
     try {
-      const symbol = position.symbol.includes('/USDT') ? position.symbol : `${position.symbol}/USDT`;
+      const symbol = position.symbol.includes('/USDT')
+        ? position.symbol
+        : `${position.symbol}/USDT`;
       const side = position.side === 'long' ? 'sell' : 'buy';
       const amount = position.size;
 
@@ -164,7 +166,9 @@ export class OrderExecutor {
 
   async executeTakeProfit(position: Position, currentPrice: number): Promise<OrderResult> {
     try {
-      const symbol = position.symbol.includes('/USDT') ? position.symbol : `${position.symbol}/USDT`;
+      const symbol = position.symbol.includes('/USDT')
+        ? position.symbol
+        : `${position.symbol}/USDT`;
       const side = position.side === 'long' ? 'sell' : 'buy';
       const amount = position.size;
 

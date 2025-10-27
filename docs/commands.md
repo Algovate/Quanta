@@ -1,0 +1,369 @@
+# Command Reference
+
+Complete reference for all BetaArena commands.
+
+## Top-Level Commands
+
+```
+beta-arena
+├── trade      Trading operations (5 sub-commands)
+├── test       Testing and validation (4 sub-commands)
+├── config     Configuration management (6 sub-commands)
+└── simulate   Simulation and demonstration (1 sub-command)
+```
+
+## Trading Commands
+
+### `trade start` - Start AI Trading System
+
+Start the trading system in live or simulation mode.
+
+```bash
+beta-arena trade start [options]
+
+Options:
+  -m, --mode <mode>        Trading mode: live, simulation, backtest (default: "simulation")
+  -c, --coins <coins>       Comma-separated list of coins (default: "BTC,ETH,SOL")
+  --ui <ui>                 UI mode: tui or cli (default: "cli")
+```
+
+**Examples:**
+
+```bash
+# Simulation mode (recommended)
+beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+
+# Live mode (use with caution)
+beta-arena trade start --mode live --coins BTC
+```
+
+---
+
+### `trade pause` - Pause Trading System
+
+Temporarily pause the trading system.
+
+```bash
+beta-arena trade pause [options]
+
+Options:
+  --reason <reason>  Reason for pausing (default: "Manual pause")
+```
+
+**Examples:**
+
+```bash
+# Pause with reason
+beta-arena trade pause --reason "Maintenance window"
+
+# Standard pause
+beta-arena trade pause
+```
+
+---
+
+### `trade stop` - Stop Trading System
+
+Stop the running trading system.
+
+```bash
+beta-arena trade stop [options]
+
+Options:
+  --graceful  Graceful shutdown (finish current trades) (default: false)
+  --force     Force immediate stop (default: false)
+```
+
+**Examples:**
+
+```bash
+# Graceful stop (recommended)
+beta-arena trade stop --graceful
+
+# Force stop (emergency)
+beta-arena trade stop --force
+```
+
+---
+
+### `trade status` - Show Status
+
+Show current trading status.
+
+```bash
+beta-arena trade status
+```
+
+**Output:**
+
+```
+📊 BetaArena Status
+==========================================
+⚙️  Configuration:
+   Mode: simulation
+   Coins: BTC, ETH, SOL
+   Max Positions: 6
+   Cycle Period: 180s
+   Stop Loss: 3.0%
+
+🤖 AI Configuration:
+   Model: deepseek/deepseek-chat
+   Temperature: 0.7
+```
+
+---
+
+### `trade backtest` - Run Backtest
+
+Run backtest with historical data.
+
+```bash
+beta-arena trade backtest [options]
+
+Options:
+  -c, --coins <coins>        Comma-separated list of coins (default: "BTC,ETH,SOL")
+  -s, --start <date>         Start date (YYYY-MM-DD) (default: "2024-01-01")
+  -e, --end <date>           End date (YYYY-MM-DD) (default: "2024-12-31")
+  --initial-balance <amount> Initial balance (default: "10000")
+```
+
+**Examples:**
+
+```bash
+# Full year backtest
+beta-arena trade backtest --start 2024-01-01 --end 2024-12-31
+
+# Last 30 days
+beta-arena trade backtest --start 2024-11-01 --end 2024-12-01
+```
+
+---
+
+## Testing Commands
+
+### `test ai` - Test AI Integration
+
+Test AI integration (Mock and Real AI).
+
+```bash
+beta-arena test ai [options]
+
+Options:
+  -t, --type <type>  AI type to test: mock, real, or both (default: "both")
+  -c, --coin <coin>  Coin to test (default: "BTC")
+  -v, --verbose       Show detailed output (default: false)
+```
+
+**Examples:**
+
+```bash
+# Test Mock AI
+beta-arena test ai --type mock --coin BTC
+
+# Test Real AI
+beta-arena test ai --type real --coin BTC
+
+# Test both with details
+beta-arena test ai --type both --verbose
+```
+
+---
+
+### `test kline` - Test K-line Data
+
+Test K-line data retrieval.
+
+```bash
+beta-arena test kline [options]
+
+Options:
+  -e, --exchange <exchange>    Exchange to test (default: "simulator")
+  -c, --coin <coin>           Coin to test (default: "BTC")
+  -t, --timeframe <timeframe>  Timeframe to test (default: "3m")
+  -l, --limit <limit>          Number of candles to fetch (default: "20")
+```
+
+**Examples:**
+
+```bash
+# Test simulator
+beta-arena test kline --exchange simulator --coin BTC
+
+# Test real exchange
+beta-arena test kline --exchange binance --coin BTC --timeframe 1h
+```
+
+---
+
+### `test exchanges` - Test Multiple Exchanges
+
+Test multiple exchanges.
+
+```bash
+beta-arena test exchanges [options]
+
+Options:
+  -c, --coin <coin>           Coin to test (default: "BTC")
+  -t, --timeframe <timeframe>  Timeframe to test (default: "3m")
+  -l, --limit <limit>          Number of candles to fetch (default: "10")
+```
+
+---
+
+### `test data-sources` - Test Data Sources
+
+Test multi-data source configuration.
+
+```bash
+beta-arena test data-sources [options]
+
+Options:
+  -c, --coin <coin>           Coin to test (default: "BTC")
+  -t, --timeframe <timeframe>  Timeframe to test (default: "3m")
+  -l, --limit <limit>          Number of candles to fetch (default: "5")
+```
+
+---
+
+## Simulation Commands
+
+### `simulate cycle` - Simulate Trade Cycle
+
+Simulate a complete trade cycle.
+
+```bash
+beta-arena simulate cycle [options]
+
+Options:
+  -c, --coins <coins>              Comma-separated list of coins (default: "BTC")
+  -b, --initial-balance <amount>   Initial balance in USD (default: "10000")
+  -v, --verbose                    Show detailed logging (default: false)
+  -p, --max-positions <number>     Maximum number of concurrent positions (default: "3")
+  -a, --ai <type>                  AI type: mock or real (default: "mock")
+```
+
+**Examples:**
+
+```bash
+# Basic simulation
+beta-arena simulate cycle --coins BTC --verbose
+
+# Multi-coin simulation
+beta-arena simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
+
+# Real AI simulation
+beta-arena simulate cycle --coins BTC --ai real --verbose
+```
+
+---
+
+## Configuration Commands
+
+### `config show` - Show Configuration
+
+Show current configuration.
+
+```bash
+beta-arena config show [options]
+```
+
+---
+
+### `config set <key> <value>` - Set Configuration
+
+Set configuration values.
+
+```bash
+beta-arena config set <key> <value>
+```
+
+**Examples:**
+
+```bash
+# Set AI model
+beta-arena config set ai.model deepseek/deepseek-chat
+
+# Set temperature
+beta-arena config set ai.temperature 0.7
+```
+
+---
+
+### `config validate` - Validate Configuration
+
+Validate current configuration.
+
+```bash
+beta-arena config validate
+```
+
+---
+
+### `config save` - Save Configuration
+
+Save current configuration to file.
+
+```bash
+beta-arena config save
+```
+
+---
+
+### `config reset` - Reset Configuration
+
+Reset configuration to defaults.
+
+```bash
+beta-arena config reset
+```
+
+---
+
+### `config init` - Initialize Configuration
+
+Initialize configuration file from example.
+
+```bash
+beta-arena config init
+```
+
+---
+
+## Quick Reference
+
+### Most Common Commands
+
+```bash
+# Quick test
+beta-arena test ai --type mock --coin BTC
+
+# Run simulation
+beta-arena simulate cycle --coins BTC,ETH,SOL --verbose
+
+# Start trading
+beta-arena trade start --mode simulation --coins BTC,ETH,SOL
+
+# Monitor status
+beta-arena trade status
+
+# Stop trading
+beta-arena trade stop --graceful
+```
+
+---
+
+## Command Categories
+
+| Category | Commands | Purpose |
+|----------|----------|---------|
+| **trade** | 5 | Trading operations |
+| **test** | 4 | Validation & testing |
+| **config** | 6 | Configuration |
+| **simulate** | 1 | Simulation |
+| **Total** | **16** | - |
+
+noteId: "fdb1bd60b2c911f0b5dcffd87852d11b"
+tags: []
+
+---
+

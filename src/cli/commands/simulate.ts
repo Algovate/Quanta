@@ -1,23 +1,92 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
+import fs from 'fs';
+import path from 'path';
 import { SimulatorExchange } from '../../exchange/simulator';
 import { MarketDataProvider } from '../../data/market';
 import { MockAIAgent } from '../../ai/mock-agent';
+import { OpenRouterClient } from '../../ai/agent';
 import { RiskManager } from '../../execution/risk';
 import { OrderExecutor } from '../../execution/orders';
 import { PositionMonitorService } from '../../execution/monitor';
 import { handleAsync } from '../../utils/error-handler';
 
+interface SimulateConfig {
+  simulation: {
+    enabled: boolean;
+    defaultInitialBalance: number;
+    defaultMaxPositions: number;
+    defaultAI: string;
+    autoRun: boolean;
+    confirmBeforeExecute: boolean;
+  };
+  scenarios: {
+    defaultCoins: string[];
+    testScenarios: string[];
+  };
+  risk: {
+    minConfidence: number;
+    maxRiskPerTrade: number;
+    maxTotalRisk: number;
+    stopLoss: number;
+    takeProfit: number;
+  };
+  logging: {
+    verbose: boolean;
+    logTrades: boolean;
+    logPositions: boolean;
+    logRiskMetrics: boolean;
+    saveResults: boolean;
+    resultsDir: string;
+  };
+  performance: {
+    trackPnL: boolean;
+    trackDrawdown: boolean;
+    calculateSharpeRatio: boolean;
+    benchmark: string;
+  };
+  ai: {
+    mock: {
+      signalInterval: number;
+      confidenceRange: {
+        min: number;
+        max: number;
+      };
+    };
+    real: {
+      apiKey: string;
+      model: string;
+      temperature: number;
+      maxRetries: number;
+      timeout: number;
+    };
+  };
+}
+
 export class SimulateCommands {
+  private static loadSimulateConfig(): Partial<SimulateConfig> {
+    try {
+      const configPath = path.join(process.cwd(), 'config', 'simulate.json');
+      if (fs.existsSync(configPath)) {
+        const configData = fs.readFileSync(configPath, 'utf8');
+        return JSON.parse(configData);
+      }
+    } catch (error) {
+      console.warn(chalk.yellow('Warning: Could not load simulate.json, using defaults'));
+    }
+    return {};
+  }
+
   static register(program: Command): void {
     program
       .command('cycle')
-      .description('Simulate a complete trade cycle')
+      .description('Simulate a complete trade cycle (Perception → Decision → Execution → Monitoring)')
       .option('-c, --coins <coins>', 'Comma-separated list of coins (e.g., BTC,ETH,SOL)', 'BTC')
       .option('-b, --initial-balance <amount>', 'Initial balance in USD', '10000')
       .option('-v, --verbose', 'Show detailed logging', false)
       .option('-p, --max-positions <number>', 'Maximum number of concurrent positions', '3')
+      .option('-a, --ai <type>', 'AI type: mock or real (requires API key in config/simulate.json)', 'mock')
       .action(async (options) => {
         await handleAsync(async () => {
           await SimulateCommands.simulateCycle(options);
@@ -30,16 +99,53 @@ export class SimulateCommands {
     initialBalance: string;
     verbose: boolean;
     maxPositions: string;
+    ai: string;
   }): Promise<void> {
+    // Load simulation-specific configuration only
+    const simulateConfig = SimulateCommands.loadSimulateConfig();
+    
+    // Parse and validate options with simulation config as base
     const coins = options.coins.split(',').map((c: string) => c.trim().toUpperCase());
-    const initialBalance = parseFloat(options.initialBalance);
-    const verbose = options.verbose;
-    const maxPositions = parseInt(options.maxPositions);
+    const initialBalance = parseFloat(options.initialBalance) || simulateConfig.simulation?.defaultInitialBalance || 10000;
+    const verbose = options.verbose || simulateConfig.logging?.verbose || false;
+    const maxPositions = parseInt(options.maxPositions) || simulateConfig.simulation?.defaultMaxPositions || 6;
+
+    // Validate options
+    const aiType = options.ai.toLowerCase();
+    if (aiType !== 'mock' && aiType !== 'real') {
+      console.error(chalk.red('❌ Error: Invalid AI type. Use "mock" or "real"'));
+      console.log(chalk.yellow('   Example: --ai mock (or --ai real)'));
+      process.exit(1);
+    }
+
+    const useRealAI = aiType === 'real';
+
+    // Validate coins
+    if (coins.length === 0) {
+      console.error(chalk.red('❌ Error: At least one coin is required'));
+      process.exit(1);
+    }
+
+    // Validate balance
+    if (initialBalance <= 0) {
+      console.error(chalk.red('❌ Error: Initial balance must be greater than 0'));
+      process.exit(1);
+    }
+
+    // Validate max positions
+    if (maxPositions <= 0) {
+      console.error(chalk.red('❌ Error: Max positions must be greater than 0'));
+      process.exit(1);
+    }
 
     console.log(chalk.cyan('🎯 BetaArena - Multi-Coin Trade Cycle Simulation'));
     console.log(chalk.gray('='.repeat(60)));
     console.log(`Coins: ${coins.join(', ')} | Initial Balance: $${initialBalance.toLocaleString()}`);
     console.log(`Max Positions: ${maxPositions}`);
+    console.log(`AI Type: ${useRealAI ? 'Real AI (OpenRouter)' : 'Mock AI'}`);
+    if (useRealAI && simulateConfig.ai?.real?.model) {
+      console.log(`AI Model: ${simulateConfig.ai.real.model}`);
+    }
     console.log('');
 
     const spinner = ora('Initializing simulation...').start();
@@ -48,13 +154,36 @@ export class SimulateCommands {
       // Initialize components
       const exchange = new SimulatorExchange(initialBalance);
       const marketProvider = new MarketDataProvider(exchange);
-      const mockAI = new MockAIAgent();
+
+      // Initialize AI agent based on selection
+      let aiAgent;
+      if (useRealAI) {
+        // Try environment variable first, then simulation config
+        const apiKey = process.env.OPENROUTER_API_KEY || simulateConfig.ai?.real?.apiKey;
+        if (!apiKey) {
+          spinner.fail('Real AI requires OPENROUTER_API_KEY');
+          console.error(chalk.red('\n❌ Error: Real AI mode requires API key'));
+          console.log(chalk.yellow('\n💡 To use real AI:'));
+          console.log(chalk.yellow('  1. Get API key from https://openrouter.ai'));
+          console.log(chalk.yellow('  2. Set environment variable or update config/simulate.json:'));
+          console.log(chalk.gray('     export OPENROUTER_API_KEY="your_api_key_here"'));
+          console.log(chalk.gray('     or edit config/simulate.json: ai.real.apiKey'));
+          console.log(chalk.yellow('  3. Or use Mock AI (default):'));
+          console.log(chalk.gray('     beta-arena simulate cycle --coins BTC --ai mock'));
+          process.exit(1);
+        }
+        aiAgent = new OpenRouterClient(apiKey);
+        console.log(chalk.green('✓ Real AI initialized'));
+      } else {
+        aiAgent = new MockAIAgent();
+        console.log(chalk.green('✓ Mock AI initialized'));
+      }
 
       const riskParams = {
-        maxRiskPerTrade: 0.05,
-        maxTotalRisk: 0.30,
+        maxRiskPerTrade: simulateConfig.risk?.maxRiskPerTrade || 0.05,
+        maxTotalRisk: simulateConfig.risk?.maxTotalRisk || 0.30,
         maxPositions: maxPositions,
-        defaultStopLoss: 0.03,
+        defaultStopLoss: simulateConfig.risk?.stopLoss || 0.03,
         maxLeverage: 40,
         minLeverage: 5,
       };
@@ -69,17 +198,33 @@ export class SimulateCommands {
       await SimulateCommands.executeTradeCycle(
         exchange,
         marketProvider,
-        mockAI,
+        aiAgent,
         orderExecutor,
         positionMonitor,
         coins,
         verbose,
-        initialBalance
+        initialBalance,
+        useRealAI
       );
 
     } catch (error) {
       spinner.fail('Simulation failed');
-      console.error('Error during simulation:', error);
+
+      // Don't show duplicate error messages
+      if (!(error instanceof Error && error.message.includes('OPENROUTER_API_KEY not found'))) {
+        console.error(chalk.red('\n❌ Simulation Error:'));
+        console.error(chalk.red(`   ${error instanceof Error ? error.message : String(error)}`));
+
+        console.log(chalk.yellow('\n💡 Common Issues:'));
+        console.log(chalk.yellow('  1. Check if all required parameters are valid'));
+        console.log(chalk.yellow('  2. Verify network connection (for market data)'));
+        console.log(chalk.yellow('  3. Check API credentials (for Real AI mode)'));
+        console.log(chalk.yellow('  4. Review verbose output with --verbose flag'));
+
+        console.log(chalk.yellow('\n📚 For help:'));
+        console.log(chalk.gray('     beta-arena simulate cycle --help'));
+      }
+
       throw error;
     }
   }
@@ -87,12 +232,13 @@ export class SimulateCommands {
   private static async executeTradeCycle(
     exchange: SimulatorExchange,
     marketProvider: MarketDataProvider,
-    mockAI: MockAIAgent,
+    aiAgent: any,
     orderExecutor: OrderExecutor,
     positionMonitor: PositionMonitorService,
     coins: string[],
     verbose: boolean,
-    initialBalance: number
+    initialBalance: number,
+    useRealAI: boolean
   ): Promise<void> {
     let cycleStartTime = Date.now();
 
@@ -111,6 +257,11 @@ export class SimulateCommands {
 
     if (allMarketData.length === 0) {
       spinner1.fail('Failed to fetch market data');
+      console.error(chalk.red('\n❌ Error: No market data available'));
+      console.log(chalk.yellow('\n💡 Possible solutions:'));
+      console.log(chalk.yellow(`  1. Check network connection`));
+      console.log(chalk.yellow(`  2. Verify coins are valid: ${coins.join(', ')}`));
+      console.log(chalk.yellow(`  3. Try different coins: --coins BTC,ETH`));
       throw new Error('No market data available');
     }
 
@@ -146,7 +297,24 @@ export class SimulateCommands {
     const account = await exchange.getAccount();
     const positions = await exchange.getPositions();
 
-    const signals = await mockAI.generateTradingSignal(allMarketData, account, positions);
+    let signals;
+    try {
+      signals = await aiAgent.generateTradingSignal(allMarketData, account, positions);
+    } catch (error) {
+      spinner2.fail('AI analysis failed');
+      console.error(chalk.red(`\n❌ Error: Failed to generate trading signals`));
+      console.error(chalk.red(`   ${error instanceof Error ? error.message : String(error)}`));
+
+      if (useRealAI) {
+        console.log(chalk.yellow('\n💡 Troubleshooting tips for Real AI:'));
+        console.log(chalk.yellow('  1. Verify OPENROUTER_API_KEY is set correctly'));
+        console.log(chalk.yellow('  2. Check API key is valid and has credits'));
+        console.log(chalk.yellow('  3. Review error message above for details'));
+        console.log(chalk.yellow('\n   Or use Mock AI instead:'));
+        console.log(chalk.gray('     beta-arena simulate cycle --coins BTC --ai mock'));
+      }
+      throw error;
+    }
 
     spinner2.succeed(`Generated ${signals.length} signal(s) across ${coins.length} coin(s)`);
 

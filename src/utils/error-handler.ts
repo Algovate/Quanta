@@ -33,54 +33,43 @@ export class ErrorHandler {
 
   static logError(error: BetaArenaError): void {
     console.error(`\n[${error.code}] ${error.message}`);
+    this.logContext(error.context);
+  }
 
-    // Show concise context if available
-    if (error.context) {
-      const context = error.context as Record<string, unknown>;
+  private static logContext(context?: Record<string, unknown>): void {
+    if (!context) return;
 
-      // Extract original error message if available
-      if (context.originalError && typeof context.originalError === 'string') {
-        // Extract just the important part of long error messages
-        const originalMsg = context.originalError as string;
-        const cleanedMsg = this.cleanErrorMessage(originalMsg);
-        if (cleanedMsg !== error.message) {
-          console.error(`\nError details: ${cleanedMsg}`);
-        }
-      }
+    const contextObj = context as Record<string, unknown>;
 
-      // Show context if it's not just repeating the error
-      const otherContext = { ...context };
-      delete otherContext.originalError;
-      if (Object.keys(otherContext).length > 0 && otherContext.context) {
-        console.error(`Context: ${otherContext.context}`);
-      }
+    // Extract and clean original error message
+    if (typeof contextObj.originalError === 'string') {
+      const cleaned = this.cleanErrorMessage(contextObj.originalError);
+      console.error(`Error: ${cleaned}`);
+    }
+
+    // Show additional context (excluding originalError)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { originalError: _originalError, ...otherContext } = contextObj;
+    if (Object.keys(otherContext).length > 0) {
+      console.error(`Context: ${JSON.stringify(otherContext, null, 2)}`);
     }
   }
 
-  private static cleanErrorMessage(errorMsg: string): string {
-    // Remove excessive stack traces and redundant information
-    let cleaned = errorMsg;
-
-    // Remove stack trace lines (they start with "   at ")
-    cleaned = cleaned
+  private static cleanErrorMessage(msg: string): string {
+    // Remove stack traces
+    let cleaned = msg
       .split('\n')
       .filter(line => !line.trim().startsWith('at '))
       .join('\n');
 
-    // Truncate very long messages
-    if (cleaned.length > 500) {
-      cleaned = cleaned.substring(0, 500) + '...';
+    // Truncate long messages
+    if (cleaned.length > 300) {
+      cleaned = cleaned.substring(0, 300) + '...';
     }
 
-    // Extract key error message from CCXT errors
-    if (cleaned.includes('msg":')) {
-      const match = cleaned.match(/"msg":\s*"([^"]+)"/);
-      if (match && match[1]) {
-        cleaned = match[1];
-      }
-    }
-
-    return cleaned;
+    // Extract error from CCXT JSON
+    const match = cleaned.match(/"msg":\s*"([^"]+)"/);
+    return match ? match[1] : cleaned;
   }
 }
 
