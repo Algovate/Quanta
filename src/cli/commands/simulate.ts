@@ -417,15 +417,18 @@ export class SimulateCommands {
 
       // Check positions
       await positionMonitor.monitorPositions(updatedPositions, exchange);
+    } else {
+      spinner4.succeed('No positions to monitor');
+    }
 
-      // Get final positions and portfolio metrics
-      const finalPositions = await exchange.getPositions();
-      const finalAccount = await exchange.getAccount();
-      const portfolioMetrics = await exchange.getPortfolioMetrics();
+    // Get final positions and portfolio metrics
+    const finalPositions = await exchange.getPositions();
+    const finalAccount = await exchange.getAccount();
+    const portfolioMetrics = await exchange.getPortfolioMetrics();
 
-      totalPnl = finalAccount.equity - initialBalance;
+    totalPnl = finalAccount.equity - initialBalance;
 
-      if (verbose) {
+    if (finalPositions.length > 0 && verbose) {
         console.log(chalk.gray('\n  📊 Portfolio Overview:'));
         console.log(chalk.gray(`    - Total Exposure: $${portfolioMetrics.totalExposure.toFixed(2)}`));
         console.log(chalk.gray(`    - Total Leverage: ${portfolioMetrics.leverage.toFixed(2)}x`));
@@ -460,13 +463,17 @@ export class SimulateCommands {
 
           console.log(chalk.gray(`    │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.cyan(notionalText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(11))}`));
         });
-      }
-    } else {
-      spinner4.succeed('No positions to monitor');
     }
 
     // Generate Summary
-    SimulateCommands.generateSummary(initialBalance, updatedAccount, executedOrders, updatedPositions.length, totalPnl, coins.length);
+    SimulateCommands.generateSummary(
+      initialBalance,
+      finalAccount,
+      executedOrders,
+      finalPositions.length,
+      totalPnl,
+      coins.length
+    );
   }
 
   private static async simulatePriceMovement(exchange: SimulatorExchange, symbol: string): Promise<void> {

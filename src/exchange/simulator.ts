@@ -306,9 +306,18 @@ export class SimulatorExchange implements Exchange {
         const closedSize = oppositePosition.size;
         const remainingAmount = amount - closedSize;
 
-        // Update account
+        // Calculate realized P&L
+        const realizedPnl = calculatePositionPnl(
+          oppositePosition.side,
+          price,
+          oppositePosition.entryPrice,
+          closedSize
+        );
+
+        // Update account with realized P&L
+        this.account.balance += realizedPnl;
+        this.account.availableMargin += oppositePosition.marginUsed + realizedPnl;
         this.account.usedMargin -= oppositePosition.marginUsed;
-        this.account.availableMargin += oppositePosition.marginUsed;
 
         // Close the position
         const closeIndex = this.positions.findIndex(p => p === oppositePosition);
@@ -325,11 +334,21 @@ export class SimulatorExchange implements Exchange {
         const ratio = amount / oppositePosition.size;
         const marginToReturn = oppositePosition.marginUsed * ratio;
 
+        // Calculate realized P&L for partial close
+        const realizedPnl = calculatePositionPnl(
+          oppositePosition.side,
+          price,
+          oppositePosition.entryPrice,
+          amount
+        );
+
         oppositePosition.size -= amount;
         oppositePosition.marginUsed -= marginToReturn;
 
+        // Update account with partial realized P&L
+        this.account.balance += realizedPnl;
         this.account.usedMargin -= marginToReturn;
-        this.account.availableMargin += marginToReturn;
+        this.account.availableMargin += marginToReturn + realizedPnl;
       }
     } else {
       // No opposite position, create or update same-side position
@@ -392,7 +411,11 @@ export class SimulatorExchange implements Exchange {
 
   private updateAccountEquity(): void {
     this.updateAllPositions();
-    const totalPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
-    this.account.equity = this.account.balance + totalPnl;
+    
+    // Calculate total P&L from all open positions (unrealized)
+    const unrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
+    
+    // Total equity = initial balance + unrealized P&L from open positions
+    this.account.equity = this.account.balance + unrealizedPnl;
   }
 }
