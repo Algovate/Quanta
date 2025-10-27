@@ -1,5 +1,6 @@
 import { Exchange, TradingSignal, Order, Position, Account } from '../exchange/types';
 import { RiskManager, PositionSizing } from './risk';
+import { ensureUsdtSuffix } from '../utils/symbol-utils';
 
 export interface OrderResult {
   success: boolean;
@@ -144,9 +145,7 @@ export class OrderExecutor {
 
   async executeStopLoss(position: Position, currentPrice: number): Promise<OrderResult> {
     try {
-      const symbol = position.symbol.includes('/USDT')
-        ? position.symbol
-        : `${position.symbol}/USDT`;
+      const symbol = ensureUsdtSuffix(position.symbol);
       const side = position.side === 'long' ? 'sell' : 'buy';
       const amount = position.size;
 
@@ -166,9 +165,7 @@ export class OrderExecutor {
 
   async executeTakeProfit(position: Position, currentPrice: number): Promise<OrderResult> {
     try {
-      const symbol = position.symbol.includes('/USDT')
-        ? position.symbol
-        : `${position.symbol}/USDT`;
+      const symbol = ensureUsdtSuffix(position.symbol);
       const side = position.side === 'long' ? 'sell' : 'buy';
       const amount = position.size;
 

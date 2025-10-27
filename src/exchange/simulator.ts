@@ -1,4 +1,5 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types';
+import { normalizeSymbol, calculatePositionPnl } from '../utils/symbol-utils';
 
 export class SimulatorExchange implements Exchange {
   private account: Account;
@@ -107,10 +108,12 @@ export class SimulatorExchange implements Exchange {
     amount: number,
     price?: number
   ): Promise<Order> {
-    const orderPrice = price || this.getCurrentPrice(symbol);
+    const normalizedSymbol = normalizeSymbol(symbol);
+    const orderPrice = price || this.getCurrentPrice(normalizedSymbol);
+
     const order: Order = {
       id: `sim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      symbol,
+      symbol: normalizedSymbol,
       side,
       amount,
       price: orderPrice,
@@ -197,12 +200,26 @@ export class SimulatorExchange implements Exchange {
   }
 
   private getBasePrice(symbol: string): number {
+    // Normalize symbol by removing duplicate /USDT
+    const normalizedSymbol = symbol.replace(/\/USDT\/USDT$/, '/USDT');
+
     const prices: { [key: string]: number } = {
       'BTC/USDT': 45000,
       'ETH/USDT': 3000,
       'SOL/USDT': 100,
     };
-    return prices[symbol] || 100;
+
+    // Try exact match first
+    if (prices[normalizedSymbol]) {
+      return prices[normalizedSymbol];
+    }
+
+    // Try to extract coin name and use default
+    const match = normalizedSymbol.match(/^([A-Z]+)/);
+    const coin = match ? match[1] : 'USDT';
+
+    // Return a sensible default based on coin type
+    return coin === 'BTC' ? 45000 : coin === 'ETH' ? 3000 : 100;
   }
 
   private getTimeframeMs(timeframe: string): number {
@@ -273,39 +290,103 @@ export class SimulatorExchange implements Exchange {
     price: number
   ): void {
     const positionSide = side === 'buy' ? 'long' : 'short';
-    const existingPosition = this.positions.find(
-      p => p.symbol === symbol && p.side === positionSide
+    const oppositeSide = positionSide === 'long' ? 'short' : 'long';
+
+    symbol = normalizeSymbol(symbol);
+
+    // Check if there's an opposite position to close/reduce
+    const oppositePosition = this.positions.find(
+      p => p.symbol === symbol && p.side === oppositeSide
     );
 
-    if (existingPosition) {
-      // Update existing position
-      const totalValue = existingPosition.size * existingPosition.entryPrice + amount * price;
-      const totalSize = existingPosition.size + amount;
-      existingPosition.entryPrice = totalValue / totalSize;
-      existingPosition.size = totalSize;
+    if (oppositePosition) {
+      // Closing or reducing opposite position
+      if (amount >= oppositePosition.size) {
+        // Full close: remove position and if there's remaining amount, open new
+        const closedSize = oppositePosition.size;
+        const remainingAmount = amount - closedSize;
+
+        // Update account
+        this.account.usedMargin -= oppositePosition.marginUsed;
+        this.account.availableMargin += oppositePosition.marginUsed;
+
+        // Close the position
+        const closeIndex = this.positions.findIndex(p => p === oppositePosition);
+        if (closeIndex >= 0) {
+          this.positions.splice(closeIndex, 1);
+        }
+
+        // If there's remaining amount, open new position
+        if (remainingAmount > 0) {
+          this.createNewPosition(symbol, positionSide, remainingAmount, price);
+        }
+      } else {
+        // Partial close: reduce position size
+        const ratio = amount / oppositePosition.size;
+        const marginToReturn = oppositePosition.marginUsed * ratio;
+
+        oppositePosition.size -= amount;
+        oppositePosition.marginUsed -= marginToReturn;
+
+        this.account.usedMargin -= marginToReturn;
+        this.account.availableMargin += marginToReturn;
+      }
     } else {
-      // Create new position
-      this.positions.push({
-        symbol,
-        side: positionSide,
-        size: amount,
-        entryPrice: price,
-        markPrice: price,
-        unrealizedPnl: 0,
-        marginUsed: amount * price,
-        notional: amount * price, // Initial notional = size * entry price
-        leverage: 1,
-        timestamp: Date.now(),
-      });
+      // No opposite position, create or update same-side position
+      const existingPosition = this.positions.find(
+        p => p.symbol === symbol && p.side === positionSide
+      );
+
+      if (existingPosition) {
+        // Update existing position
+        const totalValue = existingPosition.size * existingPosition.entryPrice + amount * price;
+        const totalSize = existingPosition.size + amount;
+        existingPosition.entryPrice = totalValue / totalSize;
+        existingPosition.size = totalSize;
+      } else {
+        // Create new position
+        this.createNewPosition(symbol, positionSide, amount, price);
+      }
     }
+  }
+
+  private createNewPosition(
+    symbol: string,
+    side: 'long' | 'short',
+    amount: number,
+    price: number
+  ): void {
+    const normalizedSymbol = normalizeSymbol(symbol);
+
+    this.positions.push({
+      symbol: normalizedSymbol,
+      side,
+      size: amount,
+      entryPrice: price,
+      markPrice: price,
+      unrealizedPnl: 0,
+      marginUsed: amount * price,
+      notional: amount * price,
+      leverage: 1,
+      timestamp: Date.now(),
+    });
   }
 
   private updateAllPositions(): void {
     this.positions.forEach(position => {
       const currentPrice = this.getCurrentPrice(position.symbol);
       position.markPrice = currentPrice;
-      position.unrealizedPnl = (currentPrice - position.entryPrice) * position.size;
-      position.notional = position.size * currentPrice * position.leverage; // Update notional value
+
+      // Calculate P&L using utility function
+      position.unrealizedPnl = calculatePositionPnl(
+        position.side,
+        currentPrice,
+        position.entryPrice,
+        position.size
+      );
+
+      // Notional = position size * current price
+      position.notional = position.size * currentPrice;
     });
   }
 

@@ -49,7 +49,7 @@ export class RiskManager {
 
       // Calculate position size based on risk
       const stopLoss = signal.stop_loss || this.params.defaultStopLoss;
-      const riskAmount = account.equity * this.params.maxRiskPerTrade;
+      const riskAmount = account.equity * this.params.maxRiskPerTrade; // Maximum $ loss
       const priceRisk =
         Math.abs(currentPrice - (signal.entry_price || currentPrice)) / currentPrice;
 
@@ -61,18 +61,27 @@ export class RiskManager {
         return null;
       }
 
-      // Calculate position size
-      const maxLoss = riskAmount;
+      // Step 1: Calculate position value based on risk
+      // We want: max $ loss = position value × stop loss %
+      // Therefore: position value = max $ loss / stop loss %
       const pricePerUnit = signal.entry_price || currentPrice;
-      const suggestedSize = maxLoss / (pricePerUnit * actualStopLoss);
+      const riskBasedPositionValue = riskAmount / actualStopLoss;
 
-      // Apply leverage limits
-      const leverage = Math.min(
-        Math.max(this.params.minLeverage, signal.position_size || 1),
-        this.params.maxLeverage
-      );
+      // Step 2: Limit position size to avoid over-leveraging
+      // Use max 20% of available capital per trade to ensure we can open multiple positions
+      const maxCapitalPercent = 0.2;
+      const maxCapitalBasedValue = account.availableMargin * maxCapitalPercent;
 
-      const leveragedSize = suggestedSize * leverage;
+      // Step 3: Choose the smaller value (risk-based or capital-based)
+      const finalPositionValue = Math.min(maxCapitalBasedValue, riskBasedPositionValue);
+
+      // Step 4: Calculate position size in units
+      const suggestedSizeWithoutLeverage = finalPositionValue / pricePerUnit;
+
+      // Step 5: Apply leverage (currently set to 1 for simulations)
+      const leverage = Math.min(this.params.maxLeverage, Math.max(this.params.minLeverage, 1));
+
+      const leveragedSize = suggestedSizeWithoutLeverage * leverage;
 
       // Calculate stop loss price
       const stopLossPrice =

@@ -89,7 +89,15 @@ export class PositionMonitorService implements PositionMonitor {
     riskPercent: number;
     daysHeld: number;
   } {
-    const unrealizedPnl = (currentPrice - position.entryPrice) * position.size;
+    // Calculate unrealized P&L based on position side
+    let unrealizedPnl: number;
+    if (position.side === 'long') {
+      unrealizedPnl = (currentPrice - position.entryPrice) * position.size;
+    } else {
+      // For SHORT: profit when price drops
+      unrealizedPnl = (position.entryPrice - currentPrice) * position.size;
+    }
+
     const pnlPercent = (unrealizedPnl / (position.size * position.entryPrice)) * 100;
     const riskPercent = (Math.abs(unrealizedPnl) / (position.size * position.entryPrice)) * 100;
     const daysHeld = (Date.now() - position.timestamp) / (1000 * 60 * 60 * 24);

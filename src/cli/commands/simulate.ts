@@ -103,7 +103,7 @@ export class SimulateCommands {
   }): Promise<void> {
     // Load simulation-specific configuration only
     const simulateConfig = SimulateCommands.loadSimulateConfig();
-    
+
     // Parse and validate options with simulation config as base
     const coins = options.coins.split(',').map((c: string) => c.trim().toUpperCase());
     const initialBalance = parseFloat(options.initialBalance) || simulateConfig.simulation?.defaultInitialBalance || 10000;
@@ -184,8 +184,8 @@ export class SimulateCommands {
         maxTotalRisk: simulateConfig.risk?.maxTotalRisk || 0.30,
         maxPositions: maxPositions,
         defaultStopLoss: simulateConfig.risk?.stopLoss || 0.03,
-        maxLeverage: 40,
-        minLeverage: 5,
+        maxLeverage: 1, // No leverage for simulations
+        minLeverage: 1, // No leverage for simulations
       };
 
       const riskManager = new RiskManager(riskParams);
@@ -434,18 +434,21 @@ export class SimulateCommands {
         console.log(chalk.gray('\n  📊 Position Details by Symbol:'));
         Object.entries(portfolioMetrics.exposureBySymbol).forEach(([symbol, exposure]) => {
           const pnl = portfolioMetrics.pnlBySymbol[symbol] || 0;
-          const pnlPercent = exposure > 0 ? (pnl / exposure) * 100 : 0;
+          // Calculate P&L percentage relative to total account value, not exposure
+          const pnlPercent = portfolioMetrics.totalExposure > 0
+            ? (pnl / portfolioMetrics.totalExposure) * 100
+            : 0;
           console.log(chalk.gray(`    📈 ${symbol}:`));
           console.log(chalk.gray(`      - Exposure: $${exposure.toFixed(2)}`));
           console.log(chalk.gray(`      - P&L: $${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`));
         });
 
         console.log(chalk.gray('\n  📊 Individual Positions:'));
-        
+
         // Header
         console.log(chalk.gray('\n    │ SIDE     │ COIN │ LEVERAGE │ NOTIONAL    │ UNREAL P&L'));
         console.log(chalk.gray('    ├──────────┼──────┼──────────┼──────────────┼────────────'));
-        
+
         // Position rows
         finalPositions.forEach(position => {
           const sideColor = position.side === 'long' ? chalk.green : chalk.red;
@@ -454,7 +457,7 @@ export class SimulateCommands {
           const notionalText = `$${position.notional.toFixed(2)}`;
           const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
           const pnlText = `$${position.unrealizedPnl.toFixed(2)}`;
-          
+
           console.log(chalk.gray(`    │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.cyan(notionalText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(11))}`));
         });
       }
@@ -493,7 +496,7 @@ export class SimulateCommands {
     const pnlPercent = (totalPnl / initialBalance) * 100;
     const pnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
     const pnlSign = totalPnl >= 0 ? '+' : '';
-    
+
     // Available cash is the available margin (free to use)
     const availableCash = finalAccount.availableMargin || 0;
 
