@@ -201,10 +201,83 @@ export interface UIConfig {
   refreshRate: number;
 }
 
+// Backtest types
 export interface BacktestConfig {
-  startDate?: string;
-  endDate?: string;
+  startDate: string;
+  endDate: string;
   initialBalance: number;
+  coins: string[];
+  cyclePeriod?: number;
+  maxPositions?: number;
+  leverage?: number;
+}
+
+export interface EquitySnapshot {
+  timestamp: number;
+  equity: number;
+  balance: number;
+  unrealizedPnl: number;
+}
+
+export interface CompletedTrade {
+  id: string;
+  symbol: string;
+  side: 'long' | 'short';
+  entryTime: number;
+  exitTime: number;
+  entryPrice: number;
+  exitPrice: number;
+  size: number;
+  pnl: number;
+  pnlPercent: number;
+  holdingPeriod: number; // in seconds
+  reason: 'take_profit' | 'stop_loss' | 'signal' | 'end_of_backtest';
+}
+
+export interface PerformanceMetrics {
+  totalReturn: number; // percentage
+  totalPnL: number; // absolute value
+  annualizedReturn: number; // percentage
+  sharpeRatio: number;
+  maxDrawdown: number; // percentage
+  maxDrawdownValue: number; // absolute value
+  winRate: number; // percentage
+  profitFactor: number;
+  avgWin: number;
+  avgLoss: number;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  avgHoldingPeriod: number; // in hours
+  volatility: number; // percentage
+  var95: number; // value at risk at 95% confidence
+  bestTrade: number;
+  worstTrade: number;
+  largestWin: number;
+  largestLoss: number;
+}
+
+export interface SignalStatistics {
+  generated: number;
+  accepted: number;
+  rejected: number;
+}
+
+export interface BacktestResult {
+  config: BacktestConfig;
+  startTime: number;
+  endTime: number;
+  duration: number; // in seconds
+  equitySnapshots: EquitySnapshot[];
+  trades: CompletedTrade[];
+  metrics: PerformanceMetrics;
+  finalBalance: number;
+  finalEquity: number;
+  signalStats: SignalStatistics;
+}
+
+export interface HistoricalCandlestick extends Candlestick {
+  symbol: string;
 }
 
 export interface Config {

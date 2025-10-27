@@ -59,7 +59,20 @@ quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
 quanta simulate cycle --coins BTC,ETH --ai real --verbose
 ```
 
-### 4. Interactive TUI (Terminal User Interface)
+### 4. Run Backtest
+
+```bash
+# Run a historical backtest
+quanta trade backtest --start 2024-01-01 --end 2024-04-01 --coins BTC,ETH --initial-balance 10000
+
+# The output includes:
+# - Signal statistics (generated, accepted, rejected)
+# - Performance metrics (returns, Sharpe ratio, drawdown)
+# - Trade statistics with visual progress bars
+# - Risk metrics and equity curve analysis
+```
+
+### 5. Interactive TUI (Terminal User Interface)
 
 ```bash
 # Build first (required for TUI)

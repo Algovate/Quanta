@@ -115,7 +115,7 @@ quanta trade status
 
 ### `trade backtest` - Run Backtest
 
-Run backtest with historical data.
+Run backtest with historical data. Results display with enhanced formatting and detailed metrics.
 
 ```bash
 quanta trade backtest [options]
@@ -136,6 +136,17 @@ quanta trade backtest --start 2024-01-01 --end 2024-12-31
 # Last 30 days
 quanta trade backtest --start 2024-11-01 --end 2024-12-01
 ```
+
+**Report Sections:**
+
+The backtest output includes:
+- **Signal Statistics**: Generated, accepted, rejected signals with acceptance rate
+- **Performance Summary**: Total return, P&L, annualized return, Sharpe ratio, max drawdown
+- **Trade Statistics**: Win/loss breakdown with visual progress bar, average profit/loss, best/worst trades
+- **Risk Metrics**: Volatility, VaR, max drawdown value, largest win/loss
+- **Equity Curve**: Peak and lowest equity, positive periods percentage
+
+All metrics use color coding (green/yellow/red) based on performance thresholds and include locale-formatted numbers with commas for thousands.
 
 ---
 
@@ -356,21 +367,3 @@ quanta trade status
 # Stop trading
 quanta trade stop --graceful
 ```
-
----
-
-## Command Categories
-
-| Category | Commands | Purpose |
-|----------|----------|---------|
-| **trade** | 5 | Trading operations |
-| **test** | 4 | Validation & testing |
-| **config** | 6 | Configuration |
-| **simulate** | 1 | Simulation |
-| **Total** | **16** | - |
-
-noteId: "fdb1bd60b2c911f0b5dcffd87852d11b"
-tags: []
-
----
-

@@ -229,19 +229,79 @@ export class TradeCommands {
     end: string;
     initialBalance: string;
   }): Promise<void> {
+    const { BacktestEngine } = await import('../../core/backtest-engine.js');
+    const { BacktestReport } = await import('../../analytics/report.js');
+    const ora = (await import('ora')).default;
+
     console.log(chalk.cyan('📈 Quanta Backtest'));
     console.log(chalk.gray('Historical strategy validation\n'));
 
-    const coins = options.coins.split(',').map((c: string) => c.trim());
+    const coins = options.coins.split(',').map((c: string) => c.trim().toUpperCase());
+
+    // Validate dates
+    const startDate = new Date(options.start);
+    const endDate = new Date(options.end);
+
+    if (isNaN(startDate.getTime())) {
+      throw new Error(`Invalid start date: ${options.start}. Use format YYYY-MM-DD`);
+    }
+
+    if (isNaN(endDate.getTime())) {
+      throw new Error(`Invalid end date: ${options.end}. Use format YYYY-MM-DD`);
+    }
+
+    if (startDate >= endDate) {
+      throw new Error('Start date must be before end date');
+    }
+
+    const initialBalance = parseFloat(options.initialBalance);
+
+    if (initialBalance <= 0 || isNaN(initialBalance)) {
+      throw new Error(`Invalid initial balance: ${options.initialBalance}`);
+    }
+
+    const backtestConfig = {
+      startDate: options.start,
+      endDate: options.end,
+      initialBalance,
+      coins,
+      cyclePeriod: 180000, // 3 minutes
+      maxPositions: 6,
+      leverage: 1,
+    };
 
     console.log(chalk.blue('📊 Backtest Configuration:'));
     console.log(`   Period: ${options.start} to ${options.end}`);
     console.log(`   Coins: ${coins.join(', ')}`);
-    console.log(`   Initial Balance: $${options.initialBalance}`);
+    console.log(`   Initial Balance: $${initialBalance.toLocaleString()}`);
+    console.log(`   Max Positions: ${backtestConfig.maxPositions}`);
+    console.log(`   Cycle Period: ${backtestConfig.cyclePeriod / 1000 / 60} minutes`);
     console.log('');
 
-    console.log(chalk.yellow('⚠️  Backtest engine not yet implemented'));
-    console.log(chalk.gray('   This will replay historical data and calculate performance metrics'));
+    try {
+      const engine = new BacktestEngine(backtestConfig);
+      const result = await engine.runBacktest();
+
+      // Generate and display report
+      const report = new BacktestReport(result);
+      report.displayReport();
+
+      console.log(chalk.green('✅ Backtest completed successfully!'));
+
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error(chalk.red(`\n❌ Error: ${error.message}`));
+      } else {
+        console.error(chalk.red(`\n❌ Error: ${String(error)}`));
+      }
+
+      console.log(chalk.yellow('\n💡 Troubleshooting:'));
+      console.log(chalk.gray('  1. Verify date format is YYYY-MM-DD'));
+      console.log(chalk.gray('  2. Ensure start date is before end date'));
+      console.log(chalk.gray('  3. Check coin symbols are valid'));
+
+      throw error;
+    }
   }
 
   private static async showStatus(): Promise<void> {

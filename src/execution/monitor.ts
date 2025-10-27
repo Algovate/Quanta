@@ -63,8 +63,7 @@ export class PositionMonitorService implements PositionMonitor {
         const { shouldClose, reason } = this.shouldClosePosition(position, currentPrice);
 
         if (shouldClose) {
-          console.log(`Closing position ${position.symbol}: ${reason}`);
-
+          // Silent during backtest
           if (reason.includes('Stop loss')) {
             await this.orderExecutor.executeStopLoss(position, currentPrice);
           } else if (reason.includes('Take profit')) {

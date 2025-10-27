@@ -34,9 +34,11 @@
   "author": "Quanta CLI",
   "license": "MIT",
   "dependencies": {
+    "@types/cli-progress": "^3.11.6",
     "axios": "^1.6.2",
     "ccxt": "^4.2.25",
     "chalk": "^5.3.0",
+    "cli-progress": "^3.12.0",
     "commander": "^11.1.0",
     "date-fns": "^2.30.0",
     "dotenv": "^16.3.1",

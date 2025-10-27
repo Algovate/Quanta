@@ -34,16 +34,14 @@ export class RiskManager {
     try {
       // Check if we can open new positions
       if (currentPositions.length >= this.params.maxPositions) {
-        console.log(`Max positions (${this.params.maxPositions}) reached`);
+        // Silent rejection
         return null;
       }
 
       // Check total risk exposure
       const totalRisk = this.calculateTotalRisk(currentPositions, account);
       if (totalRisk >= this.params.maxTotalRisk) {
-        console.log(
-          `Total risk (${(totalRisk * 100).toFixed(1)}%) exceeds limit (${(this.params.maxTotalRisk * 100).toFixed(1)}%)`
-        );
+        // Silent rejection
         return null;
       }
 
@@ -57,7 +55,7 @@ export class RiskManager {
       const actualStopLoss = Math.max(stopLoss, priceRisk);
 
       if (actualStopLoss <= 0) {
-        console.log('Invalid stop loss calculation');
+        // Silent rejection
         return null;
       }
 
@@ -115,13 +113,13 @@ export class RiskManager {
     try {
       // Check signal format
       if (!signal.coin || !signal.action || !signal.confidence) {
-        console.log('Invalid signal format');
+        // Silent rejection
         return false;
       }
 
       // Check confidence threshold (lowered to 0.55 to allow more trading opportunities)
       if (signal.confidence < 0.55) {
-        console.log(`Signal confidence (${signal.confidence}) too low`);
+        // Silent rejection
         return false;
       }
 
@@ -130,13 +128,13 @@ export class RiskManager {
       const positionSymbol = `${signal.coin}/USDT`;
       const existingPosition = currentPositions.find(p => p.symbol === positionSymbol);
       if (existingPosition && (signal.action === 'LONG' || signal.action === 'SHORT')) {
-        console.log(`Already have position in ${signal.coin} (${existingPosition.side})`);
+        // Silent rejection
         return false;
       }
 
       // Check stop loss validity
       if (signal.stop_loss && (signal.stop_loss < 0.01 || signal.stop_loss > 0.1)) {
-        console.log(`Invalid stop loss: ${signal.stop_loss}`);
+        // Silent rejection
         return false;
       }
 
@@ -146,7 +144,7 @@ export class RiskManager {
         signal.stop_loss &&
         signal.profit_target < signal.stop_loss * 1.5
       ) {
-        console.log(`Profit target too close to stop loss`);
+        // Silent rejection
         return false;
       }
 

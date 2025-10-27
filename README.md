@@ -30,6 +30,7 @@ quanta test ai --type mock --coin BTC
 - **💼 Portfolio Management**: Multi-coin multi-position support (2-3 concurrent positions)
 - **🎯 Mock AI**: Built-in simulated AI for testing without API keys
 - **🎨 Interactive TUI**: Real-time terminal UI with live panels, charts, and keyboard controls
+- **📈 Enhanced Backtest Reports**: Visual formatting, progress bars, color-coded metrics, and comprehensive statistics
 
 ## Commands
 
@@ -42,11 +43,13 @@ quanta trade start --mode simulation --coins BTC,ETH,SOL --ui tui
 # Start with CLI output
 quanta trade start --mode simulation --coins BTC,ETH,SOL
 
+# Run historical backtest with enhanced reporting
+quanta trade backtest --start 2024-01-01 --end 2024-04-01 --coins BTC,ETH --initial-balance 10000
+
 # Other trading commands
 quanta trade pause --reason "Maintenance"
 quanta trade stop --graceful
 quanta trade status
-quanta trade backtest --start 2024-01-01 --end 2024-12-31
 ```
 
 **TUI Keyboard Shortcuts:**

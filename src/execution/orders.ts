@@ -75,7 +75,7 @@ export class OrderExecutor {
       const amount = sizing.suggestedSize;
       const price = signal.entry_price || currentPrice;
 
-      console.log(`Executing LONG order: ${amount} ${signal.coin} @ $${price}`);
+      // Silent during backtest
 
       const order = await this.exchange.placeOrder(symbol, side, amount, price);
 
@@ -100,7 +100,7 @@ export class OrderExecutor {
       const amount = sizing.suggestedSize;
       const price = signal.entry_price || currentPrice;
 
-      console.log(`Executing SHORT order: ${amount} ${signal.coin} @ $${price}`);
+      // Silent during backtest
 
       const order = await this.exchange.placeOrder(symbol, side, amount, price);
 
@@ -129,7 +129,7 @@ export class OrderExecutor {
       const side = position.side === 'long' ? 'sell' : 'buy';
       const amount = position.size;
 
-      console.log(`Executing CLOSE order: ${amount} ${signal.coin}`);
+      // Silent during backtest
 
       const order = await this.exchange.placeOrder(symbol, side, amount);
 
@@ -149,7 +149,7 @@ export class OrderExecutor {
       const side = position.side === 'long' ? 'sell' : 'buy';
       const amount = position.size;
 
-      console.log(`Executing STOP LOSS: ${amount} ${symbol} @ $${currentPrice}`);
+      // Silent during backtest
 
       const order = await this.exchange.placeOrder(symbol, side, amount, currentPrice);
 
@@ -169,7 +169,7 @@ export class OrderExecutor {
       const side = position.side === 'long' ? 'sell' : 'buy';
       const amount = position.size;
 
-      console.log(`Executing TAKE PROFIT: ${amount} ${symbol} @ $${currentPrice}`);
+      // Silent during backtest
 
       const order = await this.exchange.placeOrder(symbol, side, amount, currentPrice);
 

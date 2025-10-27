@@ -49,9 +49,7 @@ export class MarketDataProvider {
         )) as Candlestick[];
 
         if (candlesticks.length < 50) {
-          console.warn(
-            `Insufficient data for ${coin} ${timeframe}: ${candlesticks.length} candles`
-          );
+          // Silent skip during backtesting
           continue;
         }
 

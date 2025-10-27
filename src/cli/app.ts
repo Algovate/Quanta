@@ -46,7 +46,3 @@ export class CLIApplication {
     this.program.parse();
   }
 }
-
-// Main entry point
-const app = new CLIApplication();
-app.run();

@@ -58,12 +58,20 @@ quanta trade stop --graceful
 quanta trade stop --force
 ```
 
-### 4. Review Results
+### 4. Review Results with Backtest
 
 ```bash
-# Run backtest
-quanta trade backtest --start 2024-01-01 --end 2024-12-31
+# Run backtest with enhanced reporting
+quanta trade backtest --start 2024-01-01 --end 2024-12-31 --coins BTC,ETH --initial-balance 10000
 ```
+
+The backtest report includes:
+- **📊 Data Source Information**: Total candles, timeframes, per-coin breakdown
+- **🤖 Signal Statistics**: Generated, accepted, rejected signals with visual indicators (✓/✗)
+- **📊 Performance Summary**: Returns, Sharpe ratio, drawdown with color coding
+- **📈 Trade Statistics**: Win rate with progress bar, profit factor, best/worst trades
+- **⚠️ Risk Metrics**: Volatility, VaR, max drawdown with color thresholds
+- **📉 Equity Curve**: Peak/lowest equity, positive periods percentage
 
 ## Trading Workflow
 
