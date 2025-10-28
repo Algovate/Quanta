@@ -5,47 +5,58 @@ Complete documentation index for the Quanta AI trading system.
 ## 📚 Documentation Index
 
 ### 🚀 Getting Started
-- **[Getting Started](getting-started.md)** (1.1KB)
+- **[Getting Started](getting-started.md)** (2.8KB)
   - Installation steps
   - Quick start guide
   - First simulation
 
 ### 📈 Trading
-- **[Trading Guide](trading-guide.md)** (2.4KB)
+- **[Trading Guide](trading-guide.md)** (4.9KB)
   - Trading modes (simulation/paper/live)
   - Trading lifecycle
   - Risk management
   - Best practices
 
 ### ⚙️ Configuration
-- **[Configuration Guide](configuration.md)** (3.5KB)
+- **[Configuration Guide](configuration.md)** (3.7KB)
   - Configuration files
   - Environment variables
   - CLI configuration
   - Settings examples
 
 ### 🧪 Testing & Simulation
-- **[Testing & Simulation](testing-simulation.md)** (5.1KB)
+- **[Testing & Simulation](testing-simulation.md)** (5.0KB)
   - Simulation modes
   - Testing commands
   - Examples and output
   - Troubleshooting
 
 ### 📚 Reference
-- **[Command Reference](commands.md)** (6.9KB)
+- **[Command Reference](commands.md)** (7.5KB)
   - Complete command documentation
-  - All 16 sub-commands
+  - All sub-commands
   - Options and examples
+  
+- **[Supported Exchanges](exchanges.md)** (4.2KB)
+  - Exchange list and features
+  - API configuration
+  - Abbreviation guide
+
+- **[Logging Guide](logging-guide.md)** (9.1KB)
+  - Logger configuration
+  - Log levels and formats
+  - Background mode
 
 ### 💡 Concepts & Terminology
-- **[Core Concepts](concepts.md)** (13KB) ⭐ NEW
-  - Architecture
-  - Trading concepts
+- **[Core Concepts](concepts.md)** (23KB) ⭐ COMPREHENSIVE
+  - Complete architecture
+  - Trading modes (detailed)
   - Technical indicators
-  - Risk management
+  - Risk management algorithms
   - AI & signals
-  - Algorithms
-  - Complete glossary
+  - Execution flow
+  - Complete glossary (50+ terms)
+  - Algorithm implementations
 
 ## 🎯 Quick Navigation
 
@@ -68,14 +79,15 @@ Complete documentation index for the Quanta AI trading system.
 
 | Document | Size | Lines | Purpose |
 |----------|------|-------|---------|
-| getting-started.md | 1.5KB | ~120 | Quick setup |
-| trading-guide.md | 2.4KB | ~146 | Trading operations |
-| configuration.md | 3.5KB | ~202 | System setup |
-| testing-simulation.md | 5.1KB | ~301 | Testing guide |
-| commands.md | 6.9KB | ~371 | Command reference |
-| concepts.md | 13KB | ~813 | Concepts & algorithms |
-| exchanges.md | 3.2KB | ~160 | Exchange support |
-| **Total** | **35.2KB** | **~2,113** | Complete docs |
+| getting-started.md | 2.8KB | ~114 | Quick setup |
+| trading-guide.md | 4.9KB | ~215 | Trading operations |
+| configuration.md | 3.7KB | ~205 | System setup |
+| testing-simulation.md | 5.0KB | ~302 | Testing guide |
+| commands.md | 7.5KB | ~374 | Command reference |
+| concepts.md | 23KB | ~1097 | Concepts & algorithms |
+| exchanges.md | 4.2KB | ~161 | Exchange support |
+| logging-guide.md | 9.1KB | ~504 | Logging system |
+| **Total** | **~60KB** | **~2,773** | Complete docs |
 
 ## 🔍 Key Topics
 
@@ -110,7 +122,7 @@ Complete documentation index for the Quanta AI trading system.
 - [Mock vs Real AI](concepts.md#mock-ai-vs-real-ai)
 
 **Algorithms**
-- [Position Sizing Algorithm](concepts.md#position-sizing-algorithm)
+- [Position Sizing Algorithm](concepts.md#position-sizing-algorithm-optimized)
 - [Risk Validation Algorithm](concepts.md#risk-validation-algorithm)
 - [Stop-Loss Calculation](concepts.md#stop-loss-calculation-algorithm)
 
@@ -145,28 +157,37 @@ Complete documentation index for the Quanta AI trading system.
 - **Testing strategies?** Use [Testing & Simulation](testing-simulation.md)
 - **Ready to trade?** Read [Trading Guide](trading-guide.md)
 - **Need quick reference?** Check [Commands](commands.md)
+- **Configuring exchanges?** See [Supported Exchanges](exchanges.md)
 - **Understanding concepts?** Study [Concepts](concepts.md)
+- **Debugging?** Read [Logging Guide](logging-guide.md)
 
 ## 🎓 Concepts Document Highlights
 
-The new concepts document provides:
+The comprehensive concepts document provides:
 
-✅ **Complete Architecture** - 3-stage system explanation
-✅ **Trading Fundamentals** - Modes, orders, positions
-✅ **Technical Indicators** - EMA, MACD, RSI, ATR with formulas
-✅ **Risk Management** - Position sizing, stop-loss, leverage
-✅ **AI Concepts** - Signal generation, confidence levels
-✅ **Execution Flow** - Complete trading cycle
-✅ **Comprehensive Glossary** - 50+ terms defined
+✅ **Complete Architecture** - 3-stage system explanation  
+✅ **Trading Fundamentals** - Modes, orders, positions  
+✅ **Technical Indicators** - EMA, MACD, RSI, ATR with formulas  
+✅ **Risk Management** - Position sizing, stop-loss, leverage  
+✅ **AI Concepts** - Signal generation, confidence levels  
+✅ **Execution Flow** - Complete trading cycle  
+✅ **Comprehensive Glossary** - 50+ terms defined  
 ✅ **Algorithm Examples** - Code implementations
 
 ## 🔄 Documentation Updates
 
 All documentation is actively maintained. Latest updates:
 
-- ✅ Added Core Concepts document
+- ✅ Added comprehensive Trading Modes section
 - ✅ Expanded glossary (50+ terms)
-- ✅ Added algorithm examples
-- ✅ Enhanced indicator explanations
-- ✅ Improved risk management section
+- ✅ Added algorithm examples with code
+- ✅ Enhanced technical indicator explanations
+- ✅ Improved risk management section with formulas
 - ✅ Streamlined documentation structure
+- ✅ Added exchanges support guide
+- ✅ Integrated logging guide
+
+---
+
+**Version**: 0.1.0  
+**Last Updated**: January 2025

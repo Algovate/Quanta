@@ -64,23 +64,191 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 
 ### Trading Modes
 
-**1. Simulation Mode (Mock Data)**
-- Uses mock exchange data
-- Mock or Real AI
-- No real money
-- Perfect for learning and initial testing
+Quanta supports three distinct trading modes, each serving different purposes in the development and deployment of trading strategies.
 
-**2. Paper Trading Mode (Real Data, Simulated Execution)**
-- Uses real exchange data (OKX, Binance, Coinbase, etc.)
-- Simulated execution (no real money)
-- API keys optional (uses public data if not provided)
-- Perfect for strategy validation with real market conditions
+#### **1. Simulation Mode (Mock Data)**
 
-**3. Live Mode (Real Trading)**
-- Real exchange connection
-- Real money at risk
-- Requires API keys
-- ⚠️ Use with caution
+**Purpose**: Learning and initial testing with synthetic data
+
+**How it Works:**
+- Uses internal mock exchange (`simulator`) that generates synthetic market data
+- Perfect risk-free environment for understanding system mechanics
+- Can use either Mock AI (predefined logic) or Real AI (requires API key)
+- No real money involved whatsoever
+- No external API dependencies
+
+**Use Cases:**
+- Learning how the system works
+- Testing new features and modifications
+- Understanding trading algorithms and risk management
+- Initial AI prompt engineering and testing
+
+**Configuration:**
+```bash
+# Command line
+quanta trade start --mode simulation --coins BTC,ETH,SOL
+
+# Or in config.json
+{
+  "mode": "simulation",
+  "exchange": {
+    "name": "simulator"
+  }
+}
+```
+
+**Technical Details:**
+- Mock exchange generates realistic-looking candlestick data
+- Simulates order fills instantaneously
+- No network latency concerns
+- Perfect for reproducible testing scenarios
+
+#### **2. Paper Trading Mode (Real Data, Simulated Execution)**
+
+**Purpose**: Strategy validation with real market conditions without financial risk
+
+**How it Works:**
+- Fetches **real market data** from actual exchanges (OKX, Binance, Coinbase, Hyperliquid)
+- Simulates order execution and position management
+- Tracks realistic P&L based on live price movements
+- Uses real market volatility, trends, and patterns
+- No actual orders sent to exchanges
+
+**Use Cases:**
+- Validating strategies with real market conditions
+- Testing AI performance on live data
+- Understanding how strategies perform in volatile markets
+- Refining risk parameters before going live
+- Backtesting recent market conditions
+
+**Configuration:**
+```bash
+# Command line
+quanta trade start --mode paper --coins BTC,ETH,SOL
+
+# Or in config.json
+{
+  "mode": "paper",
+  "exchange": {
+    "name": "okx",  # or "binance", "coinbase", etc.
+    "testnet": true  # Optional: use testnet for some exchanges
+  }
+}
+```
+
+**Technical Details:**
+- **API Keys Optional**: Can fetch public market data without credentials
+- **Real Data Sources**: Uses live order books, candlesticks, and market depth
+- **Simulated Execution**: Orders are simulated, not actually placed
+- **Realistic Execution**: Accounts for slippage, partial fills, and market impact
+- **Exchange Support**: Works with OKX, Binance, Coinbase, Hyperliquid, or Simulator
+
+**Key Benefits:**
+- Test with real market volatility and conditions
+- Identify potential issues before risking capital
+- Validate AI model performance on live markets
+- Build confidence in strategy effectiveness
+
+#### **3. Live Mode (Real Trading)**
+
+**Purpose**: Execute real trades with actual capital
+
+**How it Works:**
+- Connects to **real exchange accounts**
+- Places **real orders** on live markets
+- Uses **real money** at risk
+- Executes actual trades at market prices
+- Requires valid API keys with trading permissions
+
+**Use Cases:**
+- Production trading with proven strategies
+- Live performance on real markets
+- Generating actual profits/losses
+
+**Configuration:**
+```bash
+# Command line
+quanta trade start --mode live --coins BTC
+
+# Required in config.json
+{
+  "mode": "live",
+  "exchange": {
+    "name": "okx",  # or binance, coinbase, hyperliquid
+    "apiKey": "your_real_api_key",
+    "apiSecret": "your_real_api_secret",
+    "testnet": false  # MUST be false for live trading
+  }
+}
+```
+
+**Requirements:**
+- Valid API keys with trading permissions
+- Proper risk management configuration
+- Thorough testing in simulation and paper trading first
+- Understanding of leverage, margin, and liquidation risks
+- Regular monitoring and position management
+
+**⚠️ Critical Warnings:**
+- **Real money is at risk** - losses are permanent
+- Always test in simulation/paper mode first
+- Start with small position sizes
+- Monitor positions actively
+- Understand exchange fee structures
+- Be aware of slippage and execution quality
+- Know how to stop trading immediately if needed (`Ctrl+C` or `quanta trade stop --force`)
+
+**Technical Details:**
+- Requires full API permissions (read + trade)
+- Real order placement with immediate market execution
+- Live balance updates and margin tracking
+- Real fees, slippage, and execution quality
+- Network latency affects performance
+- Must handle exchange-specific API quirks
+
+### Mode Comparison
+
+| Feature | Simulation | Paper | Live |
+|---------|-----------|-------|------|
+| **Market Data** | Mock | Real | Real |
+| **Order Execution** | Simulated | Simulated | Real |
+| **Money at Risk** | None | None | Real |
+| **API Keys Required** | No | Optional | Yes |
+| **Best For** | Learning | Testing | Production |
+| **Risk Level** | None | None | High |
+| **Data Quality** | Synthetic | Real | Real |
+| **Execution Speed** | Instant | Near-instant | Real-time |
+| **Fees** | None | Simulated | Real |
+| **Slippage** | None | Simulated | Real |
+
+### Recommended Workflow
+
+```
+1. Simulation Mode (Understand the system)
+   ↓
+2. Paper Trading Mode (Validate strategy with real data)
+   ↓
+3. Small-scale Live Testing (Real trading with minimal risk)
+   ↓
+4. Full Production (Scale up after proven)
+```
+
+### Switching Between Modes
+
+Quanta allows easy switching between modes through command-line flags or configuration files:
+
+```bash
+# Switch to simulation
+quanta trade start --mode simulation
+
+# Switch to paper trading
+quanta trade start --mode paper
+
+# Switch to live (requires proper config)
+quanta trade start --mode live --coins BTC
+```
+
+All modes share the same risk management and AI logic, ensuring consistency across environments.
 
 ### Order Types
 
