@@ -19,7 +19,7 @@ Used for live trading and general settings:
   },
   "ai": {
     "apiKey": "sk-or-v1-your-api-key-here",
-    "model": "deepseek/deepseek-chat",
+    "model": "deepseek/deepseek-chat-v3-0324",
     "temperature": 0.7
   },
   "trading": {
@@ -27,7 +27,7 @@ Used for live trading and general settings:
     "cyclePeriod": 180000,
     "maxPositions": 6,
     "leverageRange": [5, 40],
-    "stopLoss": 0.03,
+    "stopLoss": 0.05,
     "maxRisk": 0.05
   }
 }
@@ -47,7 +47,7 @@ Independent configuration for simulation:
   "risk": {
     "maxRiskPerTrade": 0.05,
     "maxTotalRisk": 0.30,
-    "stopLoss": 0.03,
+    "stopLoss": 0.05,
     "takeProfit": 0.06
   },
   "logging": {
@@ -57,7 +57,7 @@ Independent configuration for simulation:
   "ai": {
     "real": {
       "apiKey": "your_api_key_here",
-      "model": "deepseek/deepseek-chat",
+      "model": "deepseek/deepseek-chat-v3-0324",
       "temperature": 0.7
     }
   }
@@ -90,14 +90,14 @@ EXCHANGE_API_SECRET=your_secret
 
 # AI
 OPENROUTER_API_KEY=your_key
-AI_MODEL=deepseek/deepseek-chat
+AI_MODEL=deepseek/deepseek-chat-v3-0324
 AI_TEMPERATURE=0.7
 
 # Trading
 TRADING_COINS=BTC,ETH,SOL
 CYCLE_PERIOD=180000
 MAX_POSITIONS=6
-STOP_LOSS=0.03
+STOP_LOSS=0.05
 MAX_RISK=0.05
 ```
 
@@ -108,7 +108,7 @@ MAX_RISK=0.05
 quanta config show
 
 # Set configuration values
-quanta config set ai.model deepseek/deepseek-chat
+quanta config set ai.model deepseek/deepseek-chat-v3-0324
 
 # Validate configuration
 quanta config validate
@@ -128,14 +128,14 @@ quanta config init
 ### AI Settings
 
 - **apiKey**: Your OpenRouter API key
-- **model**: AI model to use (recommended: `deepseek/deepseek-chat`)
+- **model**: AI model to use (recommended: `deepseek/deepseek-chat-v3-0324`)
 - **temperature**: Creativity level (0.7 = balanced)
 
 ### Trading Settings
 
 - **coins**: List of cryptocurrencies to trade
 - **maxPositions**: Maximum concurrent positions
-- **stopLoss**: Default stop-loss percentage (3%)
+- **stopLoss**: Default stop-loss percentage (5%)
 - **maxRisk**: Maximum risk per trade (5%)
 
 ### Exchange Settings

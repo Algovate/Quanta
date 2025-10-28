@@ -22,7 +22,7 @@ Start the trading system in live or simulation mode.
 quanta trade start [options]
 
 Options:
-  -m, --mode <mode>        Trading mode: live, simulation, backtest (default: "simulation")
+  -m, --mode <mode>        Trading mode: live, simulation (default: "simulation")
   -c, --coins <coins>       Comma-separated list of coins (default: "BTC,ETH,SOL")
   --ui <ui>                 UI mode: tui or cli (default: "cli")
 ```
@@ -35,6 +35,9 @@ quanta trade start --mode simulation --coins BTC,ETH,SOL
 
 # Live mode (use with caution)
 quanta trade start --mode live --coins BTC
+
+# Note: For backtesting, use the dedicated command:
+# quanta trade backtest --start 2024-01-01 --end 2024-12-31
 ```
 
 ---
@@ -104,10 +107,10 @@ quanta trade status
    Coins: BTC, ETH, SOL
    Max Positions: 6
    Cycle Period: 180s
-   Stop Loss: 3.0%
+   Stop Loss: 5.0%
 
 🤖 AI Configuration:
-   Model: deepseek/deepseek-chat
+   Model: deepseek/deepseek-chat-v3-0324
    Temperature: 0.7
 ```
 
@@ -299,7 +302,7 @@ quanta config set <key> <value>
 
 ```bash
 # Set AI model
-quanta config set ai.model deepseek/deepseek-chat
+quanta config set ai.model deepseek/deepseek-chat-v3-0324
 
 # Set temperature
 quanta config set ai.temperature 0.7

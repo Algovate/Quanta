@@ -615,7 +615,7 @@ function calculatePositionSize(
   const riskAmount = account.equity * maxRiskPerTrade
   
   // Step 2: Calculate risk-based position value
-  const stopLoss = signal.stop_loss || 0.03
+  const stopLoss = signal.stop_loss || 0.05
   const riskBasedPositionValue = riskAmount / stopLoss
   
   // Step 3: Calculate capital-based position value
