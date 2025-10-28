@@ -77,6 +77,20 @@ export const handleAsync = async <T>(operation: () => Promise<T>, context?: stri
   try {
     return await operation();
   } catch (error) {
+    // For configuration errors, show clean message without stack trace
+    if (error instanceof Error) {
+      const isConfigError = error.message.includes('Configuration Error') || 
+                           error.message.includes('Missing API') ||
+                           error.message.includes('requires API');
+      
+      if (isConfigError) {
+        // Log the error message directly and exit cleanly
+        console.error('\n' + error.message + '\n');
+        process.exit(1);
+      }
+    }
+    
+    // For other errors, log with context
     const handledError = ErrorHandler.handle(error, context);
     ErrorHandler.logError(handledError);
     throw handledError;

@@ -140,12 +140,12 @@ export class OKXExchange implements Exchange {
     }
   }
 
-  async getTicker(symbol: string): Promise<{ price: number; [key: string]: unknown }> {
+  async getTicker(symbol: string): Promise<{ price: number; timestamp: number }> {
     try {
       const ticker = await this.exchange.fetchTicker(symbol);
       return {
         price: ticker.last || ticker.close || 0,
-        ...ticker,
+        timestamp: ticker.timestamp || Date.now(),
       };
     } catch (error) {
       console.error('Error fetching ticker from OKX:', error);

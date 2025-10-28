@@ -9,13 +9,69 @@ import { TradingWorkflow } from '../../core/workflow.js';
 import { handleAsync } from '../../utils/error-handler.js';
 
 export class TradeCommands {
+  /**
+   * Create an exchange instance based on configuration
+   */
+  private static async createExchange(
+    exchangeName: string,
+    apiKey?: string,
+    apiSecret?: string,
+    testnet: boolean = true,
+    mode: 'simulation' | 'live' = 'simulation'
+  ) {
+    if (exchangeName === 'okx') {
+      const { OKXExchange } = await import('../../exchange/okx.js');
+      return new OKXExchange(apiKey, apiSecret, testnet);
+    } else if (exchangeName === 'binance' || exchangeName === 'bin') {
+      const { BinanceExchange } = await import('../../exchange/binance.js');
+      return new BinanceExchange(apiKey, apiSecret, testnet);
+    } else if (exchangeName === 'coinbase' || exchangeName === 'cb') {
+      const { CoinbaseExchange } = await import('../../exchange/coinbase.js');
+      return new CoinbaseExchange(apiKey, apiSecret, testnet);
+    } else if (exchangeName === 'hyperliquid' || exchangeName === 'hliq') {
+      const { HyperliquidExchange } = await import('../../exchange/hyperliquid.js');
+      return new HyperliquidExchange(apiKey, apiSecret, testnet);
+    } else if (exchangeName === 'simulator') {
+      return new SimulatorExchange(10000);
+    } else {
+      throw new Error(`Unsupported exchange: ${exchangeName}`);
+    }
+  }
+
+  /**
+   * Validate and get final exchange instance for the trading mode
+   */
+  private static async getExchangeForMode(
+    mode: 'simulation' | 'live',
+    exchangeName: string,
+    apiKey?: string,
+    apiSecret?: string,
+    testnet: boolean = true
+  ) {
+    if (mode === 'simulation') {
+      // In simulation mode, optionally use real exchange data source
+      if (exchangeName !== 'simulator') {
+        // Create real exchange for data source
+        const dataExchange = await this.createExchange(exchangeName, apiKey, apiSecret, testnet);
+        // Wrap real exchange in simulator for execution
+        return new SimulatorExchange(10000, dataExchange);
+      } else {
+        // Pure mock data simulation
+        return new SimulatorExchange(10000);
+      }
+    } else {
+      // Live mode - use real exchanges directly
+      return await this.createExchange(exchangeName, apiKey, apiSecret, testnet, 'live');
+    }
+  }
+
   static register(program: Command): void {
     program
       .command('start')
       .description('Start AI trading system')
-      .option('-m, --mode <mode>', 'Trading mode: live, simulation, backtest', 'simulation')
+      .option('-m, --mode <mode>', 'Trading mode: live, simulation, backtest')
       .option('-c, --coins <coins>', 'Comma-separated list of coins', 'BTC,ETH,SOL')
-      .option('--ui <ui>', 'UI mode: tui or cli', 'cli')
+      .option('--ui <ui>', 'UI mode: tui or cli')
       .action(async (options) => {
         await handleAsync(async () => {
           await TradeCommands.startTrading(options);
@@ -72,8 +128,22 @@ export class TradeCommands {
     ui: string;
   }): Promise<void> {
     const coins = options.coins.split(',').map((c: string) => c.trim());
-    const mode = options.mode as 'live' | 'simulation' | 'backtest';
-    const uiMode = options.ui as 'tui' | 'cli';
+    
+    // Get mode from CLI or config file
+    const config = getConfig();
+    const mode = options.mode || config.mode || 'simulation';
+    
+    // Validate mode parameter
+    const validModes = ['live', 'simulation', 'backtest'];
+    if (!validModes.includes(mode)) {
+      throw new Error(
+        `Invalid mode: "${mode}". Valid modes are: ${validModes.join(', ')}\n` +
+        `Please check your config.json or use --mode flag with a valid value.`
+      );
+    }
+
+    // Get UI mode from config if not provided via CLI
+    const uiMode = (options.ui || config.ui?.mode || 'cli') as 'tui' | 'cli';
 
     const configUpdates = {
       mode,
@@ -81,7 +151,6 @@ export class TradeCommands {
       ui: { mode: uiMode },
     };
 
-    const config = getConfig();
     const updatedConfig = { ...config, ...configUpdates };
 
     // Only show banner/config in CLI mode
@@ -90,6 +159,25 @@ export class TradeCommands {
       console.log(chalk.gray('AI-powered quantitative trading with real-time decision making\n'));
       console.log(chalk.blue('📊 Configuration:'));
       console.log(`   Mode: ${mode}`);
+      
+      const exchangeName = updatedConfig.exchange?.name || 'simulator';
+      const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
+      
+      if (mode === 'simulation') {
+        if (exchangeName === 'simulator') {
+          console.log(`   Data Source: mock data`);
+        } else {
+          console.log(`   Data Source: ${exchangeName} (${exchangeTestnet ? 'testnet' : 'live'})`);
+        }
+      } else if (mode === 'live') {
+        const exchangeStatus = exchangeName !== 'simulator' ? 'real' : 'simulator';
+        const networkStatus = exchangeTestnet ? 'testnet' : 'production';
+        console.log(`   Exchange: ${exchangeName} (${exchangeStatus})`);
+        if (exchangeName !== 'simulator') {
+          console.log(`   Network: ${networkStatus}`);
+        }
+      }
+      
       console.log(`   Coins: ${coins.join(', ')}`);
       console.log(`   UI: ${uiMode}`);
       console.log('');
@@ -103,33 +191,95 @@ export class TradeCommands {
       return;
     }
 
+    // Validate prerequisites based on mode
+    const exchangeName = updatedConfig.exchange?.name || 'simulator';
+    const exchangeApiKey = updatedConfig.exchange?.apiKey;
+    const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
+
+    if (mode === 'live') {
+      // Live mode requires API credentials
+      if (exchangeName === 'simulator') {
+        throw new Error(
+          chalk.red('❌ Configuration Error: Live mode cannot use simulator') +
+          chalk.white('\n\n') +
+          chalk.yellow('📝 Issue:') +
+          chalk.gray(' You have configured live mode but are using the simulator exchange.\n') +
+          chalk.white('\n') +
+          chalk.yellow('🔧 Solution:') +
+          chalk.white(' Update ') + chalk.cyan('config.json') + chalk.white(' to use a real exchange:\n') +
+          chalk.gray('   {\n') +
+          chalk.gray('     "exchange": {\n') +
+          chalk.gray('       "name": "okx",  // or "binance", "coinbase"\n') +
+          chalk.gray('       "apiKey": "your-api-key",\n') +
+          chalk.gray('       "apiSecret": "your-api-secret"\n') +
+          chalk.gray('     }\n') +
+          chalk.gray('   }')
+        );
+      }
+      
+      if (!exchangeApiKey || !exchangeApiSecret) {
+        throw new Error(
+          chalk.red(`❌ Configuration Error: Missing API credentials for ${exchangeName.toUpperCase()}`) +
+          chalk.white('\n\n') +
+          chalk.yellow('📝 Issue:') +
+          chalk.gray(' Live mode requires API credentials to connect to the exchange.\n') +
+          chalk.white('\n') +
+          chalk.yellow('🔧 Solution:') +
+          chalk.white(' Add your API credentials to ') + chalk.cyan('config.json') + chalk.white(':\n') +
+          chalk.gray('   {\n') +
+          chalk.gray('     "exchange": {\n') +
+          chalk.gray('       "name": "' + exchangeName + '",\n') +
+          chalk.gray('       "apiKey": "your-api-key-here",\n') +
+          chalk.gray('       "apiSecret": "your-api-secret-here"\n') +
+          chalk.gray('     }\n') +
+          chalk.gray('   }\n') +
+          chalk.white('\n') +
+          chalk.yellow('💡 Tip:') +
+          chalk.gray(' Start with simulation mode to test without API keys')
+        );
+      }
+    } else if (mode === 'simulation' && exchangeName !== 'simulator') {
+      // Simulation with real data source - API keys optional but recommended
+      if (!exchangeApiKey || !exchangeApiSecret) {
+        console.log(chalk.yellow('⚠️  Warning: Running simulation without API keys'));
+        console.log(chalk.gray(`   Some features may be limited. Consider adding API keys to config.json for full access.`));
+        console.log('');
+      }
+    }
+
+    // Check AI API key
+    if (!updatedConfig.ai?.apiKey) {
+      throw new Error(
+        chalk.red('❌ Configuration Error: Missing AI API key') +
+        chalk.white('\n\n') +
+        chalk.yellow('📝 Issue:') +
+        chalk.gray(' AI signal generation requires an API key from OpenRouter.\n') +
+        chalk.white('\n') +
+        chalk.yellow('🔧 Solution:') +
+        chalk.white(' Add your OpenRouter API key to ') + chalk.cyan('config.json') + chalk.white(':\n') +
+        chalk.gray('   {\n') +
+        chalk.gray('     "ai": {\n') +
+        chalk.gray('       "apiKey": "sk-or-v1-your-key-here"\n') +
+        chalk.gray('     }\n') +
+        chalk.gray('   }\n') +
+        chalk.white('\n') +
+        chalk.yellow('🔗 Get API Key:') +
+        chalk.gray(' https://openrouter.ai/keys')
+      );
+    }
+
     // Initialize components
     const spinner = uiMode === 'cli' ? ora('Initializing trading system...').start() : null;
 
     // Create exchange based on mode and config
-    let exchange;
-    const exchangeName = updatedConfig.exchange?.name || 'simulator';
-    const exchangeApiKey = updatedConfig.exchange?.apiKey;
-    const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
     const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
-
-    if (mode === 'simulation' || exchangeName === 'simulator') {
-      exchange = new SimulatorExchange(10000);
-    } else if (exchangeName === 'okx') {
-      const { OKXExchange } = await import('../../exchange/okx.js');
-      exchange = new OKXExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
-    } else if (exchangeName === 'binance' || exchangeName === 'bin') {
-      const { BinanceExchange } = await import('../../exchange/binance.js');
-      exchange = new BinanceExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
-    } else if (exchangeName === 'coinbase' || exchangeName === 'cb') {
-      const { CoinbaseExchange } = await import('../../exchange/coinbase.js');
-      exchange = new CoinbaseExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
-    } else if (exchangeName === 'hyperliquid' || exchangeName === 'hliq') {
-      const { HyperliquidExchange } = await import('../../exchange/hyperliquid.js');
-      exchange = new HyperliquidExchange(exchangeApiKey, exchangeApiSecret, exchangeTestnet);
-    } else {
-      throw new Error(`Unsupported exchange: ${exchangeName}`);
-    }
+    const exchange = await this.getExchangeForMode(
+      mode as 'simulation' | 'live',
+      exchangeName,
+      exchangeApiKey,
+      exchangeApiSecret,
+      exchangeTestnet
+    );
 
     const marketProvider = new MarketDataProvider(exchange);
     const aiClient = new OpenRouterClient(updatedConfig.ai.apiKey);
@@ -161,13 +311,13 @@ export class TradeCommands {
       try {
         // Clear screen for clean TUI display
         console.clear();
-        
+
         // Import and start TUI (now works with ESM)
         const tuiManagerModule = await import('../../tui/manager.js');
         const { TUIManager } = tuiManagerModule;
         const appModule = await import('../../tui/app.js');
         const { renderTUI } = appModule;
-        
+
         const tuiManager = new TUIManager();
         workflow.setEventEmitter(tuiManager);
         tuiManager.start(); // Initialize TUI with startup logs
@@ -198,10 +348,10 @@ export class TradeCommands {
 
       } catch (tuiError) {
         console.error(chalk.red('❌ Failed to start TUI mode'));
-        
+
         if (tuiError instanceof Error) {
           const errorMsg = tuiError.message.toLowerCase();
-          
+
           if (errorMsg.includes('yoga-wasm') || errorMsg.includes('native module')) {
             console.error(chalk.yellow('   Reason: Ink/yoga-wasm dependency issue'));
             console.log(chalk.gray('   Solution: Ensure project is built with npm run build'));
@@ -214,7 +364,7 @@ export class TradeCommands {
         } else {
           console.error(chalk.yellow('   Error:'), String(tuiError));
         }
-        
+
         console.log(chalk.gray('\n💡 Falling back to CLI mode...'));
         console.log('');
         console.log(chalk.green('🚀 Starting trading workflow...'));
@@ -343,19 +493,19 @@ export class TradeCommands {
     try {
       // Check if trading system is running
       console.log(chalk.blue('📊 Checking system status...'));
-      
+
       // In a real implementation, this would:
       // 1. Check for running workflow
       // 2. Set pause flag
       // 3. Save current state
       // 4. Notify monitoring systems
-      
+
       console.log(chalk.yellow('⚠️  Pause functionality not yet implemented'));
       console.log(chalk.gray('   This will:'));
       console.log(chalk.gray('   - Pause trading cycles'));
       console.log(chalk.gray('   - Keep positions open'));
       console.log(chalk.gray('   - Save state for resumption'));
-      
+
     } catch (error) {
       console.error(chalk.red('❌ Error pausing trading system'));
       throw error;
@@ -375,7 +525,7 @@ export class TradeCommands {
 
     try {
       console.log(chalk.blue('📊 Checking active positions...'));
-      
+
       if (graceful) {
         console.log(chalk.yellow('⏳ Graceful shutdown: Finishing current trades...'));
         console.log(chalk.gray('   - Waiting for open orders to complete'));
@@ -397,10 +547,10 @@ export class TradeCommands {
       console.log(chalk.gray('   - Stop trading workflow'));
       console.log(chalk.gray('   - Close or keep positions (based on mode)'));
       console.log(chalk.gray('   - Save session summary'));
-      
+
       console.log('');
       console.log(chalk.green('💡 Tip: Use Ctrl+C to interrupt running trade commands'));
-      
+
     } catch (error) {
       console.error(chalk.red('❌ Error stopping trading system'));
       throw error;

@@ -333,5 +333,5 @@ export interface Exchange {
     leverage?: number
   ): Promise<Order>;
   cancelOrder(orderId: string, symbol: string): Promise<boolean>;
-  getTicker(symbol: string): Promise<unknown>;
+  getTicker(symbol: string): Promise<{ price: number; timestamp: number }>;
 }

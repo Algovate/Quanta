@@ -6,8 +6,9 @@ export class SimulatorExchange implements Exchange {
   private positions: Position[];
   private orders: Order[];
   private marketData: Map<string, Candlestick[]>;
+  private dataSourceExchange?: Exchange;
 
-  constructor(initialBalance: number = 10000) {
+  constructor(initialBalance: number = 10000, dataSourceExchange?: Exchange) {
     this.account = {
       balance: initialBalance,
       equity: initialBalance,
@@ -20,9 +21,12 @@ export class SimulatorExchange implements Exchange {
     this.positions = [];
     this.orders = [];
     this.marketData = new Map();
+    this.dataSourceExchange = dataSourceExchange;
 
-    // Initialize with some sample market data
-    this.initializeMarketData();
+    // Only initialize mock market data if no external data source is provided
+    if (!this.dataSourceExchange) {
+      this.initializeMarketData();
+    }
   }
 
   async getAccount(): Promise<Account> {
@@ -91,6 +95,20 @@ export class SimulatorExchange implements Exchange {
     timeframe: string,
     limit: number = 100
   ): Promise<Candlestick[]> {
+    // If we have a real data source exchange, delegate to it
+    if (this.dataSourceExchange) {
+      try {
+        return await this.dataSourceExchange.getCandlesticks(symbol, timeframe, limit);
+      } catch (error) {
+        // Fall back to mock data if real data fetch fails
+        console.warn(
+          `Failed to fetch real market data for ${symbol} ${timeframe}, falling back to mock data:`,
+          error
+        );
+      }
+    }
+
+    // Fall back to mock data generation
     const key = `${symbol}_${timeframe}`;
     let candles = this.marketData.get(key);
 
@@ -140,6 +158,25 @@ export class SimulatorExchange implements Exchange {
   }
 
   async getTicker(symbol: string): Promise<{ price: number; timestamp: number }> {
+    // If we have a real data source exchange, delegate to it
+    if (this.dataSourceExchange) {
+      try {
+        return await this.dataSourceExchange.getTicker(symbol);
+      } catch (error) {
+        // Fall back to mock price if real data fetch fails
+        console.warn(
+          `Failed to fetch real ticker data for ${symbol}, falling back to mock data:`,
+          error
+        );
+        // Explicitly return mock data on error
+        return {
+          price: this.getCurrentPrice(symbol),
+          timestamp: Date.now(),
+        };
+      }
+    }
+
+    // Fall back to mock data
     return {
       price: this.getCurrentPrice(symbol),
       timestamp: Date.now(),

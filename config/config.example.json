@@ -1,35 +1,62 @@
 {
   "mode": "simulation",
+  "_comment_mode": "Trading mode: 'simulation' (virtual account), 'live' (real trading), 'backtest' (historical data)",
+
   "exchange": {
     "name": "simulator",
+    "_comment_name": "Exchange name: 'simulator' (mock data), 'okx', 'binance', 'coinbase' (real data)",
     "apiKey": "",
+    "_comment_apiKey": "API key for authentication (optional for public data in simulation mode)",
     "apiSecret": "",
-    "testnet": true
+    "_comment_apiSecret": "API secret for authentication (optional for public data in simulation mode)",
+    "testnet": true,
+    "_comment_testnet": "Use testnet environment (recommended for testing)"
   },
+
   "ai": {
     "apiKey": "",
+    "_comment_apiKey": "OpenRouter API key for AI signal generation",
     "model": "deepseek/deepseek-chat",
-    "temperature": 0.7
+    "_comment_model": "AI model to use for trading signals",
+    "temperature": 0.7,
+    "_comment_temperature": "AI creativity level (0.0-2.0, lower = more conservative)"
   },
+
   "trading": {
     "coins": ["BTC", "ETH", "SOL"],
+    "_comment_coins": "List of cryptocurrency pairs to trade (without /USDT suffix)",
     "cyclePeriod": 180000,
+    "_comment_cyclePeriod": "Time between trading cycles in milliseconds (180000 = 3 minutes)",
     "maxPositions": 6,
+    "_comment_maxPositions": "Maximum number of simultaneous open positions",
     "leverageRange": [5, 40],
+    "_comment_leverageRange": "Leverage range [min, max] - e.g., [5, 40] means 5x to 40x leverage",
     "stopLoss": 0.03,
-    "maxRisk": 0.05
+    "_comment_stopLoss": "Default stop loss percentage (0.03 = 3%)",
+    "maxRisk": 0.05,
+    "_comment_maxRisk": "Maximum risk per trade as fraction of account (0.05 = 5%)"
   },
+
   "ui": {
     "mode": "tui",
-    "refreshRate": 1000
+    "_comment_mode": "UI mode: 'tui' (terminal UI with real-time display), 'cli' (command-line output only)",
+    "refreshRate": 1000,
+    "_comment_refreshRate": "UI refresh rate in milliseconds (1000 = 1 second)"
   },
+
   "backtest": {
     "startDate": "",
+    "_comment_startDate": "Backtest start date (YYYY-MM-DD format)",
     "endDate": "",
-    "initialBalance": 10000
+    "_comment_endDate": "Backtest end date (YYYY-MM-DD format)",
+    "initialBalance": 10000,
+    "_comment_initialBalance": "Starting balance for backtest simulation"
   },
+
   "notifications": {
     "enabled": false,
-    "webhook": ""
+    "_comment_enabled": "Enable webhook notifications for trading events",
+    "webhook": "",
+    "_comment_webhook": "Webhook URL for sending notifications"
   }
 }

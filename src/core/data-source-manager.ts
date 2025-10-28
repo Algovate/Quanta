@@ -11,8 +11,10 @@ export interface DataSourceManager {
 
 export class SimpleDataSourceManager implements DataSourceManager {
   private exchange: Exchange;
+  private config: Config;
 
   constructor(config: Config) {
+    this.config = config;
     const exchangeConfig = getExchangeConfig(config);
     this.exchange = this.createExchange({
       name: exchangeConfig.name || 'simulator',
@@ -30,6 +32,13 @@ export class SimpleDataSourceManager implements DataSourceManager {
   }): Exchange {
     const exchangeName = config.name.toLowerCase();
 
+    // In simulation mode with real exchange, wrap it in SimulatorExchange
+    if (this.config.mode === 'simulation' && exchangeName !== 'simulator') {
+      const dataExchange = this.createRealExchange(exchangeName, config);
+      return new SimulatorExchange(10000, dataExchange);
+    }
+
+    // Pure simulation or live/backtest modes
     switch (exchangeName) {
       case 'simulator':
         return new SimulatorExchange(10000);
@@ -42,6 +51,26 @@ export class SimpleDataSourceManager implements DataSourceManager {
       default:
         throw new Error(
           `Unsupported exchange: ${exchangeName}. Supported exchanges: simulator, okx, binance, coinbase`
+        );
+    }
+  }
+
+  private createRealExchange(
+    name: string,
+    config: { apiKey?: string; apiSecret?: string; testnet?: boolean }
+  ): Exchange {
+    const exchangeName = name.toLowerCase();
+
+    switch (exchangeName) {
+      case 'okx':
+        return new OKXExchange(config.apiKey, config.apiSecret, config.testnet);
+      case 'binance':
+        return new BinanceExchange(config.apiKey, config.apiSecret, config.testnet);
+      case 'coinbase':
+        return new CoinbaseExchange(config.apiKey, config.apiSecret, config.testnet);
+      default:
+        throw new Error(
+          `Unsupported real exchange for data source: ${exchangeName}. Supported: okx, binance, coinbase`
         );
     }
   }
