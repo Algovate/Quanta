@@ -5,6 +5,7 @@ import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
+import { aggregatePositionMetrics } from '../execution/position-utils.js';
 import { Logger } from '../utils/logger.js';
 import chalk from 'chalk';
 
@@ -15,6 +16,7 @@ export interface SystemState {
   lastUpdate: number;
   totalSignals: number;
   totalTrades: number;
+  rejectedSignals: number; // Track rejected signals for efficiency calculation
   totalPnl: number;
   winRate: number;
   lastCountdownTime?: number;
@@ -73,6 +75,7 @@ export class TradingWorkflow {
       lastUpdate: Date.now(),
       totalSignals: 0,
       totalTrades: 0,
+      rejectedSignals: 0,
       totalPnl: 0,
       winRate: 0,
       previousEquity: 0,
@@ -107,7 +110,7 @@ export class TradingWorkflow {
       return;
     }
 
-    this.emitLog('info', '🚀 Starting Quanta trading workflow...');
+    // Remove duplicate startup message - already shown in trade.ts
     this.state.isRunning = true;
     this.state.startTime = Date.now();
     this.state.lastUpdate = Date.now();
@@ -250,71 +253,9 @@ export class TradingWorkflow {
         }
       }
 
+      // Execute all signals
       for (const signal of signals) {
-        try {
-          const symbol = `${signal.coin}/USDT`;
-          const ticker = await this.exchange.getTicker(symbol);
-          const currentPrice = (ticker as { price: number }).price;
-
-          // Get position sizing info for detailed logging
-          const sizing = this.riskManager.calculatePositionSizing(
-            signal,
-            account,
-            positions,
-            currentPrice
-          );
-
-          // Log HOLD signal before attempting execution
-          if (signal.action === 'HOLD') {
-            // Only log HOLD if we have a position, otherwise it's just monitoring
-            const hasPosition = positions.some(p => p.symbol === `${signal.coin}/USDT`);
-            if (hasPosition) {
-              this.emitLog('info', `⏸️  ${signal.coin}: HOLD - monitoring existing position`);
-            } else {
-              this.emitLog('info', `⏸️  ${signal.coin}: HOLD - no action`);
-            }
-            continue; // Skip execution for HOLD
-          }
-
-          // Check if sizing calculation failed
-          if (!sizing) {
-            this.emitLog(
-              'warn',
-              `⚠️  ${signal.coin}: ${signal.action} signal rejected (risk limit or max positions reached)`
-            );
-            continue;
-          }
-
-          const result = await this.orderExecutor.executeSignal(
-            signal,
-            account,
-            positions,
-            currentPrice
-          );
-
-          if (result.success) {
-            // Only count and log if an actual order was placed
-            if (result.order) {
-              this.state.totalTrades++;
-
-              // Build detailed execution message with actual order info
-              const leverage = sizing.leverage || 1;
-              const positionSize = sizing.suggestedSize * currentPrice; // Value in USD
-              const notional = positionSize; // Notional is just the position value
-              const marginUsed = notional / leverage; // Actual margin deducted
-              const detailMsg = `✅ Executed ${signal.action} signal for ${signal.coin} @ $${currentPrice.toFixed(2)} | ${leverage}x leverage | Notional: $${notional.toFixed(2)} | Margin: $${marginUsed.toFixed(2)}`;
-
-              this.emitLog('success', detailMsg);
-            }
-          } else {
-            this.emitLog(
-              'error',
-              `❌ Failed to execute ${signal.action} signal for ${signal.coin}: ${result.error}`
-            );
-          }
-        } catch (error) {
-          this.emitLog('error', `Error executing signal for ${signal.coin}: ${error}`);
-        }
+        await this.executeSignal(signal, account, positions);
       }
 
       // 5.5. Refresh account and positions after executing signals
@@ -331,9 +272,81 @@ export class TradingWorkflow {
     }
   }
 
+  /**
+   * Execute a single trading signal
+   * Extracted from executeCycle for better organization and testability
+   */
+  private async executeSignal(
+    signal: TradingSignal,
+    account: Account,
+    positions: Position[]
+  ): Promise<void> {
+    try {
+      const symbol = `${signal.coin}/USDT`;
+      const ticker = await this.exchange.getTicker(symbol);
+      const currentPrice = (ticker as { price: number }).price;
+
+      // Get position sizing info for detailed logging
+      const sizing = this.riskManager.calculatePositionSizing(
+        signal,
+        account,
+        positions,
+        currentPrice
+      );
+
+      // Handle HOLD signals
+      if (signal.action === 'HOLD') {
+        const hasPosition = positions.some(p => p.symbol === `${signal.coin}/USDT`);
+        this.emitLog(
+          'info',
+          hasPosition
+            ? `⏸️  ${signal.coin}: HOLD - monitoring existing position`
+            : `⏸️  ${signal.coin}: HOLD - no action`
+        );
+        return;
+      }
+
+      // Check if sizing calculation failed
+      if (!sizing) {
+        this.state.rejectedSignals++;
+        this.emitLog(
+          'warn',
+          `⚠️  ${signal.coin}: ${signal.action} signal rejected (risk limit or max positions reached)`
+        );
+        return;
+      }
+
+      // Execute the signal
+      const result = await this.orderExecutor.executeSignal(
+        signal,
+        account,
+        positions,
+        currentPrice
+      );
+
+      if (result.success && result.order) {
+        this.state.totalTrades++;
+        const leverage = sizing.leverage || 1;
+        const positionSize = sizing.suggestedSize * currentPrice;
+        const notional = positionSize;
+        const marginUsed = notional / leverage;
+        const detailMsg = `✅ Executed ${signal.action} signal for ${signal.coin} @ $${currentPrice.toFixed(2)} | ${leverage}x leverage | Notional: $${notional.toFixed(2)} | Margin: $${marginUsed.toFixed(2)}`;
+        this.emitLog('success', detailMsg);
+      } else if (!result.success) {
+        this.emitLog(
+          'error',
+          `❌ Failed to execute ${signal.action} signal for ${signal.coin}: ${result.error}`
+        );
+      }
+    } catch (error) {
+      this.emitLog('error', `Error executing signal for ${signal.coin}: ${error}`);
+    }
+  }
+
   private updatePerformanceMetrics(_account: Account, positions: Position[]): void {
-    // Update total PnL from open positions
-    this.state.totalPnl = positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
+    // Update total PnL from open positions using optimized aggregation
+    const aggregates = aggregatePositionMetrics(positions);
+    this.state.totalPnl = aggregates.totalPnl;
 
     // Calculate win rate from completed trades
     this.state.winRate = this.calculateWinRate();
@@ -366,11 +379,14 @@ export class TradingWorkflow {
     const runtimeMinutes = Math.floor(runtime / (1000 * 60));
     const runtimeSeconds = Math.floor((runtime / 1000) % 60);
 
-    const totalPnl = positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
+    // Use optimized single-pass aggregation instead of multiple reduce() calls
+    const aggregates = aggregatePositionMetrics(positions);
+    const totalPnl = aggregates.totalPnl;
+    const totalNotional = aggregates.totalNotional;
+    const totalMarginUsed = aggregates.totalMarginUsed;
+
     const pnlPercent = (totalPnl / account.equity) * 100;
     const pnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
-    const totalNotional = positions.reduce((sum, pos) => sum + pos.notional, 0);
-    const totalMarginUsed = positions.reduce((sum, pos) => sum + pos.marginUsed, 0);
 
     // Calculate cycle P&L change
     const cyclePnlChange = this.state.previousEquity
@@ -383,33 +399,36 @@ export class TradingWorkflow {
     this.state.previousEquity = account.equity;
     this.state.cyclePnl = cyclePnlChange;
 
-    // Log structured cycle summary for file logs
-    this.logger.info('Cycle Summary', {
-      cycle: this.state.cycleCount,
-      runtime: `${runtimeMinutes}m ${runtimeSeconds}s`,
-      totalCycles: this.state.cycleCount,
-      aiSignals: signals.length,
-      executedTrades: this.state.totalTrades,
-      openPositions: positions.length,
-      account: {
-        equity: account.equity,
-        availableMargin: account.availableMargin,
-        usedMargin: totalMarginUsed,
-        exposure: totalNotional,
-        leverage: (totalNotional / account.equity).toFixed(2),
-        totalPnl,
-        pnlPercent,
-      },
-      positions: positions.map(p => ({
-        symbol: p.symbol,
-        side: p.side,
-        leverage: p.leverage,
-        marginUsed: p.marginUsed,
-        entryPrice: p.entryPrice,
-        unrealizedPnl: p.unrealizedPnl,
-      })),
-      winRate: this.state.winRate,
-    });
+    // Log structured cycle summary for file logs only (not console)
+    // This prevents duplicate "Cycle Summary" text in console output
+    if (this.logger.isBackgroundMode()) {
+      this.logger.info('Cycle Summary', {
+        cycle: this.state.cycleCount,
+        runtime: `${runtimeMinutes}m ${runtimeSeconds}s`,
+        totalCycles: this.state.cycleCount,
+        aiSignals: signals.length,
+        executedTrades: this.state.totalTrades,
+        openPositions: positions.length,
+        account: {
+          equity: account.equity,
+          availableMargin: account.availableMargin,
+          usedMargin: totalMarginUsed,
+          exposure: totalNotional,
+          leverage: (totalNotional / account.equity).toFixed(2),
+          totalPnl,
+          pnlPercent,
+        },
+        positions: positions.map(p => ({
+          symbol: p.symbol,
+          side: p.side,
+          leverage: p.leverage,
+          marginUsed: p.marginUsed,
+          entryPrice: p.entryPrice,
+          unrealizedPnl: p.unrealizedPnl,
+        })),
+        winRate: this.state.winRate,
+      });
+    }
 
     // Console output with formatting (only if not background mode)
     if (!this.isBackgroundMode) {
@@ -417,14 +436,42 @@ export class TradingWorkflow {
       console.log(
         `   Runtime: ${runtimeMinutes}m ${runtimeSeconds}s | Total Cycles: ${this.state.cycleCount}`
       );
+
+      // Calculate signal efficiency
+      const totalActionableSignals = this.state.totalTrades + this.state.rejectedSignals;
+      const efficiency =
+        totalActionableSignals > 0
+          ? ((this.state.totalTrades / totalActionableSignals) * 100).toFixed(0)
+          : '100';
+      const efficiencyColor =
+        parseFloat(efficiency) >= 80
+          ? chalk.green
+          : parseFloat(efficiency) >= 50
+            ? chalk.yellow
+            : chalk.red;
+
       console.log(
-        `   AI Signals: ${signals.length} | Executed Trades: ${this.state.totalTrades} | Open Positions: ${positions.length}`
+        `   AI Signals: ${signals.length} | Executed: ${this.state.totalTrades} | Rejected: ${this.state.rejectedSignals} | Efficiency: ${efficiencyColor(efficiency + '%')}`
       );
+      console.log(`   Open Positions: ${positions.length}/${this.config.maxPositions}`);
 
       // Account and exposure summary
       console.log(chalk.magenta(`\n💰 Account Status:`));
+
+      // Show equity with trend indicator
+      let equityDisplay = `$${account.equity.toFixed(2)}`;
+      if (this.state.cycleCount > 1 && this.state.previousEquity) {
+        const trendArrow =
+          cyclePnlChange > 0
+            ? chalk.green('↑')
+            : cyclePnlChange < 0
+              ? chalk.red('↓')
+              : chalk.gray('→');
+        equityDisplay += ` ${trendArrow}`;
+      }
+
       console.log(
-        `   Equity: $${account.equity.toFixed(2)} | Available: $${account.availableMargin.toFixed(2)} | Used: $${totalMarginUsed.toFixed(2)}`
+        `   Equity: ${equityDisplay} | Available: $${account.availableMargin.toFixed(2)} | Used: $${totalMarginUsed.toFixed(2)}`
       );
       console.log(
         `   Exposure: $${totalNotional.toFixed(2)} | Leverage: ${(totalNotional / account.equity).toFixed(2)}x | Total P&L: ${pnlColor(`$${totalPnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`)}`
@@ -437,15 +484,43 @@ export class TradingWorkflow {
         );
       }
 
-      // Risk metrics
+      // Risk metrics - comprehensive display
       const maxMarginLimit = this.config.riskParams.maxTotalRisk * 100; // Convert to percentage
       const marginUsage = positions.length > 0 ? (totalMarginUsed / account.equity) * 100 : 0;
+
+      // Get additional risk metrics from position monitor
+      const positionSummary = this.positionMonitor.getPositionSummary(positions);
+      const averageLeverage = positionSummary.averageLeverage.toFixed(2);
+      const riskLevelColor =
+        positionSummary.riskLevel === 'high'
+          ? chalk.red
+          : positionSummary.riskLevel === 'medium'
+            ? chalk.yellow
+            : chalk.green;
+
       console.log(chalk.magenta(`\n⚠️  Risk Status:`));
       console.log(
         `   Margin Usage: ${marginUsage.toFixed(2)}% | Limit: ${maxMarginLimit.toFixed(0)}% | Positions: ${positions.length}/${this.config.maxPositions}`
       );
 
       if (positions.length > 0) {
+        console.log(
+          `   Risk Level: ${riskLevelColor(positionSummary.riskLevel.toUpperCase())} | Avg Leverage: ${averageLeverage}x`
+        );
+
+        // Display diversification metrics
+        if (positions.length > 1) {
+          const divScore = positionSummary.diversificationScore;
+          const corrScore = positionSummary.correlationScore;
+          const divColor = divScore > 0.7 ? chalk.green : divScore > 0.4 ? chalk.yellow : chalk.red;
+          const corrColor =
+            corrScore > 0.7 ? chalk.red : corrScore > 0.4 ? chalk.yellow : chalk.green;
+
+          console.log(
+            `   Diversification: ${divColor((divScore * 100).toFixed(0) + '%')} | Correlation: ${corrColor((corrScore * 100).toFixed(0) + '%')}`
+          );
+        }
+
         // Display positions table
         console.log(`\n📊 Positions:`);
         console.log(
@@ -479,8 +554,34 @@ export class TradingWorkflow {
           `   └──────────┴──────┴──────────┴──────────────┴──────────────┴───────────────┘`
         );
 
-        // Win rate only if we have positions
-        console.log(`   Win Rate: ${this.state.winRate.toFixed(1)}%`);
+        // Display individual position metrics
+        console.log(chalk.gray(`\n   📊 Position Details:`));
+        positions.forEach(position => {
+          const holdingTime = Date.now() - position.timestamp;
+          const hours = Math.floor(holdingTime / (1000 * 60 * 60));
+          const minutes = Math.floor((holdingTime % (1000 * 60 * 60)) / (1000 * 60));
+          const timeText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+          // Calculate stop loss and take profit levels
+          const stopLoss = this.riskManager.calculateStopLoss(position, position.entryPrice);
+          const takeProfit = this.riskManager.calculateTakeProfit(position, position.entryPrice);
+          const stopLossPercent = Math.abs(
+            ((stopLoss - position.entryPrice) / position.entryPrice) * 100
+          );
+          const takeProfitPercent = Math.abs(
+            ((takeProfit - position.entryPrice) / position.entryPrice) * 100
+          );
+          const rrRatio = takeProfitPercent / stopLossPercent;
+
+          console.log(
+            chalk.gray(
+              `      ${position.symbol.replace('/USDT', '')}: Holding ${timeText} | R/R ${rrRatio.toFixed(1)}x | SL: ${position.side === 'long' ? '-' : '+'}${stopLossPercent.toFixed(1)}% | TP: ${position.side === 'long' ? '+' : '-'}${takeProfitPercent.toFixed(1)}%`
+            )
+          );
+        });
+
+        // Win rate
+        console.log(`\n   Win Rate: ${this.state.winRate.toFixed(1)}%`);
       } else {
         console.log(`\n   No open positions`);
       }

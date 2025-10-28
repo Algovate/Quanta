@@ -3,7 +3,7 @@ import { RiskManager } from './risk.js';
 import { OrderExecutor } from './orders.js';
 import { POSITION_MONITORING } from './constants.js';
 import { Logger } from '../utils/logger.js';
-import { calculateUnrealizedPnl } from './position-utils.js';
+import { calculateUnrealizedPnl, aggregatePositionMetrics } from './position-utils.js';
 
 export interface PositionMonitor {
   checkStopLoss(position: Position, currentPrice: number): boolean;
@@ -37,9 +37,13 @@ export class PositionMonitorService implements PositionMonitor {
     position: Position,
     currentPrice: number
   ): { shouldClose: boolean; reason: string } {
-    // Check stop loss
-    if (this.checkStopLoss(position, currentPrice)) {
-      return { shouldClose: true, reason: 'Stop loss triggered' };
+    // Check trailing stop first (more protective)
+    if (this.riskManager.checkStopLossWithTrailing(position, currentPrice)) {
+      // Determine if it's a trailing stop or regular stop loss
+      const reason = position.trailingStopPrice
+        ? `Trailing stop triggered @ $${position.trailingStopPrice.toFixed(2)}`
+        : 'Stop loss triggered';
+      return { shouldClose: true, reason };
     }
 
     // Check take profit
@@ -112,6 +116,8 @@ export class PositionMonitorService implements PositionMonitor {
     totalMarginUsed: number;
     averageLeverage: number;
     riskLevel: 'low' | 'medium' | 'high';
+    correlationScore: number;
+    diversificationScore: number;
   } {
     if (positions.length === 0) {
       return {
@@ -120,11 +126,15 @@ export class PositionMonitorService implements PositionMonitor {
         totalMarginUsed: 0,
         averageLeverage: 0,
         riskLevel: 'low',
+        correlationScore: 0,
+        diversificationScore: 1,
       };
     }
 
-    const totalPnl = positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
-    const totalMarginUsed = positions.reduce((sum, pos) => sum + pos.marginUsed, 0);
+    // Use optimized single-pass aggregation
+    const aggregates = aggregatePositionMetrics(positions);
+    const totalPnl = aggregates.totalPnl;
+    const totalMarginUsed = aggregates.totalMarginUsed;
     const averageLeverage =
       positions.reduce((sum, pos) => sum + pos.leverage, 0) / positions.length;
 
@@ -135,12 +145,52 @@ export class PositionMonitorService implements PositionMonitor {
     if (pnlPercent > POSITION_MONITORING.HIGH_RISK_THRESHOLD) riskLevel = 'high';
     else if (pnlPercent > POSITION_MONITORING.MEDIUM_RISK_THRESHOLD) riskLevel = 'medium';
 
+    // Calculate correlation and diversification scores
+    const { correlationScore, diversificationScore } = this.calculatePortfolioMetrics(positions);
+
     return {
       totalPositions: positions.length,
       totalPnl,
       totalMarginUsed,
       averageLeverage,
       riskLevel,
+      correlationScore,
+      diversificationScore,
+    };
+  }
+
+  /**
+   * Calculate portfolio correlation and diversification metrics
+   */
+  private calculatePortfolioMetrics(positions: Position[]): {
+    correlationScore: number;
+    diversificationScore: number;
+  } {
+    // Correlation score: 0 = uncorrelated, 1 = perfectly correlated
+    // If all positions are same side and similar notional, high correlation
+    const sides = positions.map(p => p.side);
+    const allSameSide = sides.every(side => side === sides[0]);
+
+    // Calculate correlation based on side diversity and position sizes
+    let correlationScore = allSameSide ? 0.8 : 0.3;
+
+    // Adjust based on position count (fewer positions = higher correlation)
+    correlationScore = correlationScore * (3 / positions.length);
+    correlationScore = Math.min(1, correlationScore);
+
+    // Diversification score: 1 = well diversified, 0 = poorly diversified
+    const uniqueSymbols = new Set(positions.map(p => p.symbol)).size;
+    const totalPositions = positions.length;
+    const diversificationScore = totalPositions > 1 ? uniqueSymbols / totalPositions : 1;
+
+    // Combine with side diversity
+    const finalDiversificationScore = allSameSide
+      ? diversificationScore * 0.7
+      : diversificationScore;
+
+    return {
+      correlationScore: Math.min(1, correlationScore),
+      diversificationScore: Math.max(0, Math.min(1, finalDiversificationScore)),
     };
   }
 }

@@ -122,9 +122,7 @@ export class TradeCommands {
             'Update config.json exchange.name to use a real exchange.'
         );
       }
-      console.log(
-        `📊 Paper trading mode: Using real data from ${exchangeName}, simulated execution`
-      );
+      // Remove duplicate message - configuration already displayed above
       const dataExchange = await this.createExchange(exchangeName, apiKey, apiSecret, testnet);
       return new SimulatorExchange(10000, dataExchange);
     } else {

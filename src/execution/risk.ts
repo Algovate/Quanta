@@ -1,5 +1,6 @@
 import { Account, Position, TradingSignal } from '../exchange/types.js';
 import { POSITION_SIZING, SIGNAL_VALIDATION, ORDER_EXECUTION } from './constants.js';
+import { aggregatePositionMetrics } from './position-utils.js';
 import { Logger } from '../utils/logger.js';
 
 export interface RiskParams {
@@ -42,9 +43,9 @@ export class RiskManager {
         return null;
       }
 
-      // Check total margin usage to prevent over-leveraging
-      const totalMarginUsed = currentPositions.reduce((sum, pos) => sum + pos.marginUsed, 0);
-      const currentMarginUsage = totalMarginUsed / account.equity;
+      // Check total margin usage to prevent over-leveraging using optimized aggregation
+      const aggregates = aggregatePositionMetrics(currentPositions);
+      const currentMarginUsage = aggregates.totalMarginUsed / account.equity;
       if (currentMarginUsage >= this.params.maxTotalRisk) {
         // Silent rejection - margin limit reached
         return null;
@@ -76,8 +77,12 @@ export class RiskManager {
       const availableForTrade = account.availableMargin * (1 - POSITION_SIZING.MIN_RESERVE_PERCENT);
       const maxCapitalBasedValue = availableForTrade * POSITION_SIZING.MAX_CAPITAL_PERCENT;
 
-      // Step 3: Choose the smaller value (risk-based or capital-based) but ensure minimum size
-      const finalPositionValue = Math.min(maxCapitalBasedValue, riskBasedPositionValue);
+      // Step 3: Apply utilization factor based on number of open positions
+      // Scale position size inversely with position count to maintain diversification
+      const utilizationFactor = 1 - currentPositions.length / this.params.maxPositions;
+      // Factor ranges from 1.0 (no positions) down to ~0.17 (at max positions)
+      const positionValueWithUtil =
+        Math.min(maxCapitalBasedValue, riskBasedPositionValue) * utilizationFactor;
 
       // Ensure minimum position value (1% of account or $200, whichever is higher)
       // This scales with account size and prevents tiny positions
@@ -85,14 +90,18 @@ export class RiskManager {
         POSITION_SIZING.MIN_POSITION_VALUE_USD,
         account.equity * POSITION_SIZING.MIN_POSITION_PERCENT
       );
-      const adjustedPositionValue = Math.max(minPositionValue, finalPositionValue);
+      const adjustedPositionValue = Math.max(minPositionValue, positionValueWithUtil);
 
       // Step 4: Calculate position size in units (this is the amount we'll buy/sell)
       const suggestedSize = adjustedPositionValue / pricePerUnit;
 
-      // Step 5: Determine leverage to use
-      // For simulation/safety, use minimum leverage from config
-      const leverage = this.params.minLeverage;
+      // Step 5: Determine dynamic leverage based on confidence and risk
+      const leverage = this.calculateDynamicLeverage(
+        signal,
+        account,
+        aggregates.totalMarginUsed,
+        currentPositions.length
+      );
 
       // Calculate stop loss price
       const stopLossPrice =
@@ -112,6 +121,55 @@ export class RiskManager {
       this.logger.error('Error calculating position sizing', error);
       return null;
     }
+  }
+
+  /**
+   * Calculate dynamic leverage based on signal confidence, account risk, and position count
+   */
+  private calculateDynamicLeverage(
+    signal: TradingSignal,
+    account: Account,
+    totalMarginUsed: number,
+    positionCount: number
+  ): number {
+    // Base leverage starts at minimum
+    let leverage = this.params.minLeverage;
+
+    // Factor 1: Signal confidence
+    // Higher confidence = can use higher leverage
+    const confidenceFactor = signal.confidence;
+    if (confidenceFactor >= 0.75) {
+      // High confidence signals: use up to max leverage
+      leverage = Math.min(this.params.maxLeverage, leverage * 1.5);
+    } else if (confidenceFactor >= 0.65) {
+      // Medium-high confidence: use slightly higher leverage
+      leverage = Math.min(this.params.maxLeverage, leverage * 1.2);
+    }
+    // Low confidence (0.55-0.65): keep at min leverage
+
+    // Factor 2: Account risk exposure
+    // Lower leverage when already heavily leveraged
+    const marginUsage = totalMarginUsed / account.equity;
+    if (marginUsage > 0.2) {
+      // Already using >20% of account: reduce leverage significantly
+      leverage = leverage * 0.6;
+    } else if (marginUsage > 0.15) {
+      // Using 15-20%: reduce leverage moderately
+      leverage = leverage * 0.8;
+    }
+    // Under 15%: no reduction
+
+    // Factor 3: Number of open positions
+    // More positions = lower per-position leverage for diversification
+    const positionFactor = 1 - positionCount / (this.params.maxPositions * 2);
+    leverage = leverage * Math.max(0.7, positionFactor);
+    // Never go below 70% of calculated leverage due to position count
+
+    // Ensure leverage stays within bounds
+    leverage = Math.max(this.params.minLeverage, Math.min(this.params.maxLeverage, leverage));
+
+    // Round to nearest 0.5 for cleaner display
+    return Math.round(leverage * 2) / 2;
   }
 
   validateSignal(signal: TradingSignal, _account: Account, currentPositions: Position[]): boolean {
@@ -238,5 +296,58 @@ export class RiskManager {
 
   getRiskParams(): RiskParams {
     return { ...this.params };
+  }
+
+  /**
+   * Update trailing stop loss for a position
+   * Trail begins when position is +2% and moves to breakeven
+   * At +5% profit, trail at -2% from peak
+   */
+  updateTrailingStop(position: Position, currentPrice: number): number | null {
+    const isLong = position.side === 'long';
+    const entryPrice = position.entryPrice;
+
+    // Calculate current P&L percentage
+    const pnlPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
+    const actualPnlPercent = isLong ? pnlPercent : -pnlPercent;
+
+    // Update peak price if we're at a new high
+    if (
+      !position.peakPrice ||
+      (isLong ? currentPrice > position.peakPrice : currentPrice < position.peakPrice)
+    ) {
+      position.peakPrice = currentPrice;
+    }
+
+    // Trailing stop conditions
+    if (actualPnlPercent >= 5.0) {
+      // At +5% or more: trail stop at 2% below peak
+      const trailPercent = 0.02; // 2%
+      return isLong
+        ? (position.peakPrice || currentPrice) * (1 - trailPercent)
+        : (position.peakPrice || currentPrice) * (1 + trailPercent);
+    } else if (actualPnlPercent >= 2.0) {
+      // At +2% to +5%: move stop to breakeven
+      return entryPrice;
+    }
+
+    // Before +2%: use regular stop loss
+    return null;
+  }
+
+  /**
+   * Check if trailing stop or regular stop loss should trigger
+   */
+  checkStopLossWithTrailing(position: Position, currentPrice: number): boolean {
+    // Check trailing stop first (more aggressive)
+    const trailingStopPrice = this.updateTrailingStop(position, currentPrice);
+    if (trailingStopPrice) {
+      const isLong = position.side === 'long';
+      position.trailingStopPrice = trailingStopPrice;
+      return isLong ? currentPrice <= trailingStopPrice : currentPrice >= trailingStopPrice;
+    }
+
+    // Otherwise use regular stop loss
+    return this.checkStopLoss(position, currentPrice);
   }
 }

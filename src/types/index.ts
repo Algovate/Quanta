@@ -125,6 +125,8 @@ export interface Position {
   notional: number; // Position value in USD (size * markPrice * leverage)
   leverage: number;
   timestamp: number;
+  trailingStopPrice?: number; // Dynamic trailing stop price
+  peakPrice?: number; // Highest price seen (for trailing stops)
 }
 
 export interface Order {

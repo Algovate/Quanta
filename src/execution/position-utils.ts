@@ -1,5 +1,30 @@
 import { Position } from '../exchange/types.js';
 
+export interface PositionAggregates {
+  totalPnl: number;
+  totalNotional: number;
+  totalMarginUsed: number;
+  positionCount: number;
+}
+
+/**
+ * Aggregate position metrics in a single pass for performance
+ * @param positions - Array of positions to aggregate
+ * @returns Aggregated position metrics
+ */
+export function aggregatePositionMetrics(positions: Position[]): PositionAggregates {
+  const aggregates = positions.reduce(
+    (acc, pos) => ({
+      totalPnl: acc.totalPnl + pos.unrealizedPnl,
+      totalNotional: acc.totalNotional + pos.notional,
+      totalMarginUsed: acc.totalMarginUsed + pos.marginUsed,
+      positionCount: acc.positionCount + 1,
+    }),
+    { totalPnl: 0, totalNotional: 0, totalMarginUsed: 0, positionCount: 0 }
+  );
+  return aggregates;
+}
+
 /**
  * Calculate unrealized profit and loss for a position
  * @param position - The position to calculate P&L for
