@@ -42,6 +42,16 @@ const ConfigSchema = z.object({
       webhook: z.string().optional(),
     })
     .optional(),
+  logging: z
+    .object({
+      level: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+      fileOutput: z.boolean().default(true),
+      logDir: z.string().default('./logs'),
+      maxFileSize: z.number().default(10485760), // 10MB
+      maxFiles: z.number().default(14), // 14 days
+      backgroundMode: z.boolean().default(false), // auto-detect
+    })
+    .optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

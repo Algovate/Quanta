@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { MarketData } from '../data/market.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
+import { Logger } from '../utils/logger.js';
 
 export interface AIResponse {
   coin: string;
@@ -30,11 +31,13 @@ export class OpenRouterClient {
   private apiKey: string;
   private model: string;
   private temperature: number;
+  private logger: Logger;
 
   constructor(apiKey: string, model: string = 'deepseek/deepseek-chat', temperature: number = 0.7) {
     this.apiKey = apiKey;
     this.model = model;
     this.temperature = temperature;
+    this.logger = Logger.getInstance('OpenRouter');
   }
 
   async generateTradingSignal(
@@ -48,7 +51,7 @@ export class OpenRouterClient {
       const response = await this.callOpenRouterAPI(prompt);
       return this.parseResponse(response);
     } catch (error) {
-      console.error('Error generating trading signal:', error);
+      this.logger.error('Error generating trading signal', error);
       return [];
     }
   }
@@ -304,7 +307,7 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
 
       return response.data.choices[0].message.content;
     } catch (error) {
-      console.error('OpenRouter API Error:', error);
+      this.logger.error('OpenRouter API Error', error);
       throw error;
     }
   }
@@ -336,8 +339,7 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
         timestamp: Date.now(),
       }));
     } catch (error) {
-      console.error('Error parsing AI response:', error);
-      console.error('Raw response:', response);
+      this.logger.error('Error parsing AI response', error, { rawResponse: response });
       return [];
     }
   }

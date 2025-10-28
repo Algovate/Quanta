@@ -51,5 +51,20 @@
     "_comment_enabled": "Enable webhook notifications for trading events",
     "webhook": "",
     "_comment_webhook": "Webhook URL for sending notifications"
+  },
+
+  "logging": {
+    "level": "info",
+    "_comment_level": "Log level: 'error', 'warn', 'info', 'debug' (default: 'info')",
+    "fileOutput": true,
+    "_comment_fileOutput": "Enable file-based logging (default: true)",
+    "logDir": "./logs",
+    "_comment_logDir": "Directory for log files (default: './logs')",
+    "maxFileSize": 10485760,
+    "_comment_maxFileSize": "Maximum log file size in bytes (default: 10MB)",
+    "maxFiles": 14,
+    "_comment_maxFiles": "Number of days to keep logs (default: 14)",
+    "backgroundMode": false,
+    "_comment_backgroundMode": "Force background mode (auto-detected if false)"
   }
 }

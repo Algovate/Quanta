@@ -11,10 +11,7 @@ npm install && npm run build
 # Run a complete trade cycle simulation
 quanta simulate cycle --coins BTC,ETH,SOL --verbose
 
-# Start live trading (simulation mode) with TUI
-quanta trade start --mode simulation --coins BTC,ETH --ui tui
-
-# Start live trading (simulation mode) with CLI output
+# Start live trading in simulation mode
 quanta trade start --mode simulation --coins BTC,ETH
 
 # Test the system
@@ -29,7 +26,7 @@ quanta test ai --type mock --coin BTC
 - **🔄 Dual Modes**: Live trading and simulation
 - **💼 Portfolio Management**: Multi-coin multi-position support (2-3 concurrent positions)
 - **🎯 Mock AI**: Built-in simulated AI for testing without API keys
-- **🎨 Interactive TUI**: Real-time terminal UI with live panels, charts, and keyboard controls
+- **⚡ Real-time Monitoring**: Live trading updates and performance tracking
 - **📈 Enhanced Backtest Reports**: Visual formatting, progress bars, color-coded metrics, and comprehensive statistics
 
 ## Commands
@@ -37,10 +34,7 @@ quanta test ai --type mock --coin BTC
 ### Trading
 
 ```bash
-# Start with interactive TUI (recommended)
-quanta trade start --mode simulation --coins BTC,ETH,SOL --ui tui
-
-# Start with CLI output
+# Start trading in simulation mode
 quanta trade start --mode simulation --coins BTC,ETH,SOL
 
 # Run historical backtest with enhanced reporting
@@ -52,13 +46,6 @@ quanta trade stop --graceful
 quanta trade status
 ```
 
-**TUI Keyboard Shortcuts:**
-
-- `h` / `?` - Show help overlay
-- `p` - Pause/Resume trading
-- `q` - Quit gracefully
-- `r` - Refresh data
-- `1-7` - Switch between views
 
 ### Simulation
 
@@ -114,7 +101,6 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 
 ## Documentation
 
-- 🎨 [Interactive TUI Guide](docs/tui-guide.md) - Real-time terminal interface
 - 📖 [Getting Started](docs/getting-started.md)
 - 🎯 [Trading Guide](docs/trading-guide.md)
 - 🔧 [Configuration](docs/configuration.md)
@@ -122,6 +108,7 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 - 📚 [Command Reference](docs/commands.md)
 - 💡 [Core Concepts](docs/concepts.md)
 - 🏦 [Supported Exchanges](docs/exchanges.md)
+- 📝 [Logging Guide](docs/logging-guide.md)
 
 ## Development
 

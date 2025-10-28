@@ -5,6 +5,7 @@ import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
+import { Logger } from '../utils/logger.js';
 import chalk from 'chalk';
 
 export interface SystemState {
@@ -45,6 +46,8 @@ export class TradingWorkflow {
   private config: WorkflowConfig;
   private state: SystemState;
   private intervalId?: NodeJS.Timeout;
+  private logger: Logger;
+  private isBackgroundMode: boolean;
 
   constructor(
     exchange: Exchange,
@@ -60,6 +63,8 @@ export class TradingWorkflow {
     this.riskManager = new RiskManager(config.riskParams);
     this.orderExecutor = new OrderExecutor(exchange, this.riskManager);
     this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor);
+    this.logger = Logger.getInstance('Workflow');
+    this.isBackgroundMode = this.logger.isBackgroundMode();
 
     this.state = {
       isRunning: false,
@@ -76,8 +81,24 @@ export class TradingWorkflow {
   }
 
   private emitLog(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
-    const logFn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
-    logFn(message);
+    // In background mode, strip chalk formatting for file logs but keep for console
+    const plainMessage = this.stripAnsiCodes(message);
+
+    if (level === 'error') {
+      this.logger.error(message, undefined);
+    } else if (level === 'warn') {
+      this.logger.warn(plainMessage);
+    } else if (level === 'success') {
+      this.logger.info(plainMessage);
+    } else {
+      this.logger.info(plainMessage);
+    }
+  }
+
+  private stripAnsiCodes(str: string): string {
+    // Strip ANSI color codes for file logging
+    // eslint-disable-next-line no-control-regex
+    return str.replace(/\u001b\[[0-9;]*m/g, '');
   }
 
   async start(): Promise<void> {
@@ -188,30 +209,45 @@ export class TradingWorkflow {
       // 5. Execute signals
       // Display signal summary in table format
       if (signals.length > 0) {
-        console.log(`\n🤖 Generated ${signals.length} signal${signals.length > 1 ? 's' : ''}:`);
+        const signalSummary = `🤖 Generated ${signals.length} signal${signals.length > 1 ? 's' : ''}:`;
+        this.logger.info(signalSummary);
 
-        signals.forEach((signal, index) => {
-          const actionColor =
-            signal.action === 'LONG'
-              ? chalk.green
-              : signal.action === 'SHORT'
-                ? chalk.red
-                : signal.action === 'CLOSE'
-                  ? chalk.yellow
-                  : chalk.cyan;
-          const confidenceColor =
-            signal.confidence > 0.7
-              ? chalk.green
-              : signal.confidence > 0.55
-                ? chalk.yellow
-                : chalk.red;
-
-          console.log(
-            `\n   [${index + 1}] ${signal.coin}: ${actionColor(signal.action)} (confidence: ${confidenceColor(signal.confidence.toFixed(2))})`
-          );
-          console.log(`       Reasoning: ${signal.reasoning}`);
+        // Log to structured logger for file output
+        this.logger.info('AI Signal Generation', {
+          signalCount: signals.length,
+          signals: signals.map(s => ({
+            coin: s.coin,
+            action: s.action,
+            confidence: s.confidence,
+            reasoning: s.reasoning,
+          })),
         });
-        console.log(''); // Empty line before execution results
+
+        // Console output with formatting (only if not background mode)
+        if (!this.isBackgroundMode) {
+          signals.forEach((signal, index) => {
+            const actionColor =
+              signal.action === 'LONG'
+                ? chalk.green
+                : signal.action === 'SHORT'
+                  ? chalk.red
+                  : signal.action === 'CLOSE'
+                    ? chalk.yellow
+                    : chalk.cyan;
+            const confidenceColor =
+              signal.confidence > 0.7
+                ? chalk.green
+                : signal.confidence > 0.55
+                  ? chalk.yellow
+                  : chalk.red;
+
+            console.log(
+              `\n   [${index + 1}] ${signal.coin}: ${actionColor(signal.action)} (confidence: ${confidenceColor(signal.confidence.toFixed(2))})`
+            );
+            console.log(`       Reasoning: ${signal.reasoning}`);
+          });
+          console.log(''); // Empty line before execution results
+        }
       }
 
       for (const signal of signals) {
@@ -333,102 +369,147 @@ export class TradingWorkflow {
     this.state.previousEquity = account.equity;
     this.state.cyclePnl = cyclePnlChange;
 
-    console.log(`\n📊 Cycle Summary:`);
-    console.log(
-      `   Runtime: ${runtimeMinutes}m ${runtimeSeconds}s | Total Cycles: ${this.state.cycleCount}`
-    );
-    console.log(
-      `   AI Signals: ${signals.length} | Executed Trades: ${this.state.totalTrades} | Open Positions: ${positions.length}`
-    );
+    // Log structured cycle summary for file logs
+    this.logger.info('Cycle Summary', {
+      cycle: this.state.cycleCount,
+      runtime: `${runtimeMinutes}m ${runtimeSeconds}s`,
+      totalCycles: this.state.cycleCount,
+      aiSignals: signals.length,
+      executedTrades: this.state.totalTrades,
+      openPositions: positions.length,
+      account: {
+        equity: account.equity,
+        availableMargin: account.availableMargin,
+        usedMargin: totalMarginUsed,
+        exposure: totalNotional,
+        leverage: (totalNotional / account.equity).toFixed(2),
+        totalPnl,
+        pnlPercent,
+      },
+      positions: positions.map(p => ({
+        symbol: p.symbol,
+        side: p.side,
+        leverage: p.leverage,
+        marginUsed: p.marginUsed,
+        entryPrice: p.entryPrice,
+        unrealizedPnl: p.unrealizedPnl,
+      })),
+      winRate: this.state.winRate,
+    });
 
-    // Account and exposure summary
-    console.log(chalk.magenta(`\n💰 Account Status:`));
-    console.log(
-      `   Equity: $${account.equity.toFixed(2)} | Available: $${account.availableMargin.toFixed(2)} | Used: $${totalMarginUsed.toFixed(2)}`
-    );
-    console.log(
-      `   Exposure: $${totalNotional.toFixed(2)} | Leverage: ${(totalNotional / account.equity).toFixed(2)}x | Total P&L: ${pnlColor(`$${totalPnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`)}`
-    );
-
-    // Cycle P&L change if applicable
-    if (this.state.cycleCount > 1 && cyclePnlChange !== 0) {
+    // Console output with formatting (only if not background mode)
+    if (!this.isBackgroundMode) {
+      console.log(`\n📊 Cycle Summary:`);
       console.log(
-        `   Cycle P&L: ${cyclePnlColor(`$${cyclePnlChange.toFixed(2)} (${cyclePnlPercent.toFixed(2)}%)`)}`
-      );
-    }
-
-    // Risk metrics
-    const maxMarginLimit = this.config.riskParams.maxTotalRisk * 100; // Convert to percentage
-    const marginUsage = positions.length > 0 ? (totalMarginUsed / account.equity) * 100 : 0;
-    console.log(chalk.magenta(`\n⚠️  Risk Status:`));
-    console.log(
-      `   Margin Usage: ${marginUsage.toFixed(2)}% | Limit: ${maxMarginLimit.toFixed(0)}% | Positions: ${positions.length}/${this.config.maxPositions}`
-    );
-
-    if (positions.length > 0) {
-      // Display positions table
-      console.log(`\n📊 Positions:`);
-      console.log(
-        `   ┌──────────┬──────┬──────────┬──────────────┬──────────────┬───────────────┐`
+        `   Runtime: ${runtimeMinutes}m ${runtimeSeconds}s | Total Cycles: ${this.state.cycleCount}`
       );
       console.log(
-        `   │ SIDE     │ COIN │ LEVERAGE │ MARGIN USED  │ ENTRY        │ UNREAL P&L    │`
+        `   AI Signals: ${signals.length} | Executed Trades: ${this.state.totalTrades} | Open Positions: ${positions.length}`
+      );
+
+      // Account and exposure summary
+      console.log(chalk.magenta(`\n💰 Account Status:`));
+      console.log(
+        `   Equity: $${account.equity.toFixed(2)} | Available: $${account.availableMargin.toFixed(2)} | Used: $${totalMarginUsed.toFixed(2)}`
       );
       console.log(
-        `   ├──────────┼──────┼──────────┼──────────────┼──────────────┼───────────────┤`
+        `   Exposure: $${totalNotional.toFixed(2)} | Leverage: ${(totalNotional / account.equity).toFixed(2)}x | Total P&L: ${pnlColor(`$${totalPnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`)}`
       );
 
-      positions.forEach(position => {
-        const sideColor = position.side === 'long' ? chalk.green : chalk.red;
-        const sideText = position.side === 'long' ? 'LONG' : 'SHORT';
-        const leverageText = `${position.leverage}x`;
-        const marginText = `$${position.marginUsed.toFixed(2)}`;
-        const entryText = `$${position.entryPrice.toFixed(2)}`;
-        const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
-        const pnlPercent = (position.unrealizedPnl / position.notional) * 100;
-        const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}%)`;
-
+      // Cycle P&L change if applicable
+      if (this.state.cycleCount > 1 && cyclePnlChange !== 0) {
         console.log(
-          `   │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.white(marginText.padEnd(13))} │ ${chalk.yellow(entryText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(13))} │`
+          `   Cycle P&L: ${cyclePnlColor(`$${cyclePnlChange.toFixed(2)} (${cyclePnlPercent.toFixed(2)}%)`)}`
         );
-      });
+      }
+
+      // Risk metrics
+      const maxMarginLimit = this.config.riskParams.maxTotalRisk * 100; // Convert to percentage
+      const marginUsage = positions.length > 0 ? (totalMarginUsed / account.equity) * 100 : 0;
+      console.log(chalk.magenta(`\n⚠️  Risk Status:`));
       console.log(
-        `   └──────────┴──────┴──────────┴──────────────┴──────────────┴───────────────┘`
+        `   Margin Usage: ${marginUsage.toFixed(2)}% | Limit: ${maxMarginLimit.toFixed(0)}% | Positions: ${positions.length}/${this.config.maxPositions}`
       );
 
-      // Win rate only if we have positions
-      console.log(`   Win Rate: ${this.state.winRate.toFixed(1)}%`);
-    } else {
-      console.log(`\n   No open positions`);
+      if (positions.length > 0) {
+        // Display positions table
+        console.log(`\n📊 Positions:`);
+        console.log(
+          `   ┌──────────┬──────┬──────────┬──────────────┬──────────────┬───────────────┐`
+        );
+        console.log(
+          `   │ SIDE     │ COIN │ LEVERAGE │ MARGIN USED  │ ENTRY        │ UNREAL P&L    │`
+        );
+        console.log(
+          `   ├──────────┼──────┼──────────┼──────────────┼──────────────┼───────────────┤`
+        );
+
+        positions.forEach(position => {
+          const sideColor = position.side === 'long' ? chalk.green : chalk.red;
+          const sideText = position.side === 'long' ? 'LONG' : 'SHORT';
+          const leverageText = `${position.leverage}x`;
+          const marginText = `$${position.marginUsed.toFixed(2)}`;
+          const entryText = `$${position.entryPrice.toFixed(2)}`;
+          const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
+          const pnlPercent = (position.unrealizedPnl / position.notional) * 100;
+          const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}%)`;
+
+          console.log(
+            `   │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.white(marginText.padEnd(13))} │ ${chalk.yellow(entryText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(13))} │`
+          );
+        });
+        console.log(
+          `   └──────────┴──────┴──────────┴──────────────┴──────────────┴───────────────┘`
+        );
+
+        // Win rate only if we have positions
+        console.log(`   Win Rate: ${this.state.winRate.toFixed(1)}%`);
+      } else {
+        console.log(`\n   No open positions`);
+      }
+
+      // Add status line with countdown at the end
+      const elapsed = Date.now() - this.state.lastUpdate;
+      const remaining = Math.max(0, this.config.cyclePeriod - elapsed);
+      const remainingSeconds = Math.floor(remaining / 1000);
+      const minutes = Math.floor(remainingSeconds / 60);
+      const seconds = remainingSeconds % 60;
+      const countdownText = minutes > 0 ? `${minutes}m ${seconds}s` : `${remainingSeconds}s`;
+
+      console.log(chalk.gray(`\n────────────────────────────────────────────────────────`));
+      console.log(
+        chalk.cyan(`⏱️  Next cycle in ${countdownText}`) + chalk.gray(` | Press Ctrl+C to stop`)
+      );
     }
-
-    // Add status line with countdown at the end
-    const elapsed = Date.now() - this.state.lastUpdate;
-    const remaining = Math.max(0, this.config.cyclePeriod - elapsed);
-    const remainingSeconds = Math.floor(remaining / 1000);
-    const minutes = Math.floor(remainingSeconds / 60);
-    const seconds = remainingSeconds % 60;
-    const countdownText = minutes > 0 ? `${minutes}m ${seconds}s` : `${remainingSeconds}s`;
-
-    console.log(chalk.gray(`\n────────────────────────────────────────────────────────`));
-    console.log(
-      chalk.cyan(`⏱️  Next cycle in ${countdownText}`) + chalk.gray(` | Press Ctrl+C to stop`)
-    );
   }
 
   private generateReport(): void {
     const runtime = Date.now() - this.state.startTime;
     const runtimeMinutes = Math.floor(runtime / (1000 * 60));
 
-    console.log('\n📈 FINAL REPORT');
-    console.log('='.repeat(50));
-    console.log(`Runtime: ${runtimeMinutes} minutes`);
-    console.log(`Cycles: ${this.state.cycleCount}`);
-    console.log(`Total Signals: ${this.state.totalSignals}`);
-    console.log(`Total Trades: ${this.state.totalTrades}`);
-    console.log(`Total PnL: $${this.state.totalPnl.toFixed(2)}`);
-    console.log(`Win Rate: ${this.state.winRate.toFixed(1)}%`);
-    console.log('='.repeat(50));
+    const report = {
+      runtime: `${runtimeMinutes} minutes`,
+      cycles: this.state.cycleCount,
+      totalSignals: this.state.totalSignals,
+      totalTrades: this.state.totalTrades,
+      totalPnl: this.state.totalPnl,
+      winRate: this.state.winRate,
+    };
+
+    this.logger.info('Final Report', report);
+
+    // Console output (only if not background mode)
+    if (!this.isBackgroundMode) {
+      console.log('\n📈 FINAL REPORT');
+      console.log('='.repeat(50));
+      console.log(`Runtime: ${runtimeMinutes} minutes`);
+      console.log(`Cycles: ${this.state.cycleCount}`);
+      console.log(`Total Signals: ${this.state.totalSignals}`);
+      console.log(`Total Trades: ${this.state.totalTrades}`);
+      console.log(`Total PnL: $${this.state.totalPnl.toFixed(2)}`);
+      console.log(`Win Rate: ${this.state.winRate.toFixed(1)}%`);
+      console.log('='.repeat(50));
+    }
   }
 
   getState(): SystemState {

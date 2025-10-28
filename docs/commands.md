@@ -24,7 +24,6 @@ quanta trade start [options]
 Options:
   -m, --mode <mode>        Trading mode: live, simulation (default: "simulation")
   -c, --coins <coins>       Comma-separated list of coins (default: "BTC,ETH,SOL")
-  --ui <ui>                 UI mode: tui or cli (default: "cli")
 ```
 
 **Examples:**

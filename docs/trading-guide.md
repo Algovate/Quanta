@@ -94,7 +94,7 @@ The backtest report includes:
 Quanta automatically implements risk controls:
 
 - **Position Sizing**: Maximum 5% risk per trade
-- **Stop Loss**: 3% default
+- **Stop Loss**: 5% default
 - **Take Profit**: 6% default
 - **Max Positions**: 6 concurrent positions
 - **Leverage**: 5x to 40x (configurable)
@@ -140,7 +140,8 @@ quanta test ai --type mock --coin BTC
 
 ## Advanced Topics
 
-- [Position Management](../docs/advanced-position-management.md)
-- [AI Model Selection](../docs/ai-models.md)
-- [Performance Optimization](../docs/performance.md)
+For more advanced topics, refer to:
+- [Core Concepts](concepts.md) - Complete trading concepts and algorithms
+- [Configuration Guide](configuration.md) - Advanced configuration options
+- [Testing & Simulation](testing-simulation.md) - Strategy testing and validation
 

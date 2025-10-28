@@ -72,29 +72,19 @@ quanta trade backtest --start 2024-01-01 --end 2024-04-01 --coins BTC,ETH --init
 # - Risk metrics and equity curve analysis
 ```
 
-### 5. Interactive TUI (Terminal User Interface)
+### 5. Start Trading
 
 ```bash
-# Build first (required for TUI)
-npm run build
-
-# Start with interactive TUI
-quanta trade start --mode simulation --coins BTC,ETH --ui tui
-
-# TUI Keyboard Shortcuts:
-# h / ?  - Show help overlay
-# p      - Pause/Resume trading
-# q      - Quit gracefully
-# r      - Refresh data
-# 1-7    - Switch between views
-
-# Without TUI (CLI mode)
+# Start trading in simulation mode
 quanta trade start --mode simulation --coins BTC,ETH
+
+# The system will run trading cycles every 3 minutes
+# Press Ctrl+C to stop gracefully
 ```
 
 ## Next Steps
 
-- 🎨 [Learn about TUI](tui-guide.md) - Interactive terminal interface
-- 📖 [Read the Trading Guide](trading-guide.md)
-- 🔧 [Configure the System](configuration.md)
-- 🧪 [Learn Testing](testing-simulation.md)
+- 📖 [Read the Trading Guide](trading-guide.md) - Complete trading operations
+- 🔧 [Configure the System](configuration.md) - Advanced configuration
+- 🧪 [Learn Testing](testing-simulation.md) - Strategy testing
+- 💡 [Study Concepts](concepts.md) - Deep dive into algorithms

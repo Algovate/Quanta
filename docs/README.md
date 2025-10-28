@@ -68,13 +68,14 @@ Complete documentation index for the Quanta AI trading system.
 
 | Document | Size | Lines | Purpose |
 |----------|------|-------|---------|
-| getting-started.md | 1.1KB | ~50 | Quick setup |
-| trading-guide.md | 2.4KB | ~100 | Trading operations |
-| configuration.md | 3.5KB | ~150 | System setup |
-| testing-simulation.md | 5.1KB | ~200 | Testing guide |
-| commands.md | 6.9KB | ~350 | Command reference |
-| concepts.md | 13KB | ~738 | Concepts & algorithms |
-| **Total** | **32.4KB** | **~1,588** | Complete docs |
+| getting-started.md | 1.5KB | ~120 | Quick setup |
+| trading-guide.md | 2.4KB | ~146 | Trading operations |
+| configuration.md | 3.5KB | ~202 | System setup |
+| testing-simulation.md | 5.1KB | ~301 | Testing guide |
+| commands.md | 6.9KB | ~371 | Command reference |
+| concepts.md | 13KB | ~813 | Concepts & algorithms |
+| exchanges.md | 3.2KB | ~160 | Exchange support |
+| **Total** | **35.2KB** | **~2,113** | Complete docs |
 
 ## 🔍 Key Topics
 
@@ -168,3 +169,4 @@ All documentation is actively maintained. Latest updates:
 - ✅ Added algorithm examples
 - ✅ Enhanced indicator explanations
 - ✅ Improved risk management section
+- ✅ Streamlined documentation structure
