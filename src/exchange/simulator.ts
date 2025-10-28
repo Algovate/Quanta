@@ -1,5 +1,6 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { normalizeSymbol, calculatePositionPnl } from '../utils/symbol-utils.js';
+import { CompletedTrade } from '../types/index.js';
 
 export class SimulatorExchange implements Exchange {
   private account: Account;
@@ -7,6 +8,7 @@ export class SimulatorExchange implements Exchange {
   private orders: Order[];
   private marketData: Map<string, Candlestick[]>;
   private dataSourceExchange?: Exchange;
+  private completedTrades: CompletedTrade[] = [];
 
   constructor(initialBalance: number = 10000, dataSourceExchange?: Exchange) {
     this.account = {
@@ -22,6 +24,7 @@ export class SimulatorExchange implements Exchange {
     this.orders = [];
     this.marketData = new Map();
     this.dataSourceExchange = dataSourceExchange;
+    this.completedTrades = [];
 
     // Only initialize mock market data if no external data source is provided
     if (!this.dataSourceExchange) {
@@ -88,6 +91,13 @@ export class SimulatorExchange implements Exchange {
       pnlBySymbol,
       leverage,
     };
+  }
+
+  /**
+   * Get completed trades (for performance analysis)
+   */
+  getCompletedTrades(): CompletedTrade[] {
+    return [...this.completedTrades];
   }
 
   async getCandlesticks(
@@ -340,6 +350,24 @@ export class SimulatorExchange implements Exchange {
           closedSize
         );
 
+        // Record completed trade
+        const completedTrade = {
+          id: `trade_${this.completedTrades.length + 1}`,
+          symbol: oppositePosition.symbol,
+          side: oppositePosition.side,
+          entryTime: oppositePosition.timestamp,
+          exitTime: Date.now(),
+          entryPrice: oppositePosition.entryPrice,
+          exitPrice: price,
+          size: closedSize,
+          pnl: realizedPnl,
+          pnlPercent: (realizedPnl / (closedSize * oppositePosition.entryPrice)) * 100,
+          holdingPeriod: (Date.now() - oppositePosition.timestamp) / 1000, // Convert milliseconds to seconds
+          reason: 'signal' as const,
+        };
+
+        this.completedTrades.push(completedTrade);
+
         // Update account with realized P&L
         this.account.balance += realizedPnl;
         this.account.availableMargin += oppositePosition.marginUsed + realizedPnl;
@@ -368,6 +396,24 @@ export class SimulatorExchange implements Exchange {
           amount
         );
 
+        // For partial closes, we still record a trade with the closed portion
+        const completedTrade = {
+          id: `trade_${this.completedTrades.length + 1}`,
+          symbol: oppositePosition.symbol,
+          side: oppositePosition.side,
+          entryTime: oppositePosition.timestamp,
+          exitTime: Date.now(),
+          entryPrice: oppositePosition.entryPrice,
+          exitPrice: price,
+          size: amount,
+          pnl: realizedPnl,
+          pnlPercent: (realizedPnl / (amount * oppositePosition.entryPrice)) * 100,
+          holdingPeriod: (Date.now() - oppositePosition.timestamp) / 1000,
+          reason: 'signal' as const,
+        };
+
+        this.completedTrades.push(completedTrade);
+
         oppositePosition.size -= amount;
         oppositePosition.marginUsed -= marginToReturn;
 
@@ -389,8 +435,9 @@ export class SimulatorExchange implements Exchange {
         existingPosition.entryPrice = totalValue / totalSize;
         existingPosition.size = totalSize;
 
-        // Update margin used for the additional position
-        const additionalMargin = amount * price;
+        // Calculate margin with leverage for the additional position
+        const notionalValue = amount * price;
+        const additionalMargin = notionalValue / leverage;
         existingPosition.marginUsed += additionalMargin;
         existingPosition.notional = totalSize * this.getCurrentPrice(symbol);
         existingPosition.leverage = leverage; // Update leverage

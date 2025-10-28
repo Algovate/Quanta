@@ -138,6 +138,53 @@ quanta test kline --exchange simulator --coin BTC
 quanta test ai --type mock --coin BTC
 ```
 
+## Profit & Loss (PnL)
+
+### Understanding PnL
+
+Quanta tracks both **realized** and **unrealized** profit & loss:
+
+**Unrealized PnL**: Open position profit/loss (not yet closed)
+```typescript
+// Long position
+Unrealized PnL = (Current Price - Entry Price) × Position Size
+
+// Short position  
+Unrealized PnL = (Entry Price - Current Price) × Position Size
+```
+
+**Realized PnL**: Closed position profit/loss (actual cash gained/lost)
+```typescript
+Realized PnL = calculated when position closes
+Account Balance += Realized PnL
+```
+
+### Account Values
+
+```typescript
+Balance = Initial Capital + All Realized PnL
+Equity = Balance + Unrealized PnL (from open positions)
+Available Margin = Equity - Used Margin
+```
+
+### Leverage Impact on PnL
+
+With 10x leverage:
+- Position value: $10,000 (10 BTC @ $1,000)
+- Required margin: $1,000 (10% of position)
+- 1% price move → $100 PnL (10% ROI on margin)
+
+### Trade Tracking
+
+All completed trades are recorded with:
+- Entry/exit times and prices
+- Position size and side (long/short)
+- Realized PnL (absolute and percentage)
+- Holding period
+- Reason for closing (signal/stop-loss/take-profit)
+
+See [Core Concepts](concepts.md#pnl-calculation) for detailed formulas.
+
 ## Advanced Topics
 
 For more advanced topics, refer to:

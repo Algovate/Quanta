@@ -1,6 +1,7 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { normalizeSymbol, calculatePositionPnl } from '../utils/symbol-utils.js';
 import { HistoricalDataProvider } from '../data/historical.js';
+import { CompletedTrade } from '../types/index.js';
 
 /**
  * BacktestExchange - Time-aware exchange for historical data replay
@@ -12,7 +13,7 @@ export class BacktestExchange implements Exchange {
   private orders: Order[];
   private currentTime: number;
   private historicalData: Map<string, Candlestick[]>;
-  private completedTrades: any[] = [];
+  private completedTrades: CompletedTrade[] = [];
   // @ts-expect-error - Reserved for future use
   private _historicalDataProvider: HistoricalDataProvider;
 
@@ -140,11 +141,13 @@ export class BacktestExchange implements Exchange {
     symbol: string,
     side: 'buy' | 'sell',
     amount: number,
-    price?: number
+    price?: number,
+    leverage?: number
   ): Promise<Order> {
     const normalizedSymbol = normalizeSymbol(symbol);
     const currentPrice = this.getCurrentPrice(normalizedSymbol);
     const orderPrice = price || currentPrice;
+    const orderLeverage = leverage || 1;
 
     const order: Order = {
       id: `bt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -159,7 +162,7 @@ export class BacktestExchange implements Exchange {
     this.orders.push(order);
 
     // Execute order immediately at the current historical price
-    this.executeOrder(order);
+    this.executeOrder(order, orderLeverage);
 
     return order;
   }
@@ -191,7 +194,7 @@ export class BacktestExchange implements Exchange {
   /**
    * Get completed trades (for performance analysis)
    */
-  getCompletedTrades(): any[] {
+  getCompletedTrades(): CompletedTrade[] {
     return [...this.completedTrades];
   }
 
@@ -278,26 +281,17 @@ export class BacktestExchange implements Exchange {
     return prices[normalizedSymbol] || 100;
   }
 
-  private executeOrder(order: Order): void {
+  private executeOrder(order: Order, leverage: number = 1): void {
     const currentPrice = this.getCurrentPrice(order.symbol);
     const executedPrice = order.price || currentPrice;
-    const value = order.amount * executedPrice;
+    const notionalValue = order.amount * executedPrice;
+    const marginRequired = notionalValue / leverage;
 
-    if (order.side === 'buy') {
-      if (value <= this.account.availableMargin) {
-        this.updatePosition(order.symbol, order.side, order.amount, executedPrice);
-        this.account.availableMargin -= value;
-        this.account.usedMargin += value;
-        order.status = 'filled';
-        order.price = executedPrice;
-      } else {
-        order.status = 'rejected';
-      }
-    } else {
-      if (value <= this.account.availableMargin) {
-        this.updatePosition(order.symbol, order.side, order.amount, executedPrice);
-        this.account.availableMargin -= value;
-        this.account.usedMargin += value;
+    if (order.side === 'buy' || order.side === 'sell') {
+      if (marginRequired <= this.account.availableMargin) {
+        this.updatePosition(order.symbol, order.side, order.amount, executedPrice, leverage);
+        this.account.availableMargin -= marginRequired;
+        this.account.usedMargin += marginRequired;
         order.status = 'filled';
         order.price = executedPrice;
       } else {
@@ -310,7 +304,8 @@ export class BacktestExchange implements Exchange {
     symbol: string,
     side: 'buy' | 'sell',
     amount: number,
-    price: number
+    price: number,
+    leverage: number = 1
   ): void {
     const positionSide = side === 'buy' ? 'long' : 'short';
     const oppositeSide = positionSide === 'long' ? 'short' : 'long';
@@ -344,7 +339,7 @@ export class BacktestExchange implements Exchange {
         }
 
         if (remainingAmount > 0) {
-          this.createNewPosition(symbol, positionSide, remainingAmount, price);
+          this.createNewPosition(symbol, positionSide, remainingAmount, price, leverage);
         }
       } else {
         const ratio = amount / oppositePosition.size;
@@ -375,14 +370,17 @@ export class BacktestExchange implements Exchange {
         existingPosition.entryPrice = totalValue / totalSize;
         existingPosition.size = totalSize;
 
-        const additionalMargin = amount * price;
+        // Calculate margin with leverage
+        const notionalValue = amount * price;
+        const additionalMargin = notionalValue / leverage;
         existingPosition.marginUsed += additionalMargin;
         existingPosition.notional = totalSize * this.getCurrentPrice(symbol);
+        existingPosition.leverage = leverage;
 
         this.account.availableMargin -= additionalMargin;
         this.account.usedMargin += additionalMargin;
       } else {
-        this.createNewPosition(symbol, positionSide, amount, price);
+        this.createNewPosition(symbol, positionSide, amount, price, leverage);
       }
     }
   }
@@ -391,9 +389,12 @@ export class BacktestExchange implements Exchange {
     symbol: string,
     side: 'long' | 'short',
     amount: number,
-    price: number
+    price: number,
+    leverage: number = 1
   ): void {
     const normalizedSymbol = normalizeSymbol(symbol);
+    const notionalValue = amount * price;
+    const marginRequired = notionalValue / leverage;
 
     this.positions.push({
       symbol: normalizedSymbol,
@@ -402,9 +403,9 @@ export class BacktestExchange implements Exchange {
       entryPrice: price,
       markPrice: price,
       unrealizedPnl: 0,
-      marginUsed: amount * price,
-      notional: amount * price,
-      leverage: 1,
+      marginUsed: marginRequired,
+      notional: notionalValue,
+      leverage: leverage,
       timestamp: this.currentTime,
     });
   }

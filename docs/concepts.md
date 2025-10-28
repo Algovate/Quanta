@@ -6,6 +6,7 @@ Complete guide to key terms, concepts, and algorithms in Quanta.
 
 - [Architecture](#architecture)
 - [Trading Concepts](#trading-concepts)
+- [PnL Calculation](#pnl-calculation)
 - [Technical Indicators](#technical-indicators)
 - [Risk Management](#risk-management)
 - [AI & Signals](#ai--signals)
@@ -96,6 +97,114 @@ Entry → Monitoring → Exit
   ↓         ↓          ↓
 Signal   P&L Update  Stop/Target
 ```
+
+---
+
+## PnL Calculation
+
+### Core Formulas
+
+Quanta uses consistent PnL calculations across all exchanges:
+
+#### Long Positions
+
+```typescript
+PnL = (Current Price - Entry Price) × Position Size
+```
+
+**Example:**
+- Entry: 10 BTC @ $40,000
+- Current: $41,000  
+- PnL: (41,000 - 40,000) × 10 = **$10,000** ✅
+
+#### Short Positions
+
+```typescript
+PnL = (Entry Price - Current Price) × Position Size
+```
+
+**Example:**
+- Entry: 10 BTC @ $40,000
+- Current: $39,000
+- PnL: (40,000 - 39,000) × 10 = **$10,000** ✅
+
+### Realized vs Unrealized PnL
+
+**Unrealized PnL**: Calculated for open positions
+```typescript
+Unrealized PnL = calculatePositionPnl(side, currentPrice, entryPrice, size)
+```
+
+**Realized PnL**: Locked in when position closes
+```typescript
+// On position close:
+balance += realizedPnl
+availableMargin += marginUsed + realizedPnl
+```
+
+### Leverage and Margin
+
+Leverage affects margin requirement, not PnL calculation:
+
+```typescript
+// Margin calculation with leverage
+Margin = (Position Size × Price) / Leverage
+
+// Example with 10x leverage
+Position: 10 BTC @ $40,000 = $400,000 notional
+Margin: $400,000 / 10 = $40,000
+```
+
+### Account Equity
+
+Equity includes both realized and unrealized PnL:
+
+```typescript
+Equity = Balance + Unrealized PnL
+Balance = Initial Capital + All Realized PnL
+
+Available Margin = Equity - Used Margin
+Margin Ratio = Used Margin / Equity
+```
+
+### Trade Recording
+
+All completed trades are tracked with full details:
+
+**Completed Trade Object:**
+```typescript
+{
+  id: string,
+  symbol: string,
+  side: 'long' | 'short',
+  entryTime: number,
+  exitTime: number,
+  entryPrice: number,
+  exitPrice: number,
+  size: number,
+  pnl: number,
+  pnlPercent: number,
+  holdingPeriod: number,
+  reason: 'signal' | 'stop_loss' | 'take_profit' | 'end_of_backtest'
+}
+```
+
+### Implementation
+
+**PnL Functions:**
+- `calculatePositionPnl()` - Core PnL calculation
+- `calculateUnrealizedPnl()` - For open positions
+- `calculatePnlPercent()` - Percentage return
+
+**Location:** `src/utils/symbol-utils.ts`, `src/execution/position-utils.ts`
+
+**Key Points:**
+- ✅ Mathematically correct formulas
+- ✅ Handles both long and short positions
+- ✅ Accounts for leverage in margin calculations
+- ✅ Tracks all trades for performance analysis
+- ✅ Real-time unrealized PnL updates
+- ✅ Proper account balance accounting
 
 ---
 
