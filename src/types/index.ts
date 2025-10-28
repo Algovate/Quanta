@@ -328,4 +328,5 @@ export interface Exchange {
   ): Promise<Order>;
   cancelOrder(orderId: string, symbol: string): Promise<boolean>;
   getTicker(symbol: string): Promise<{ price: number; timestamp: number }>;
+  getCompletedTrades?(): CompletedTrade[]; // Optional method for getting completed trades
 }

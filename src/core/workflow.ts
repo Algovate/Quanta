@@ -332,19 +332,33 @@ export class TradingWorkflow {
   }
 
   private updatePerformanceMetrics(_account: Account, positions: Position[]): void {
-    // Update total PnL
-    const currentPnl = positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
-    this.state.totalPnl = currentPnl;
+    // Update total PnL from open positions
+    this.state.totalPnl = positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
 
-    // Calculate win rate only if we have positions
-    if (positions.length > 0) {
-      const winningTrades = positions.filter(pos => pos.unrealizedPnl > 0).length;
-      this.state.winRate = (winningTrades / positions.length) * 100;
-    } else if (this.state.totalTrades === 0) {
-      // No trades yet
-      this.state.winRate = 0;
+    // Calculate win rate from completed trades
+    this.state.winRate = this.calculateWinRate();
+  }
+
+  /**
+   * Calculate win rate from completed trades
+   * Win rate should only be based on closed positions, not open positions
+   */
+  private calculateWinRate(): number {
+    // Skip if exchange doesn't support completed trades tracking
+    if (!this.exchange.getCompletedTrades) {
+      return this.state.winRate;
     }
-    // If totalTrades > 0 but no open positions, keep the previous win rate
+
+    const completedTrades = this.exchange.getCompletedTrades();
+
+    // No completed trades yet
+    if (completedTrades.length === 0) {
+      return this.state.totalTrades === 0 ? 0 : this.state.winRate;
+    }
+
+    // Calculate win rate from completed trades
+    const winningTrades = completedTrades.filter(trade => trade.pnl > 0).length;
+    return (winningTrades / completedTrades.length) * 100;
   }
 
   private logCycleSummary(account: Account, positions: Position[], signals: TradingSignal[]): void {
