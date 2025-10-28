@@ -10,6 +10,20 @@ import { handleAsync } from '../../utils/error-handler.js';
 
 export class TradeCommands {
   /**
+   * Exchange type mapping
+   */
+  private static readonly EXCHANGE_MAP: Record<string, string> = {
+    okx: 'okx',
+    binance: 'binance',
+    bin: 'binance',
+    coinbase: 'coinbase',
+    cb: 'coinbase',
+    hyperliquid: 'hyperliquid',
+    hliq: 'hyperliquid',
+    simulator: 'simulator',
+  };
+
+  /**
    * Create an exchange instance based on configuration
    */
   private static async createExchange(
@@ -17,25 +31,37 @@ export class TradeCommands {
     apiKey?: string,
     apiSecret?: string,
     testnet: boolean = true,
-    mode: 'simulation' | 'live' = 'simulation'
+    _mode: 'simulation' | 'live' = 'simulation'
   ) {
-    if (exchangeName === 'okx') {
-      const { OKXExchange } = await import('../../exchange/okx.js');
-      return new OKXExchange(apiKey, apiSecret, testnet);
-    } else if (exchangeName === 'binance' || exchangeName === 'bin') {
-      const { BinanceExchange } = await import('../../exchange/binance.js');
-      return new BinanceExchange(apiKey, apiSecret, testnet);
-    } else if (exchangeName === 'coinbase' || exchangeName === 'cb') {
-      const { CoinbaseExchange } = await import('../../exchange/coinbase.js');
-      return new CoinbaseExchange(apiKey, apiSecret, testnet);
-    } else if (exchangeName === 'hyperliquid' || exchangeName === 'hliq') {
-      const { HyperliquidExchange } = await import('../../exchange/hyperliquid.js');
-      return new HyperliquidExchange(apiKey, apiSecret, testnet);
-    } else if (exchangeName === 'simulator') {
-      return new SimulatorExchange(10000);
-    } else {
+    const normalizedName = this.EXCHANGE_MAP[exchangeName.toLowerCase()];
+
+    if (!normalizedName) {
       throw new Error(`Unsupported exchange: ${exchangeName}`);
     }
+
+    // Handle simulator
+    if (normalizedName === 'simulator') {
+      return new SimulatorExchange(10000);
+    }
+
+    // Dynamically import and create real exchange
+    const module = await import(`../../exchange/${normalizedName}.js`);
+    const ExchangeClass = Object.values(module)[0] as any;
+    return new ExchangeClass(apiKey, apiSecret, testnet);
+  }
+
+  /**
+   * Helper to format error messages with consistent styling
+   */
+  private static formatError(title: string, issue: string, solution: string, tip?: string): string {
+    let message = chalk.red(`❌ ${title}`) + chalk.white('\n\n');
+    message += chalk.yellow('📝 Issue:') + chalk.gray(` ${issue}\n`);
+    message += chalk.white('\n');
+    message += chalk.yellow('🔧 Solution:') + chalk.white(` ${solution}`);
+    if (tip) {
+      message += chalk.white('\n\n') + chalk.yellow('💡 Tip:') + chalk.gray(` ${tip}`);
+    }
+    return message;
   }
 
   /**
@@ -71,8 +97,7 @@ export class TradeCommands {
       .description('Start AI trading system')
       .option('-m, --mode <mode>', 'Trading mode: live, simulation')
       .option('-c, --coins <coins>', 'Comma-separated list of coins', 'BTC,ETH,SOL')
-      .option('--ui <ui>', 'UI mode: tui or cli')
-      .action(async (options) => {
+      .action(async options => {
         await handleAsync(async () => {
           await TradeCommands.startTrading(options);
         }, 'TradeCommands.start');
@@ -85,7 +110,7 @@ export class TradeCommands {
       .option('-s, --start <date>', 'Start date (YYYY-MM-DD)', '2024-01-01')
       .option('-e, --end <date>', 'End date (YYYY-MM-DD)', '2024-12-31')
       .option('--initial-balance <amount>', 'Initial balance', '10000')
-      .action(async (options) => {
+      .action(async options => {
         await handleAsync(async () => {
           await TradeCommands.runBacktest(options);
         }, 'TradeCommands.backtest');
@@ -104,7 +129,7 @@ export class TradeCommands {
       .command('pause')
       .description('Temporarily pause the trading system')
       .option('--reason <reason>', 'Reason for pausing', 'Manual pause')
-      .action(async (options) => {
+      .action(async options => {
         await handleAsync(async () => {
           await TradeCommands.pauseTrading(options);
         }, 'TradeCommands.pause');
@@ -115,262 +140,107 @@ export class TradeCommands {
       .description('Stop the running trading system')
       .option('--graceful', 'Graceful shutdown (finish current trades)', false)
       .option('--force', 'Force immediate stop', false)
-      .action(async (options) => {
+      .action(async options => {
         await handleAsync(async () => {
           await TradeCommands.stopTrading(options);
         }, 'TradeCommands.stop');
       });
   }
 
-  private static async startTrading(options: {
-    mode: string;
-    coins: string;
-    ui: string;
-  }): Promise<void> {
+  private static async startTrading(options: { mode: string; coins: string }): Promise<void> {
     const coins = options.coins.split(',').map((c: string) => c.trim());
-    
+
     // Get mode from CLI or config file
     const config = getConfig();
     const mode = options.mode || config.mode || 'simulation';
-    
+
     // Validate mode parameter
     const validModes = ['live', 'simulation'];
     if (!validModes.includes(mode)) {
       throw new Error(
         `Invalid mode: "${mode}". Valid modes are: ${validModes.join(', ')}\n` +
-        `For backtesting, use: quanta trade backtest --start <date> --end <date>\n` +
-        `Please check your config.json or use --mode flag with a valid value.`
+          `For backtesting, use: quanta trade backtest --start <date> --end <date>\n` +
+          `Please check your config.json or use --mode flag with a valid value.`
       );
     }
-
-    // Get UI mode from config if not provided via CLI
-    const uiMode = (options.ui || config.ui?.mode || 'cli') as 'tui' | 'cli';
 
     const configUpdates = {
       mode,
       trading: { coins },
-      ui: { mode: uiMode },
     };
 
     const updatedConfig = { ...config, ...configUpdates };
 
-    // Only show banner/config in CLI mode
-    if (uiMode === 'cli') {
-      console.log(chalk.cyan('🏆 Quanta Trading System'));
-      console.log(chalk.gray('AI-powered quantitative trading with real-time decision making\n'));
-      console.log(chalk.blue('📊 Configuration:'));
-      console.log(`   Mode: ${mode}`);
-      
-      const exchangeName = updatedConfig.exchange?.name || 'simulator';
-      const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
-      
-      if (mode === 'simulation') {
-        if (exchangeName === 'simulator') {
-          console.log(`   Data Source: mock data`);
-        } else {
-          console.log(`   Data Source: ${exchangeName} (${exchangeTestnet ? 'testnet' : 'live'})`);
-        }
-      } else if (mode === 'live') {
-        const exchangeStatus = exchangeName !== 'simulator' ? 'real' : 'simulator';
-        const networkStatus = exchangeTestnet ? 'testnet' : 'production';
-        console.log(`   Exchange: ${exchangeName} (${exchangeStatus})`);
-        if (exchangeName !== 'simulator') {
-          console.log(`   Network: ${networkStatus}`);
-        }
+    // Show banner/config
+    console.log(chalk.cyan('🏆 Quanta Trading System'));
+    console.log(chalk.gray('AI-powered quantitative trading with real-time decision making\n'));
+    console.log(chalk.blue('📊 Configuration:'));
+    console.log(`   Mode: ${mode}`);
+
+    const exchangeName = updatedConfig.exchange?.name || 'simulator';
+    const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
+
+    if (mode === 'simulation') {
+      if (exchangeName === 'simulator') {
+        console.log(`   Data Source: mock data`);
+      } else {
+        console.log(`   Data Source: ${exchangeName} (${exchangeTestnet ? 'testnet' : 'live'})`);
       }
-      
-      console.log(`   Coins: ${coins.join(', ')}`);
-      console.log(`   UI: ${uiMode}`);
-      console.log('');
+    } else if (mode === 'live') {
+      const exchangeStatus = exchangeName !== 'simulator' ? 'real' : 'simulator';
+      const networkStatus = exchangeTestnet ? 'testnet' : 'production';
+      console.log(`   Exchange: ${exchangeName} (${exchangeStatus})`);
+      if (exchangeName !== 'simulator') {
+        console.log(`   Network: ${networkStatus}`);
+      }
     }
 
+    console.log(`   Coins: ${coins.join(', ')}`);
+    console.log('');
+
     // Validate prerequisites based on mode
-    const exchangeName = updatedConfig.exchange?.name || 'simulator';
     const exchangeApiKey = updatedConfig.exchange?.apiKey;
     const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
 
-    if (mode === 'live') {
-      // Live mode requires API credentials
-      if (exchangeName === 'simulator') {
-        throw new Error(
-          chalk.red('❌ Configuration Error: Live mode cannot use simulator') +
-          chalk.white('\n\n') +
-          chalk.yellow('📝 Issue:') +
-          chalk.gray(' You have configured live mode but are using the simulator exchange.\n') +
-          chalk.white('\n') +
-          chalk.yellow('🔧 Solution:') +
-          chalk.white(' Update ') + chalk.cyan('config.json') + chalk.white(' to use a real exchange:\n') +
-          chalk.gray('   {\n') +
-          chalk.gray('     "exchange": {\n') +
-          chalk.gray('       "name": "okx",  // or "binance", "coinbase"\n') +
-          chalk.gray('       "apiKey": "your-api-key",\n') +
-          chalk.gray('       "apiSecret": "your-api-secret"\n') +
-          chalk.gray('     }\n') +
-          chalk.gray('   }')
-        );
-      }
-      
-      if (!exchangeApiKey || !exchangeApiSecret) {
-        throw new Error(
-          chalk.red(`❌ Configuration Error: Missing API credentials for ${exchangeName.toUpperCase()}`) +
-          chalk.white('\n\n') +
-          chalk.yellow('📝 Issue:') +
-          chalk.gray(' Live mode requires API credentials to connect to the exchange.\n') +
-          chalk.white('\n') +
-          chalk.yellow('🔧 Solution:') +
-          chalk.white(' Add your API credentials to ') + chalk.cyan('config.json') + chalk.white(':\n') +
-          chalk.gray('   {\n') +
-          chalk.gray('     "exchange": {\n') +
-          chalk.gray('       "name": "' + exchangeName + '",\n') +
-          chalk.gray('       "apiKey": "your-api-key-here",\n') +
-          chalk.gray('       "apiSecret": "your-api-secret-here"\n') +
-          chalk.gray('     }\n') +
-          chalk.gray('   }\n') +
-          chalk.white('\n') +
-          chalk.yellow('💡 Tip:') +
-          chalk.gray(' Start with simulation mode to test without API keys')
-        );
-      }
-    } else if (mode === 'simulation' && exchangeName !== 'simulator') {
-      // Simulation with real data source - API keys optional but recommended
-      if (!exchangeApiKey || !exchangeApiSecret) {
-        console.log(chalk.yellow('⚠️  Warning: Running simulation without API keys'));
-        console.log(chalk.gray(`   Some features may be limited. Consider adding API keys to config.json for full access.`));
-        console.log('');
-      }
-    }
-
-    // Check AI API key
-    if (!updatedConfig.ai?.apiKey) {
-      throw new Error(
-        chalk.red('❌ Configuration Error: Missing AI API key') +
-        chalk.white('\n\n') +
-        chalk.yellow('📝 Issue:') +
-        chalk.gray(' AI signal generation requires an API key from OpenRouter.\n') +
-        chalk.white('\n') +
-        chalk.yellow('🔧 Solution:') +
-        chalk.white(' Add your OpenRouter API key to ') + chalk.cyan('config.json') + chalk.white(':\n') +
-        chalk.gray('   {\n') +
-        chalk.gray('     "ai": {\n') +
-        chalk.gray('       "apiKey": "sk-or-v1-your-key-here"\n') +
-        chalk.gray('     }\n') +
-        chalk.gray('   }\n') +
-        chalk.white('\n') +
-        chalk.yellow('🔗 Get API Key:') +
-        chalk.gray(' https://openrouter.ai/keys')
-      );
-    }
+    // Validate prerequisites based on mode
+    this.validateModeConfiguration(mode, exchangeName, exchangeApiKey, exchangeApiSecret);
+    this.validateAIConfiguration(updatedConfig.ai?.apiKey);
 
     // Initialize components
-    const spinner = uiMode === 'cli' ? ora('Initializing trading system...').start() : null;
+    const spinner = ora('Initializing trading system...').start();
 
     // Create exchange based on mode and config
-    const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
     const exchange = await this.getExchangeForMode(
       mode as 'simulation' | 'live',
       exchangeName,
       exchangeApiKey,
       exchangeApiSecret,
-      exchangeTestnet
+      updatedConfig.exchange?.testnet ?? true
     );
 
     const marketProvider = new MarketDataProvider(exchange);
     const aiClient = new OpenRouterClient(updatedConfig.ai.apiKey);
 
-    const workflow = new TradingWorkflow(
-      exchange,
-      marketProvider,
-      aiClient,
-      {
-        coins,
-        cyclePeriod: config.trading.cyclePeriod,
+    const workflow = new TradingWorkflow(exchange, marketProvider, aiClient, {
+      coins,
+      cyclePeriod: config.trading.cyclePeriod,
+      maxPositions: config.trading.maxPositions,
+      riskParams: {
+        maxRiskPerTrade: config.trading.maxRisk,
+        maxTotalRisk: 0.3, // Total margin usage limit (30% of account)
+        defaultStopLoss: config.trading.stopLoss,
+        maxLeverage: config.trading.leverageRange[1],
+        minLeverage: config.trading.leverageRange[0],
         maxPositions: config.trading.maxPositions,
-        riskParams: {
-          maxRiskPerTrade: config.trading.maxRisk,
-          maxTotalRisk: 0.30, // Total margin usage limit (30% of account)
-          defaultStopLoss: config.trading.stopLoss,
-          maxLeverage: config.trading.leverageRange[1],
-          minLeverage: config.trading.leverageRange[0],
-          maxPositions: config.trading.maxPositions,
-        },
-      }
-    );
+      },
+    });
 
-    if (spinner) {
-      spinner.succeed('Trading system initialized');
-    }
+    spinner.succeed('Trading system initialized');
 
-    if (uiMode === 'tui') {
-      try {
-        // Clear screen for clean TUI display
-        console.clear();
+    console.log(chalk.green('🚀 Starting trading workflow...'));
+    console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
-        // Import and start TUI (now works with ESM)
-        const tuiManagerModule = await import('../../tui/manager.js');
-        const { TUIManager } = tuiManagerModule;
-        const appModule = await import('../../tui/app.js');
-        const { renderTUI } = appModule;
-
-        const tuiManager = new TUIManager();
-        workflow.setEventEmitter(tuiManager);
-        tuiManager.start(); // Initialize TUI with startup logs
-
-        // Start the workflow in background
-        workflow.start().catch(error => {
-          console.error('Workflow error:', error);
-          tuiManager.addLog('error', `Workflow error: ${error}`);
-        });
-
-        // Render TUI
-        renderTUI(tuiManager, {
-          onExit: () => {
-            workflow.stop();
-            process.exit(0);
-          },
-          onPause: () => {
-            workflow.pause();
-          },
-          onResume: () => {
-            workflow.resume();
-          },
-          onStop: () => {
-            workflow.stop();
-            process.exit(0);
-          },
-        });
-
-      } catch (tuiError) {
-        console.error(chalk.red('❌ Failed to start TUI mode'));
-
-        if (tuiError instanceof Error) {
-          const errorMsg = tuiError.message.toLowerCase();
-
-          if (errorMsg.includes('yoga-wasm') || errorMsg.includes('native module')) {
-            console.error(chalk.yellow('   Reason: Ink/yoga-wasm dependency issue'));
-            console.log(chalk.gray('   Solution: Ensure project is built with npm run build'));
-          } else if (errorMsg.includes('display') || errorMsg.includes('stdout')) {
-            console.error(chalk.yellow('   Reason: Terminal display issue'));
-            console.log(chalk.gray('   Solution: Try a larger terminal window (min 120x30)'));
-          } else {
-            console.error(chalk.yellow('   Error:'), tuiError.message);
-          }
-        } else {
-          console.error(chalk.yellow('   Error:'), String(tuiError));
-        }
-
-        console.log(chalk.gray('\n💡 Falling back to CLI mode...'));
-        console.log('');
-        console.log(chalk.green('🚀 Starting trading workflow...'));
-        console.log(chalk.gray('Press Ctrl+C to stop\n'));
-
-        await workflow.start();
-      }
-    } else {
-      console.log(chalk.green('🚀 Starting trading workflow...'));
-      console.log(chalk.gray('Press Ctrl+C to stop\n'));
-
-      await workflow.start();
-    }
+    await workflow.start();
   }
 
   private static async runBacktest(options: {
@@ -381,7 +251,6 @@ export class TradeCommands {
   }): Promise<void> {
     const { BacktestEngine } = await import('../../core/backtest-engine.js');
     const { BacktestReport } = await import('../../analytics/report.js');
-    const ora = (await import('ora')).default;
 
     console.log(chalk.cyan('📈 Quanta Backtest'));
     console.log(chalk.gray('Historical strategy validation\n'));
@@ -437,7 +306,6 @@ export class TradeCommands {
       report.displayReport();
 
       console.log(chalk.green('✅ Backtest completed successfully!'));
-
     } catch (error) {
       if (error instanceof Error) {
         console.error(chalk.red(`\n❌ Error: ${error.message}`));
@@ -476,9 +344,7 @@ export class TradeCommands {
     console.log(chalk.yellow('⚠️  Live status monitoring not yet implemented'));
   }
 
-  private static async pauseTrading(options: {
-    reason: string;
-  }): Promise<void> {
+  private static async pauseTrading(options: { reason: string }): Promise<void> {
     console.log(chalk.cyan('⏸️  Pausing Trading System'));
     console.log(chalk.gray('='.repeat(60)));
     console.log(`Reason: ${options.reason}\n`);
@@ -498,7 +364,6 @@ export class TradeCommands {
       console.log(chalk.gray('   - Pause trading cycles'));
       console.log(chalk.gray('   - Keep positions open'));
       console.log(chalk.gray('   - Save state for resumption'));
-
     } catch (error) {
       console.error(chalk.red('❌ Error pausing trading system'));
       throw error;
@@ -543,10 +408,69 @@ export class TradeCommands {
 
       console.log('');
       console.log(chalk.green('💡 Tip: Use Ctrl+C to interrupt running trade commands'));
-
     } catch (error) {
       console.error(chalk.red('❌ Error stopping trading system'));
       throw error;
+    }
+  }
+
+  /**
+   * Validate mode configuration
+   */
+  private static validateModeConfiguration(
+    mode: string,
+    exchangeName: string,
+    exchangeApiKey?: string,
+    exchangeApiSecret?: string
+  ): void {
+    if (mode === 'live') {
+      if (exchangeName === 'simulator') {
+        throw new Error(
+          this.formatError(
+            'Configuration Error: Live mode cannot use simulator',
+            'You have configured live mode but are using the simulator exchange.',
+            `Update ${chalk.cyan('config.json')} to use a real exchange like okx, binance, or coinbase with API credentials`
+          )
+        );
+      }
+
+      if (!exchangeApiKey || !exchangeApiSecret) {
+        throw new Error(
+          this.formatError(
+            `Missing API credentials for ${exchangeName.toUpperCase()}`,
+            'Live mode requires API credentials to connect to the exchange.',
+            `Add your API credentials to ${chalk.cyan('config.json')}`,
+            'Start with simulation mode to test without API keys'
+          )
+        );
+      }
+    } else if (mode === 'simulation' && exchangeName !== 'simulator') {
+      // Simulation with real data source - API keys optional but recommended
+      if (!exchangeApiKey || !exchangeApiSecret) {
+        console.log(chalk.yellow('⚠️  Warning: Running simulation without API keys'));
+        console.log(
+          chalk.gray(
+            '   Some features may be limited. Consider adding API keys to config.json for full access.'
+          )
+        );
+        console.log('');
+      }
+    }
+  }
+
+  /**
+   * Validate AI configuration
+   */
+  private static validateAIConfiguration(apiKey?: string): void {
+    if (!apiKey) {
+      throw new Error(
+        this.formatError(
+          'Missing AI API key',
+          'AI signal generation requires an API key from OpenRouter.',
+          `Add your OpenRouter API key to ${chalk.cyan('config.json')}`,
+          `Get API Key: ${chalk.blue('https://openrouter.ai/keys')}`
+        )
+      );
     }
   }
 }

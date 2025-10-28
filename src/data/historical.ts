@@ -3,10 +3,11 @@ import { SimulatorExchange } from '../exchange/simulator.js';
 
 export class HistoricalDataProvider {
   private cache: Map<string, Candlestick[]> = new Map();
-  private simulatorExchange: SimulatorExchange;
+  // @ts-expect-error - Reserved for future use
+  private _simulatorExchange: SimulatorExchange;
 
   constructor(simulatorExchange: SimulatorExchange) {
-    this.simulatorExchange = simulatorExchange;
+    this._simulatorExchange = simulatorExchange;
   }
 
   /**

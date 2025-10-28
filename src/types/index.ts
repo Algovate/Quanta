@@ -196,11 +196,6 @@ export interface TradingConfig {
   maxTotalRisk: number;
 }
 
-export interface UIConfig {
-  mode: 'tui' | 'cli';
-  refreshRate: number;
-}
-
 // Backtest types
 export interface BacktestConfig {
   startDate: string;
@@ -290,7 +285,6 @@ export interface Config {
   };
   ai: AIConfig;
   trading: TradingConfig;
-  ui: UIConfig;
   backtest?: BacktestConfig;
 }
 

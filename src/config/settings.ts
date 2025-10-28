@@ -29,10 +29,6 @@ const ConfigSchema = z.object({
     stopLoss: z.number().default(0.05), // 5%
     maxRisk: z.number().default(0.05), // 5%
   }),
-  ui: z.object({
-    mode: z.enum(['tui', 'cli']).default('tui'),
-    refreshRate: z.number().default(1000), // ms
-  }),
   backtest: z
     .object({
       startDate: z.string().optional(),
@@ -75,10 +71,6 @@ const DEFAULT_CONFIG: Partial<Config> = {
     leverageRange: [5, 40],
     stopLoss: 0.05,
     maxRisk: 0.05,
-  },
-  ui: {
-    mode: 'tui',
-    refreshRate: 1000,
   },
   backtest: {
     initialBalance: 10000,
@@ -139,10 +131,6 @@ function parseEnvConfig(): Partial<Config> {
       stopLoss: parseFloat(process.env.STOP_LOSS || '0.05'),
       maxRisk: parseFloat(process.env.MAX_RISK || '0.05'),
     },
-    ui: {
-      mode: (process.env.UI_MODE as 'tui' | 'cli') || 'tui',
-      refreshRate: parseInt(process.env.UI_REFRESH_RATE || '1000'),
-    },
     backtest: {
       startDate: process.env.BACKTEST_START_DATE,
       endDate: process.env.BACKTEST_END_DATE,
@@ -187,11 +175,6 @@ export function getConfig(): Config {
         ...DEFAULT_CONFIG.trading,
         ...envConfig.trading,
         ...fileConfig.trading,
-      },
-      ui: {
-        ...DEFAULT_CONFIG.ui,
-        ...envConfig.ui,
-        ...fileConfig.ui,
       },
       backtest: {
         ...DEFAULT_CONFIG.backtest,

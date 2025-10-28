@@ -37,13 +37,6 @@
     "_comment_maxRisk": "Maximum risk per trade as fraction of account (0.05 = 5%)"
   },
 
-  "ui": {
-    "mode": "tui",
-    "_comment_mode": "UI mode: 'tui' (terminal UI with real-time display), 'cli' (command-line output only)",
-    "refreshRate": 1000,
-    "_comment_refreshRate": "UI refresh rate in milliseconds (1000 = 1 second)"
-  },
-
   "backtest": {
     "startDate": "",
     "_comment_startDate": "Backtest start date (YYYY-MM-DD format)",

@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import fs from 'fs';
-import path from 'path';
 import { getConfig, saveConfig, resetConfig, getConfigFilePath, getConfigExamplePath, validateConfig } from '../../config/settings.js';
 import { handleAsync } from '../../utils/error-handler.js';
 
@@ -94,11 +93,6 @@ export class ConfigCommands {
       console.log(`   Leverage Range: ${config.trading.leverageRange[0]}x - ${config.trading.leverageRange[1]}x`);
       console.log(`   Stop Loss: ${(config.trading.stopLoss * 100).toFixed(1)}%`);
       console.log(`   Max Risk: ${(config.trading.maxRisk * 100).toFixed(1)}%`);
-      console.log('');
-
-      console.log(chalk.blue('🎨 UI Settings:'));
-      console.log(`   Mode: ${config.ui.mode}`);
-      console.log(`   Refresh Rate: ${config.ui.refreshRate}ms`);
       console.log('');
 
       if (config.backtest) {

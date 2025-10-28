@@ -1,6 +1,7 @@
 import { Exchange, TradingSignal, Order, Position, Account } from '../exchange/types.js';
 import { RiskManager, PositionSizing } from './risk.js';
 import { ensureUsdtSuffix } from '../utils/symbol-utils.js';
+import { Logger } from '../utils/logger.js';
 
 export interface OrderResult {
   success: boolean;
@@ -11,10 +12,12 @@ export interface OrderResult {
 export class OrderExecutor {
   private exchange: Exchange;
   private riskManager: RiskManager;
+  private logger: Logger;
 
   constructor(exchange: Exchange, riskManager: RiskManager) {
     this.exchange = exchange;
     this.riskManager = riskManager;
+    this.logger = Logger.getInstance('OrderExecutor');
   }
 
   async executeSignal(
@@ -59,8 +62,44 @@ export class OrderExecutor {
           return { success: false, error: `Unknown action: ${signal.action}` };
       }
     } catch (error) {
-      console.error('Error executing signal:', error);
+      this.logger.error('Error executing signal', error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Execute a directional order (long or short)
+   * Consolidates duplicate logic from executeLongOrder and executeShortOrder
+   */
+  private async executeDirectionalOrder(
+    signal: TradingSignal,
+    sizing: PositionSizing,
+    currentPrice: number,
+    side: 'buy' | 'sell'
+  ): Promise<OrderResult> {
+    try {
+      const symbol = `${signal.coin}/USDT`;
+      const amount = sizing.suggestedSize;
+      const price = signal.entry_price || currentPrice;
+      const leverage = sizing.leverage;
+
+      const order = await this.exchange.placeOrder(symbol, side, amount, price, leverage);
+
+      // Check if order was actually filled
+      if (order.status === 'filled') {
+        return { success: true, order };
+      } else {
+        return {
+          success: false,
+          error: `Order ${order.status}: ${order.status === 'rejected' ? 'Insufficient margin' : 'Unknown reason'}`,
+        };
+      }
+    } catch (error) {
+      this.logger.error(`Error executing ${side.toUpperCase()} order`, error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Order execution failed',
+      };
     }
   }
 
@@ -69,33 +108,7 @@ export class OrderExecutor {
     sizing: PositionSizing,
     currentPrice: number
   ): Promise<OrderResult> {
-    try {
-      const symbol = `${signal.coin}/USDT`;
-      const side = 'buy';
-      const amount = sizing.suggestedSize;
-      const price = signal.entry_price || currentPrice;
-      const leverage = sizing.leverage;
-
-      // Silent during backtest
-
-      const order = await this.exchange.placeOrder(symbol, side, amount, price, leverage);
-
-      // Check if order was actually filled
-      if (order.status === 'filled') {
-        return { success: true, order };
-      } else {
-        return {
-          success: false,
-          error: `Order ${order.status}: ${order.status === 'rejected' ? 'Insufficient margin' : 'Unknown reason'}`,
-        };
-      }
-    } catch (error) {
-      console.error('Error executing LONG order:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Order execution failed',
-      };
-    }
+    return this.executeDirectionalOrder(signal, sizing, currentPrice, 'buy');
   }
 
   private async executeShortOrder(
@@ -103,33 +116,7 @@ export class OrderExecutor {
     sizing: PositionSizing,
     currentPrice: number
   ): Promise<OrderResult> {
-    try {
-      const symbol = `${signal.coin}/USDT`;
-      const side = 'sell';
-      const amount = sizing.suggestedSize;
-      const price = signal.entry_price || currentPrice;
-      const leverage = sizing.leverage;
-
-      // Silent during backtest
-
-      const order = await this.exchange.placeOrder(symbol, side, amount, price, leverage);
-
-      // Check if order was actually filled
-      if (order.status === 'filled') {
-        return { success: true, order };
-      } else {
-        return {
-          success: false,
-          error: `Order ${order.status}: ${order.status === 'rejected' ? 'Insufficient margin' : 'Unknown reason'}`,
-        };
-      }
-    } catch (error) {
-      console.error('Error executing SHORT order:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Order execution failed',
-      };
-    }
+    return this.executeDirectionalOrder(signal, sizing, currentPrice, 'sell');
   }
 
   private async executeCloseOrder(
@@ -153,7 +140,7 @@ export class OrderExecutor {
 
       return { success: true, order };
     } catch (error) {
-      console.error('Error executing CLOSE order:', error);
+      this.logger.error('Error executing CLOSE order', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Order execution failed',
@@ -161,51 +148,44 @@ export class OrderExecutor {
     }
   }
 
-  async executeStopLoss(position: Position, currentPrice: number): Promise<OrderResult> {
+  /**
+   * Execute position exit (stop loss or take profit)
+   * Consolidates duplicate logic
+   */
+  private async executePositionExit(
+    position: Position,
+    currentPrice: number,
+    context: string
+  ): Promise<OrderResult> {
     try {
       const symbol = ensureUsdtSuffix(position.symbol);
       const side = position.side === 'long' ? 'sell' : 'buy';
       const amount = position.size;
 
-      // Silent during backtest
-
       const order = await this.exchange.placeOrder(symbol, side, amount, currentPrice);
-
       return { success: true, order };
     } catch (error) {
-      console.error('Error executing stop loss:', error);
+      this.logger.error(`Error executing ${context}`, error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Stop loss execution failed',
+        error: error instanceof Error ? error.message : `${context} execution failed`,
       };
     }
   }
 
+  async executeStopLoss(position: Position, currentPrice: number): Promise<OrderResult> {
+    return this.executePositionExit(position, currentPrice, 'stop loss');
+  }
+
   async executeTakeProfit(position: Position, currentPrice: number): Promise<OrderResult> {
-    try {
-      const symbol = ensureUsdtSuffix(position.symbol);
-      const side = position.side === 'long' ? 'sell' : 'buy';
-      const amount = position.size;
-
-      // Silent during backtest
-
-      const order = await this.exchange.placeOrder(symbol, side, amount, currentPrice);
-
-      return { success: true, order };
-    } catch (error) {
-      console.error('Error executing take profit:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Take profit execution failed',
-      };
-    }
+    return this.executePositionExit(position, currentPrice, 'take profit');
   }
 
   async cancelOrder(orderId: string, symbol: string): Promise<boolean> {
     try {
       return await this.exchange.cancelOrder(orderId, symbol);
     } catch (error) {
-      console.error('Error canceling order:', error);
+      this.logger.error('Error canceling order', error);
       return false;
     }
   }

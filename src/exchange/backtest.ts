@@ -13,13 +13,15 @@ export class BacktestExchange implements Exchange {
   private currentTime: number;
   private historicalData: Map<string, Candlestick[]>;
   private completedTrades: any[] = [];
-  private historicalDataProvider: HistoricalDataProvider;
+  // @ts-expect-error - Reserved for future use
+  private _historicalDataProvider: HistoricalDataProvider;
 
   constructor(
     initialBalance: number,
     historicalDataProvider: HistoricalDataProvider,
     initialTime: number
   ) {
+    this._historicalDataProvider = historicalDataProvider;
     this.account = {
       balance: initialBalance,
       equity: initialBalance,
@@ -33,7 +35,7 @@ export class BacktestExchange implements Exchange {
     this.orders = [];
     this.currentTime = initialTime;
     this.historicalData = new Map();
-    this.historicalDataProvider = historicalDataProvider;
+    this._historicalDataProvider = historicalDataProvider;
   }
 
   /**

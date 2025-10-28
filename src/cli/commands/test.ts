@@ -67,7 +67,6 @@ export class TestCommands {
     console.log(chalk.cyan('📊 Testing K-line Data Retrieval'));
     console.log(chalk.gray(`Exchange: ${options.exchange}, Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`));
 
-    const config = getConfig();
     const symbol = `${options.coin}/USDT`;
 
     let exchange: any;

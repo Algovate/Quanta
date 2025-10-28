@@ -2,6 +2,12 @@ import { MarketData } from '../data/market.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
 import { TechnicalIndicators } from '../types/index.js';
 import { AIContext } from './agent.js';
+import {
+  MOCK_AI_SIGNALS,
+  TECHNICAL_THRESHOLDS,
+  CONFIDENCE_ADJUSTMENTS,
+  RSI_RANGES,
+} from './constants.js';
 
 export class MockAIAgent {
   private signalCounter: number = 0;
@@ -27,7 +33,7 @@ export class MockAIAgent {
 
   private generateSignalForCoin(
     marketData: MarketData,
-    account: Account,
+    _account: Account,
     existingPositions: Position[]
   ): TradingSignal | null {
     const { coin, indicators, trend, volatility, currentPrice } = marketData;
@@ -89,11 +95,11 @@ export class MockAIAgent {
     macd: number,
     macdSignal: number,
     ema20: number,
-    ema50: number,
+    _ema50: number,
     currentPrice: number
   ): boolean {
-    // More lenient conditions for demonstration
-    const rsiOk = rsi > 25 && rsi < 75;
+    const rsiOk =
+      rsi > TECHNICAL_THRESHOLDS.RSI_LOWER_BOUND && rsi < TECHNICAL_THRESHOLDS.RSI_UPPER_BOUND;
     const macdBullish = macd > macdSignal;
     const priceAboveEMAs = currentPrice > ema20;
 
@@ -105,11 +111,11 @@ export class MockAIAgent {
     macd: number,
     macdSignal: number,
     ema20: number,
-    ema50: number,
+    _ema50: number,
     currentPrice: number
   ): boolean {
-    // More lenient conditions for demonstration
-    const rsiOk = rsi > 25 && rsi < 75;
+    const rsiOk =
+      rsi > TECHNICAL_THRESHOLDS.RSI_LOWER_BOUND && rsi < TECHNICAL_THRESHOLDS.RSI_UPPER_BOUND;
     const macdBearish = macd < macdSignal;
     const priceBelowEMAs = currentPrice < ema20;
 
@@ -124,10 +130,11 @@ export class MockAIAgent {
     volatility: string
   ): TradingSignal {
     const confidence = this.calculateConfidence(indicators, trend, volatility, 'bullish');
-    const entryPrice = currentPrice * (1 + (Math.random() - 0.5) * 0.001); // Small random variation
-    const stopLoss = 0.03; // 3% stop loss
-    const profitTarget = 0.06; // 6% take profit (2:1 risk/reward)
-    const positionSize = 0.05; // 5% of account
+    const entryPrice =
+      currentPrice * (1 + (Math.random() - 0.5) * MOCK_AI_SIGNALS.PRICE_VARIATION_RANGE);
+    const stopLoss = MOCK_AI_SIGNALS.DEFAULT_STOP_LOSS;
+    const profitTarget = MOCK_AI_SIGNALS.DEFAULT_PROFIT_TARGET;
+    const positionSize = MOCK_AI_SIGNALS.DEFAULT_POSITION_SIZE;
 
     return {
       coin,
@@ -150,10 +157,11 @@ export class MockAIAgent {
     volatility: string
   ): TradingSignal {
     const confidence = this.calculateConfidence(indicators, trend, volatility, 'bearish');
-    const entryPrice = currentPrice * (1 + (Math.random() - 0.5) * 0.001); // Small random variation
-    const stopLoss = 0.03; // 3% stop loss
-    const profitTarget = 0.06; // 6% take profit (2:1 risk/reward)
-    const positionSize = 0.05; // 5% of account
+    const entryPrice =
+      currentPrice * (1 + (Math.random() - 0.5) * MOCK_AI_SIGNALS.PRICE_VARIATION_RANGE);
+    const stopLoss = MOCK_AI_SIGNALS.DEFAULT_STOP_LOSS;
+    const profitTarget = MOCK_AI_SIGNALS.DEFAULT_PROFIT_TARGET;
+    const positionSize = MOCK_AI_SIGNALS.DEFAULT_POSITION_SIZE;
 
     return {
       coin,
@@ -202,7 +210,7 @@ export class MockAIAgent {
 
   private generateHoldSignal(
     coin: string,
-    currentPrice: number,
+    _currentPrice: number,
     indicators: TechnicalIndicators
   ): TradingSignal {
     return {
@@ -219,37 +227,46 @@ export class MockAIAgent {
     volatility: string,
     direction: 'bullish' | 'bearish'
   ): number {
-    let confidence = 0.5; // Base confidence
+    let confidence = CONFIDENCE_ADJUSTMENTS.BASE_CONFIDENCE;
 
     // RSI confidence
     const rsi = indicators.rsi14;
     if (direction === 'bullish') {
-      if (rsi > 40 && rsi < 65) confidence += 0.2;
-      else if (rsi < 30 || rsi > 80) confidence -= 0.2;
+      if (rsi > RSI_RANGES.BULLISH_LOWER && rsi < RSI_RANGES.BULLISH_UPPER)
+        confidence += CONFIDENCE_ADJUSTMENTS.RSI_CONFIDENCE_BOOST;
+      else if (rsi < RSI_RANGES.BEARISH_LOWER || rsi > TECHNICAL_THRESHOLDS.RSI_OVERBOUGHT)
+        confidence += CONFIDENCE_ADJUSTMENTS.RSI_CONFIDENCE_PENALTY;
     } else {
-      if (rsi > 35 && rsi < 60) confidence += 0.2;
-      else if (rsi < 20 || rsi > 70) confidence -= 0.2;
+      if (rsi > RSI_RANGES.BEARISH_LOWER && rsi < RSI_RANGES.BEARISH_UPPER)
+        confidence += CONFIDENCE_ADJUSTMENTS.RSI_CONFIDENCE_BOOST;
+      else if (rsi < TECHNICAL_THRESHOLDS.RSI_OVERSOLD || rsi > TECHNICAL_THRESHOLDS.RSI_OVERBOUGHT)
+        confidence += CONFIDENCE_ADJUSTMENTS.RSI_CONFIDENCE_PENALTY;
     }
 
     // MACD confidence
     const macd = indicators.macd.macd;
     const macdSignal = indicators.macd.signal;
-    if (direction === 'bullish' && macd > macdSignal) confidence += 0.15;
-    else if (direction === 'bearish' && macd < macdSignal) confidence += 0.15;
+    if (direction === 'bullish' && macd > macdSignal)
+      confidence += CONFIDENCE_ADJUSTMENTS.MACD_CONFIDENCE_BOOST;
+    else if (direction === 'bearish' && macd < macdSignal)
+      confidence += CONFIDENCE_ADJUSTMENTS.MACD_CONFIDENCE_BOOST;
 
     // Trend alignment
     if (
       (direction === 'bullish' && trend === 'bullish') ||
       (direction === 'bearish' && trend === 'bearish')
     ) {
-      confidence += 0.1;
+      confidence += CONFIDENCE_ADJUSTMENTS.TREND_ALIGNMENT_BOOST;
     }
 
     // Volatility adjustment
-    if (volatility === 'medium') confidence += 0.05;
-    else if (volatility === 'high') confidence -= 0.05;
+    if (volatility === 'medium') confidence += CONFIDENCE_ADJUSTMENTS.VOLATILITY_MEDIUM_BOOST;
+    else if (volatility === 'high') confidence += CONFIDENCE_ADJUSTMENTS.VOLATILITY_HIGH_PENALTY;
 
-    return Math.max(0.3, Math.min(0.95, confidence));
+    return Math.max(
+      CONFIDENCE_ADJUSTMENTS.MIN_CONFIDENCE,
+      Math.min(CONFIDENCE_ADJUSTMENTS.MAX_CONFIDENCE, confidence)
+    );
   }
 
   private generateLongReasoning(
@@ -309,9 +326,10 @@ export class MockAIAgent {
     const macd = indicators.macd.macd;
     const macdSignal = indicators.macd.signal;
 
-    if (rsi > 70) return 'RSI overbought, waiting for pullback';
-    if (rsi < 30) return 'RSI oversold, waiting for bounce';
-    if (Math.abs(macd - macdSignal) < 5) return 'MACD showing weak momentum';
+    if (rsi > TECHNICAL_THRESHOLDS.RSI_OVERBOUGHT) return 'RSI overbought, waiting for pullback';
+    if (rsi < TECHNICAL_THRESHOLDS.RSI_OVERSOLD) return 'RSI oversold, waiting for bounce';
+    if (Math.abs(macd - macdSignal) < TECHNICAL_THRESHOLDS.MACD_WEAK_MOMENTUM_THRESHOLD)
+      return 'MACD showing weak momentum';
 
     return 'Mixed signals, waiting for clearer direction';
   }
@@ -325,9 +343,9 @@ export class MockAIAgent {
     const macdSignal = indicators.macd.signal;
 
     if (currentDirection === 'bullish') {
-      return rsi > 70 || macd < macdSignal;
+      return rsi > TECHNICAL_THRESHOLDS.RSI_OVERBOUGHT || macd < macdSignal;
     } else {
-      return rsi < 30 || macd > macdSignal;
+      return rsi < TECHNICAL_THRESHOLDS.RSI_OVERSOLD || macd > macdSignal;
     }
   }
 }

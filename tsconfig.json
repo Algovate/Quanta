@@ -23,7 +23,9 @@
     "allowSyntheticDefaultImports": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": [
     "src/**/*"

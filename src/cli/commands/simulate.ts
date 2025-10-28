@@ -430,7 +430,7 @@ export class SimulateCommands {
 
     // Get updated positions
     const updatedPositions = await exchange.getPositions();
-    const updatedAccount = await exchange.getAccount();
+    await exchange.getAccount();
 
     if (updatedPositions.length > 0) {
       spinner4.succeed(`Monitoring ${updatedPositions.length} position(s) across ${coins.length} coin(s)`);

@@ -1,6 +1,9 @@
 import { Exchange, Position } from '../exchange/types.js';
 import { RiskManager } from './risk.js';
 import { OrderExecutor } from './orders.js';
+import { POSITION_MONITORING } from './constants.js';
+import { Logger } from '../utils/logger.js';
+import { calculateUnrealizedPnl } from './position-utils.js';
 
 export interface PositionMonitor {
   checkStopLoss(position: Position, currentPrice: number): boolean;
@@ -14,10 +17,12 @@ export interface PositionMonitor {
 export class PositionMonitorService implements PositionMonitor {
   private riskManager: RiskManager;
   private orderExecutor: OrderExecutor;
+  private logger: Logger;
 
   constructor(riskManager: RiskManager, orderExecutor: OrderExecutor) {
     this.riskManager = riskManager;
     this.orderExecutor = orderExecutor;
+    this.logger = Logger.getInstance('PositionMonitor');
   }
 
   checkStopLoss(position: Position, currentPrice: number): boolean {
@@ -44,8 +49,7 @@ export class PositionMonitorService implements PositionMonitor {
 
     // Check for extreme losses (emergency stop)
     const lossPercent = Math.abs(position.unrealizedPnl) / (position.size * position.entryPrice);
-    if (lossPercent > 0.1) {
-      // 10% loss
+    if (lossPercent > POSITION_MONITORING.EMERGENCY_STOP_LOSS_THRESHOLD) {
       return { shouldClose: true, reason: 'Emergency stop - excessive loss' };
     }
 
@@ -74,7 +78,7 @@ export class PositionMonitorService implements PositionMonitor {
           }
         }
       } catch (error) {
-        console.error(`Error monitoring position ${position.symbol}:`, error);
+        this.logger.error(`Error monitoring position ${position.symbol}`, error);
       }
     }
   }
@@ -88,15 +92,8 @@ export class PositionMonitorService implements PositionMonitor {
     riskPercent: number;
     daysHeld: number;
   } {
-    // Calculate unrealized P&L based on position side
-    let unrealizedPnl: number;
-    if (position.side === 'long') {
-      unrealizedPnl = (currentPrice - position.entryPrice) * position.size;
-    } else {
-      // For SHORT: profit when price drops
-      unrealizedPnl = (position.entryPrice - currentPrice) * position.size;
-    }
-
+    // Use shared utility for P&L calculation
+    const unrealizedPnl = calculateUnrealizedPnl(position, currentPrice);
     const pnlPercent = (unrealizedPnl / (position.size * position.entryPrice)) * 100;
     const riskPercent = (Math.abs(unrealizedPnl) / (position.size * position.entryPrice)) * 100;
     const daysHeld = (Date.now() - position.timestamp) / (1000 * 60 * 60 * 24);
@@ -135,8 +132,8 @@ export class PositionMonitorService implements PositionMonitor {
     let riskLevel: 'low' | 'medium' | 'high' = 'low';
     const pnlPercent = Math.abs(totalPnl) / totalMarginUsed;
 
-    if (pnlPercent > 0.1) riskLevel = 'high';
-    else if (pnlPercent > 0.05) riskLevel = 'medium';
+    if (pnlPercent > POSITION_MONITORING.HIGH_RISK_THRESHOLD) riskLevel = 'high';
+    else if (pnlPercent > POSITION_MONITORING.MEDIUM_RISK_THRESHOLD) riskLevel = 'medium';
 
     return {
       totalPositions: positions.length,
