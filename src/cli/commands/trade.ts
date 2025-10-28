@@ -69,7 +69,7 @@ export class TradeCommands {
     program
       .command('start')
       .description('Start AI trading system')
-      .option('-m, --mode <mode>', 'Trading mode: live, simulation, backtest')
+      .option('-m, --mode <mode>', 'Trading mode: live, simulation')
       .option('-c, --coins <coins>', 'Comma-separated list of coins', 'BTC,ETH,SOL')
       .option('--ui <ui>', 'UI mode: tui or cli')
       .action(async (options) => {
@@ -134,10 +134,11 @@ export class TradeCommands {
     const mode = options.mode || config.mode || 'simulation';
     
     // Validate mode parameter
-    const validModes = ['live', 'simulation', 'backtest'];
+    const validModes = ['live', 'simulation'];
     if (!validModes.includes(mode)) {
       throw new Error(
         `Invalid mode: "${mode}". Valid modes are: ${validModes.join(', ')}\n` +
+        `For backtesting, use: quanta trade backtest --start <date> --end <date>\n` +
         `Please check your config.json or use --mode flag with a valid value.`
       );
     }
@@ -181,14 +182,6 @@ export class TradeCommands {
       console.log(`   Coins: ${coins.join(', ')}`);
       console.log(`   UI: ${uiMode}`);
       console.log('');
-    }
-
-    if (mode === 'backtest') {
-      if (uiMode === 'cli') {
-        console.log(chalk.yellow('⚠️  Backtest mode requires start and end dates'));
-        console.log(chalk.gray('   Use: quanta trade backtest --start 2024-01-01 --end 2024-12-31'));
-      }
-      return;
     }
 
     // Validate prerequisites based on mode

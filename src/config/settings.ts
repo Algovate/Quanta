@@ -14,7 +14,7 @@ const ExchangeConfigSchema = z.object({
 });
 
 const ConfigSchema = z.object({
-  mode: z.enum(['live', 'simulation', 'backtest']).default('simulation'),
+  mode: z.enum(['live', 'simulation']).default('simulation'), // backtest mode is handled by separate command
   exchange: ExchangeConfigSchema,
   ai: z.object({
     apiKey: z.string(),
@@ -26,7 +26,7 @@ const ConfigSchema = z.object({
     cyclePeriod: z.number().default(180000), // 3 minutes in ms
     maxPositions: z.number().default(6),
     leverageRange: z.tuple([z.number(), z.number()]).default([5, 40]),
-    stopLoss: z.number().default(0.03), // 3%
+    stopLoss: z.number().default(0.05), // 5%
     maxRisk: z.number().default(0.05), // 5%
   }),
   ui: z.object({
@@ -65,7 +65,7 @@ const DEFAULT_CONFIG: Partial<Config> = {
   },
   ai: {
     apiKey: '',
-    model: 'deepseek/deepseek-chat',
+    model: 'deepseek/deepseek-chat-v3-0324',
     temperature: 0.7,
   },
   trading: {
@@ -73,7 +73,7 @@ const DEFAULT_CONFIG: Partial<Config> = {
     cyclePeriod: 180000,
     maxPositions: 6,
     leverageRange: [5, 40],
-    stopLoss: 0.03,
+    stopLoss: 0.05,
     maxRisk: 0.05,
   },
   ui: {
@@ -116,7 +116,7 @@ function parseEnvConfig(): Partial<Config> {
   const coins = process.env.TRADING_COINS?.split(',').map(c => c.trim()) || ['BTC', 'ETH', 'SOL'];
 
   return {
-    mode: (process.env.EXCHANGE_MODE as 'live' | 'simulation' | 'backtest') || 'simulation',
+    mode: (process.env.EXCHANGE_MODE as 'live' | 'simulation') || 'simulation',
     exchange: {
       name: process.env.EXCHANGE_NAME || 'simulator',
       apiKey: process.env.EXCHANGE_API_KEY,
@@ -136,7 +136,7 @@ function parseEnvConfig(): Partial<Config> {
         parseInt(process.env.LEVERAGE_MIN || '5'),
         parseInt(process.env.LEVERAGE_MAX || '40'),
       ],
-      stopLoss: parseFloat(process.env.STOP_LOSS || '0.03'),
+      stopLoss: parseFloat(process.env.STOP_LOSS || '0.05'),
       maxRisk: parseFloat(process.env.MAX_RISK || '0.05'),
     },
     ui: {

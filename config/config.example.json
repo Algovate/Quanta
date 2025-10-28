@@ -1,6 +1,6 @@
 {
   "mode": "simulation",
-  "_comment_mode": "Trading mode: 'simulation' (virtual account), 'live' (real trading), 'backtest' (historical data)",
+  "_comment_mode": "Trading mode: 'simulation' (virtual account), 'live' (real trading). For backtesting, use 'quanta trade backtest' command",
 
   "exchange": {
     "name": "simulator",
@@ -16,7 +16,7 @@
   "ai": {
     "apiKey": "",
     "_comment_apiKey": "OpenRouter API key for AI signal generation",
-    "model": "deepseek/deepseek-chat",
+    "model": "deepseek/deepseek-chat-v3-0324",
     "_comment_model": "AI model to use for trading signals",
     "temperature": 0.7,
     "_comment_temperature": "AI creativity level (0.0-2.0, lower = more conservative)"
@@ -31,8 +31,8 @@
     "_comment_maxPositions": "Maximum number of simultaneous open positions",
     "leverageRange": [5, 40],
     "_comment_leverageRange": "Leverage range [min, max] - e.g., [5, 40] means 5x to 40x leverage",
-    "stopLoss": 0.03,
-    "_comment_stopLoss": "Default stop loss percentage (0.03 = 3%)",
+    "stopLoss": 0.05,
+    "_comment_stopLoss": "Default stop loss percentage (0.05 = 5%)",
     "maxRisk": 0.05,
     "_comment_maxRisk": "Maximum risk per trade as fraction of account (0.05 = 5%)"
   },
