@@ -11,8 +11,10 @@ Used for live trading and general settings:
 ```json
 {
   "mode": "simulation",
+  "_comment_mode": "Trading mode: 'simulation' (mock data), 'paper' (real data, simulated trades), 'live' (real trading)",
   "exchange": {
-    "name": "simulator",
+    "name": "okx",
+    "_comment_name": "Exchange: 'simulator' (mock data), 'okx', 'binance', 'coinbase' (real data)",
     "testnet": true,
     "apiKey": "your_api_key",
     "apiSecret": "your_api_secret"
@@ -83,8 +85,8 @@ Independent configuration for simulation:
 
 ```bash
 # Exchange
-EXCHANGE_MODE=simulation
-EXCHANGE_NAME=simulator
+EXCHANGE_MODE=paper
+EXCHANGE_NAME=okx
 EXCHANGE_API_KEY=your_key
 EXCHANGE_API_SECRET=your_secret
 

@@ -16,23 +16,26 @@ quanta
 
 ### `trade start` - Start AI Trading System
 
-Start the trading system in live or simulation mode.
+Start the trading system in simulation, paper, or live mode.
 
 ```bash
 quanta trade start [options]
 
 Options:
-  -m, --mode <mode>        Trading mode: live, simulation (default: "simulation")
+  -m, --mode <mode>        Trading mode: simulation, paper, live (default: "simulation")
   -c, --coins <coins>       Comma-separated list of coins (default: "BTC,ETH,SOL")
 ```
 
 **Examples:**
 
 ```bash
-# Simulation mode (recommended)
+# Simulation mode (mock data - recommended for learning)
 quanta trade start --mode simulation --coins BTC,ETH,SOL
 
-# Live mode (use with caution)
+# Paper trading (real data, simulated execution - recommended for testing)
+quanta trade start --mode paper --coins BTC,ETH,SOL
+
+# Live mode (use with caution - requires API keys)
 quanta trade start --mode live --coins BTC
 
 # Note: For backtesting, use the dedicated command:

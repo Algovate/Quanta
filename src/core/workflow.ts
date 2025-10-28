@@ -451,7 +451,10 @@ export class TradingWorkflow {
           const marginText = `$${position.marginUsed.toFixed(2)}`;
           const entryText = `$${position.entryPrice.toFixed(2)}`;
           const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
-          const pnlPercent = (position.unrealizedPnl / position.notional) * 100;
+          // Calculate P&L percentage based on entry value, not current market value
+          const positionEntryValue = position.size * position.entryPrice;
+          const pnlPercent =
+            positionEntryValue !== 0 ? (position.unrealizedPnl / positionEntryValue) * 100 : 0;
           const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}%)`;
 
           console.log(

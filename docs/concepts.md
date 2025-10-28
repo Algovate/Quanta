@@ -64,13 +64,19 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 
 ### Trading Modes
 
-**Simulation Mode**
-- Uses mock exchange
+**1. Simulation Mode (Mock Data)**
+- Uses mock exchange data
 - Mock or Real AI
 - No real money
-- Perfect for testing
+- Perfect for learning and initial testing
 
-**Live Mode**
+**2. Paper Trading Mode (Real Data, Simulated Execution)**
+- Uses real exchange data (OKX, Binance, Coinbase, etc.)
+- Simulated execution (no real money)
+- API keys optional (uses public data if not provided)
+- Perfect for strategy validation with real market conditions
+
+**3. Live Mode (Real Trading)**
 - Real exchange connection
 - Real money at risk
 - Requires API keys

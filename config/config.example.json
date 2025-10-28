@@ -1,6 +1,6 @@
 {
   "mode": "simulation",
-  "_comment_mode": "Trading mode: 'simulation' (virtual account), 'live' (real trading). For backtesting, use 'quanta trade backtest' command",
+  "_comment_mode": "Trading mode: 'simulation' (mock data), 'paper' (real data, simulated trades), 'live' (real trading). For backtesting, use 'quanta trade backtest' command",
 
   "exchange": {
     "name": "simulator",

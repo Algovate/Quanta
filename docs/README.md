@@ -12,7 +12,7 @@ Complete documentation index for the Quanta AI trading system.
 
 ### 📈 Trading
 - **[Trading Guide](trading-guide.md)** (2.4KB)
-  - Trading modes (simulation/live)
+  - Trading modes (simulation/paper/live)
   - Trading lifecycle
   - Risk management
   - Best practices

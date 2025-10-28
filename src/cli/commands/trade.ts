@@ -65,28 +65,75 @@ export class TradeCommands {
   }
 
   /**
+   * Display trading mode configuration
+   */
+  private static displayModeConfiguration(
+    mode: string,
+    exchangeName: string,
+    exchangeTestnet: boolean,
+    exchangeApiKey?: string,
+    exchangeApiSecret?: string
+  ): void {
+    console.log(chalk.blue('📊 Configuration:'));
+    console.log(`   Mode: ${mode}`);
+
+    if (mode === 'simulation') {
+      console.log(`   Data Source: mock data (simulator only)`);
+      console.log(
+        chalk.gray(`   Note: Config exchange '${exchangeName}' ignored in simulation mode`)
+      );
+    } else if (mode === 'paper') {
+      console.log(`   Data Source: ${exchangeName} (real data, paper trading)`);
+      console.log(`   Network: ${exchangeTestnet ? 'testnet' : 'live'}`);
+      if (!exchangeApiKey || !exchangeApiSecret) {
+        console.log(
+          chalk.yellow(`   Note: Running without API keys (public data only, rate limited)`)
+        );
+      }
+    } else if (mode === 'live') {
+      const exchangeStatus = exchangeName !== 'simulator' ? 'real' : 'simulator';
+      const networkStatus = exchangeTestnet ? 'testnet' : 'production';
+      console.log(`   Exchange: ${exchangeName} (${exchangeStatus})`);
+      if (exchangeName !== 'simulator') {
+        console.log(`   Network: ${networkStatus}`);
+      }
+    }
+  }
+
+  /**
    * Validate and get final exchange instance for the trading mode
    */
   private static async getExchangeForMode(
-    mode: 'simulation' | 'live',
+    mode: 'simulation' | 'paper' | 'live',
     exchangeName: string,
     apiKey?: string,
     apiSecret?: string,
     testnet: boolean = true
   ) {
     if (mode === 'simulation') {
-      // In simulation mode, optionally use real exchange data source
-      if (exchangeName !== 'simulator') {
-        // Create real exchange for data source
-        const dataExchange = await this.createExchange(exchangeName, apiKey, apiSecret, testnet);
-        // Wrap real exchange in simulator for execution
-        return new SimulatorExchange(10000, dataExchange);
-      } else {
-        // Pure mock data simulation
-        return new SimulatorExchange(10000);
+      // Pure mock data simulator
+      console.log('📊 Simulation mode: Using pure mock data (no real exchange data)');
+      return new SimulatorExchange(10000);
+    } else if (mode === 'paper') {
+      // Paper trading: real data with simulated execution
+      if (exchangeName === 'simulator') {
+        throw new Error(
+          'Paper trading mode requires a real exchange data source (okx, binance, coinbase, etc.). ' +
+            'Update config.json exchange.name to use a real exchange.'
+        );
       }
+      console.log(
+        `📊 Paper trading mode: Using real data from ${exchangeName}, simulated execution`
+      );
+      const dataExchange = await this.createExchange(exchangeName, apiKey, apiSecret, testnet);
+      return new SimulatorExchange(10000, dataExchange);
     } else {
-      // Live mode - use real exchanges directly
+      // Live mode - real exchanges
+      if (exchangeName === 'simulator') {
+        throw new Error(
+          'Cannot use simulator exchange in live mode. Please use a real exchange (okx, binance, coinbase, etc.)'
+        );
+      }
       return await this.createExchange(exchangeName, apiKey, apiSecret, testnet, 'live');
     }
   }
@@ -95,7 +142,7 @@ export class TradeCommands {
     program
       .command('start')
       .description('Start AI trading system')
-      .option('-m, --mode <mode>', 'Trading mode: live, simulation')
+      .option('-m, --mode <mode>', 'Trading mode: live, simulation, paper')
       .option('-c, --coins <coins>', 'Comma-separated list of coins', 'BTC,ETH,SOL')
       .action(async options => {
         await handleAsync(async () => {
@@ -155,7 +202,7 @@ export class TradeCommands {
     const mode = options.mode || config.mode || 'simulation';
 
     // Validate mode parameter
-    const validModes = ['live', 'simulation'];
+    const validModes = ['live', 'simulation', 'paper'];
     if (!validModes.includes(mode)) {
       throw new Error(
         `Invalid mode: "${mode}". Valid modes are: ${validModes.join(', ')}\n` +
@@ -174,33 +221,16 @@ export class TradeCommands {
     // Show banner/config
     console.log(chalk.cyan('🏆 Quanta Trading System'));
     console.log(chalk.gray('AI-powered quantitative trading with real-time decision making\n'));
-    console.log(chalk.blue('📊 Configuration:'));
-    console.log(`   Mode: ${mode}`);
 
     const exchangeName = updatedConfig.exchange?.name || 'simulator';
     const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
+    const exchangeApiKey = updatedConfig.exchange?.apiKey;
+    const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
 
-    if (mode === 'simulation') {
-      if (exchangeName === 'simulator') {
-        console.log(`   Data Source: mock data`);
-      } else {
-        console.log(`   Data Source: ${exchangeName} (${exchangeTestnet ? 'testnet' : 'live'})`);
-      }
-    } else if (mode === 'live') {
-      const exchangeStatus = exchangeName !== 'simulator' ? 'real' : 'simulator';
-      const networkStatus = exchangeTestnet ? 'testnet' : 'production';
-      console.log(`   Exchange: ${exchangeName} (${exchangeStatus})`);
-      if (exchangeName !== 'simulator') {
-        console.log(`   Network: ${networkStatus}`);
-      }
-    }
+    this.displayModeConfiguration(mode, exchangeName, exchangeTestnet, exchangeApiKey, exchangeApiSecret);
 
     console.log(`   Coins: ${coins.join(', ')}`);
     console.log('');
-
-    // Validate prerequisites based on mode
-    const exchangeApiKey = updatedConfig.exchange?.apiKey;
-    const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
 
     // Validate prerequisites based on mode
     this.validateModeConfiguration(mode, exchangeName, exchangeApiKey, exchangeApiSecret);
@@ -211,7 +241,7 @@ export class TradeCommands {
 
     // Create exchange based on mode and config
     const exchange = await this.getExchangeForMode(
-      mode as 'simulation' | 'live',
+      mode as 'simulation' | 'paper' | 'live',
       exchangeName,
       exchangeApiKey,
       exchangeApiSecret,
@@ -438,16 +468,25 @@ export class TradeCommands {
         throw new Error(
           this.formatError(
             `Missing API credentials for ${exchangeName.toUpperCase()}`,
-            'Live mode requires API credentials to connect to the exchange.',
-            `Add your API credentials to ${chalk.cyan('config.json')}`,
-            'Start with simulation mode to test without API keys'
+            'Live trading requires API key and secret for authentication.',
+            `Add your ${exchangeName.toUpperCase()} credentials to ${chalk.cyan('config.json')}`
           )
         );
       }
-    } else if (mode === 'simulation' && exchangeName !== 'simulator') {
-      // Simulation with real data source - API keys optional but recommended
+    } else if (mode === 'paper') {
+      if (exchangeName === 'simulator') {
+        throw new Error(
+          this.formatError(
+            'Configuration Error: Paper trading mode requires real exchange',
+            'Paper trading mode needs a real exchange for data (okx, binance, coinbase, etc.).',
+            `Update ${chalk.cyan('config.json')} exchange.name to a real exchange`
+          )
+        );
+      }
+
+      // API keys optional but show warning
       if (!exchangeApiKey || !exchangeApiSecret) {
-        console.log(chalk.yellow('⚠️  Warning: Running simulation without API keys'));
+        console.log(chalk.yellow('⚠️  Warning: Running paper trading without API keys'));
         console.log(
           chalk.gray(
             '   Some features may be limited. Consider adding API keys to config.json for full access.'
@@ -456,6 +495,7 @@ export class TradeCommands {
         console.log('');
       }
     }
+    // simulation mode - no validation needed
   }
 
   /**

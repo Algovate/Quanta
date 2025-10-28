@@ -11,8 +11,11 @@ npm install && npm run build
 # Run a complete trade cycle simulation
 quanta simulate cycle --coins BTC,ETH,SOL --verbose
 
-# Start live trading in simulation mode
+# Start trading in simulation mode (mock data)
 quanta trade start --mode simulation --coins BTC,ETH
+
+# Start paper trading (real data, simulated execution)
+quanta trade start --mode paper --coins BTC,ETH
 
 # Test the system
 quanta test ai --type mock --coin BTC
@@ -23,7 +26,7 @@ quanta test ai --type mock --coin BTC
 - **🤖 AI Trading**: OpenRouter integration with multiple AI models
 - **📊 Technical Analysis**: Multi-timeframe indicators (EMA, MACD, RSI, ATR)
 - **🛡️ Smart Risk Management**: Optimized position sizing, dynamic minimums, 40% cash reserve
-- **🔄 Dual Modes**: Live trading and simulation
+- **🔄 Multiple Modes**: Simulation (mock data), Paper (real data, simulated trades), Live (real trading)
 - **💼 Portfolio Management**: Multi-coin multi-position support (2-3 concurrent positions)
 - **🎯 Mock AI**: Built-in simulated AI for testing without API keys
 - **⚡ Real-time Monitoring**: Live trading updates and performance tracking
@@ -34,8 +37,14 @@ quanta test ai --type mock --coin BTC
 ### Trading
 
 ```bash
-# Start trading in simulation mode
+# Start trading in simulation mode (mock data)
 quanta trade start --mode simulation --coins BTC,ETH,SOL
+
+# Start paper trading (real data, simulated execution)  
+quanta trade start --mode paper --coins BTC,ETH,SOL
+
+# Start live trading (real data, real execution - requires API keys)
+quanta trade start --mode live --coins BTC,ETH,SOL
 
 # Run historical backtest with enhanced reporting
 quanta trade backtest --start 2024-01-01 --end 2024-04-01 --coins BTC,ETH --initial-balance 10000

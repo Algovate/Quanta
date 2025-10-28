@@ -4,7 +4,7 @@ Complete guide to trading with Quanta.
 
 ## Trading Modes
 
-### Simulation Mode (Recommended for Testing)
+### 1. Simulation Mode (Mock Data - Recommended for Learning)
 
 ```bash
 quanta trade start --mode simulation --coins BTC,ETH,SOL
@@ -12,11 +12,25 @@ quanta trade start --mode simulation --coins BTC,ETH,SOL
 
 **Features:**
 - No real money involved
+- Uses mock market data
 - Mock AI agent by default
 - Test strategies safely
 - Learn the system
 
-### Live Mode (Use with Caution)
+### 2. Paper Trading Mode (Real Data, Simulated Execution - Recommended for Testing)
+
+```bash
+quanta trade start --mode paper --coins BTC,ETH,SOL
+```
+
+**Features:**
+- Real market data from exchanges (OKX, Binance, Coinbase)
+- Simulated execution (no real money)
+- Realistic market conditions
+- API keys optional (uses public data if not provided)
+- Perfect for strategy validation with real data
+
+### 3. Live Mode (Real Trading - Use with Caution)
 
 ```bash
 quanta trade start --mode live --coins BTC
@@ -25,14 +39,19 @@ quanta trade start --mode live --coins BTC
 **Requirements:**
 - Real API keys configured
 - Proper risk management
-- Test in simulation first!
+- Test in simulation or paper trading first!
+- Real money at risk
 
 ## Trading Lifecycle
 
 ### 1. Start Trading
 
 ```bash
+# Start with simulation mode (mock data)
 quanta trade start --mode simulation --coins BTC,ETH,SOL
+
+# Or start with paper trading (real data, simulated execution)
+quanta trade start --mode paper --coins BTC,ETH,SOL
 ```
 
 ### 2. Monitor Status
@@ -42,7 +61,7 @@ quanta trade start --mode simulation --coins BTC,ETH,SOL
 quanta trade status
 
 # View in real-time
-quanta trade start --mode simulation --coins BTC
+quanta trade start --mode paper --coins BTC
 ```
 
 ### 3. Control Trading
@@ -103,7 +122,8 @@ Quanta automatically implements risk controls:
 
 ### ✅ DO
 
-- Always test in simulation mode first
+- Always test in simulation or paper trading mode first
+- Paper trading recommended for strategy validation with real data
 - Start with small position sizes
 - Monitor positions regularly
 - Use stop-losses

@@ -1,12 +1,12 @@
 # Getting Started
 
-Quick start guide for Quanta CLI.
+Quick start guide for Quanta - AI-powered quantitative trading system.
 
 ## Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/quanta.git
+git clone https://github.com/Algovate/quanta.git
 cd quanta
 
 # Install dependencies
@@ -15,6 +15,8 @@ npm install
 # Build the project
 npm run build
 ```
+
+> **Note**: Paper trading mode recommended for testing with real market data
 
 ## Quick Start
 
@@ -74,13 +76,34 @@ quanta trade backtest --start 2024-01-01 --end 2024-04-01 --coins BTC,ETH --init
 
 ### 5. Start Trading
 
-```bash
-# Start trading in simulation mode
-quanta trade start --mode simulation --coins BTC,ETH
+Choose your trading mode based on your needs:
 
-# The system will run trading cycles every 3 minutes
-# Press Ctrl+C to stop gracefully
+```bash
+# Option 1: Simulation mode (Mock data - best for learning)
+quanta trade start --mode simulation --coins BTC,ETH
+# ✓ Uses mock data only
+# ✓ No risk, no API keys required
+# ✓ Perfect for understanding the system
+
+# Option 2: Paper trading (Real data, simulated trades - recommended for testing)
+quanta trade start --mode paper --coins BTC,ETH
+# ✓ Uses real market data from exchanges
+# ✓ Simulated execution (no real money)
+# ✓ Realistic market conditions
+# ✓ API keys optional
+
+# Option 3: Live trading (Real money - use with extreme caution)
+quanta trade start --mode live --coins BTC,ETH
+# ⚠️ Real money at risk
+# ⚠️ Requires API keys
+# ⚠️ Always test in simulation/paper first!
 ```
+
+**The system will:**
+- Run trading cycles every 3 minutes
+- Monitor positions and execute trades
+- Display real-time updates
+- Press `Ctrl+C` to stop gracefully
 
 ## Next Steps
 

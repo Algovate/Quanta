@@ -34,23 +34,23 @@ export class SimulatorExchange implements Exchange {
 
   async getAccount(): Promise<Account> {
     // Update equity based on current positions
-    this.updateAccountEquity();
+    await this.updateAccountEquity();
     return { ...this.account };
   }
 
   async getPositions(): Promise<Position[]> {
     // Update all position prices and PnL
-    this.updateAllPositions();
+    await this.updateAllPositions();
     return [...this.positions];
   }
 
   async getPositionsBySymbol(symbol: string): Promise<Position[]> {
-    this.updateAllPositions();
+    await this.updateAllPositions();
     return this.positions.filter(p => p.symbol === symbol);
   }
 
   async getTotalExposure(): Promise<{ totalValue: number; bySymbol: Record<string, number> }> {
-    this.updateAllPositions();
+    await this.updateAllPositions();
     const bySymbol: Record<string, number> = {};
     let totalValue = 0;
 
@@ -71,7 +71,7 @@ export class SimulatorExchange implements Exchange {
     pnlBySymbol: Record<string, number>;
     leverage: number;
   }> {
-    this.updateAllPositions();
+    await this.updateAllPositions();
 
     const exposure = await this.getTotalExposure();
     const totalUnrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
@@ -138,7 +138,7 @@ export class SimulatorExchange implements Exchange {
     leverage: number = 1
   ): Promise<Order> {
     const normalizedSymbol = normalizeSymbol(symbol);
-    const orderPrice = price || this.getCurrentPrice(normalizedSymbol);
+    const orderPrice = price || this.getBasePrice(normalizedSymbol);
 
     const order: Order = {
       id: `sim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -153,7 +153,7 @@ export class SimulatorExchange implements Exchange {
     this.orders.push(order);
 
     // Execute order immediately (synchronously) with leverage
-    this.executeOrder(order, leverage);
+    await this.executeOrder(order, leverage);
 
     return order;
   }
@@ -179,16 +179,18 @@ export class SimulatorExchange implements Exchange {
           error
         );
         // Explicitly return mock data on error
+        const mockPrice = this.getBasePrice(symbol);
         return {
-          price: this.getCurrentPrice(symbol),
+          price: mockPrice,
           timestamp: Date.now(),
         };
       }
     }
 
     // Fall back to mock data
+    const mockPrice = this.getBasePrice(symbol);
     return {
-      price: this.getCurrentPrice(symbol),
+      price: mockPrice,
       timestamp: Date.now(),
     };
   }
@@ -283,7 +285,19 @@ export class SimulatorExchange implements Exchange {
     return timeframes[timeframe] || 60 * 1000;
   }
 
-  private getCurrentPrice(symbol: string): number {
+  private async getCurrentPrice(symbol: string): Promise<number> {
+    // If we have a real data source exchange, try to get real-time price
+    if (this.dataSourceExchange) {
+      try {
+        const ticker = await this.dataSourceExchange.getTicker(symbol);
+        return ticker.price;
+      } catch (error) {
+        // Fall back to mock data if real data fetch fails
+        console.warn(`Failed to fetch real price for ${symbol}, using mock data:`, error);
+      }
+    }
+
+    // Fall back to mock candlesticks
     const key = `${symbol}_3m`;
     const candles = this.marketData.get(key);
     if (candles && candles.length > 0) {
@@ -292,8 +306,10 @@ export class SimulatorExchange implements Exchange {
     return this.getBasePrice(symbol);
   }
 
-  private executeOrder(order: Order, leverage: number = 1): void {
-    const currentPrice = this.getCurrentPrice(order.symbol);
+  private async executeOrder(order: Order, leverage: number = 1): Promise<void> {
+    // For now, use order price or a placeholder since getCurrentPrice is now async
+    // The actual price will be set when the order is executed
+    const currentPrice = order.price || this.getBasePrice(order.symbol);
     const executedPrice = order.price || currentPrice;
     const notionalValue = order.amount * executedPrice; // Total position value
     const marginRequired = notionalValue / leverage; // Margin needed with leverage
@@ -439,7 +455,8 @@ export class SimulatorExchange implements Exchange {
         const notionalValue = amount * price;
         const additionalMargin = notionalValue / leverage;
         existingPosition.marginUsed += additionalMargin;
-        existingPosition.notional = totalSize * this.getCurrentPrice(symbol);
+        // Update notional will be handled by updateAllPositions
+        existingPosition.notional = totalSize * existingPosition.markPrice;
         existingPosition.leverage = leverage; // Update leverage
 
         // Update account margins
@@ -477,9 +494,9 @@ export class SimulatorExchange implements Exchange {
     });
   }
 
-  private updateAllPositions(): void {
-    this.positions.forEach(position => {
-      const currentPrice = this.getCurrentPrice(position.symbol);
+  private async updateAllPositions(): Promise<void> {
+    for (const position of this.positions) {
+      const currentPrice = await this.getCurrentPrice(position.symbol);
       position.markPrice = currentPrice;
 
       // Calculate P&L using utility function
@@ -492,11 +509,11 @@ export class SimulatorExchange implements Exchange {
 
       // Notional = position size * current price
       position.notional = position.size * currentPrice;
-    });
+    }
   }
 
-  private updateAccountEquity(): void {
-    this.updateAllPositions();
+  private async updateAccountEquity(): Promise<void> {
+    await this.updateAllPositions();
 
     // Calculate total P&L from all open positions (unrealized)
     const unrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);

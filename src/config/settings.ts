@@ -14,7 +14,7 @@ const ExchangeConfigSchema = z.object({
 });
 
 const ConfigSchema = z.object({
-  mode: z.enum(['live', 'simulation']).default('simulation'), // backtest mode is handled by separate command
+  mode: z.enum(['live', 'simulation', 'paper']).default('simulation'), // backtest mode is handled by separate command
   exchange: ExchangeConfigSchema,
   ai: z.object({
     apiKey: z.string(),
@@ -118,7 +118,7 @@ function parseEnvConfig(): Partial<Config> {
   const coins = process.env.TRADING_COINS?.split(',').map(c => c.trim()) || ['BTC', 'ETH', 'SOL'];
 
   return {
-    mode: (process.env.EXCHANGE_MODE as 'live' | 'simulation') || 'simulation',
+    mode: (process.env.EXCHANGE_MODE as 'live' | 'simulation' | 'paper') || 'simulation',
     exchange: {
       name: process.env.EXCHANGE_NAME || 'simulator',
       apiKey: process.env.EXCHANGE_API_KEY,

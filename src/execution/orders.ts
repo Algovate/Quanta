@@ -20,6 +20,40 @@ export class OrderExecutor {
     this.logger = Logger.getInstance('OrderExecutor');
   }
 
+  /**
+   * Build full symbol from coin name
+   */
+  private buildSymbol(coin: string): string {
+    return `${coin}/USDT`;
+  }
+
+  /**
+   * Find position by coin name
+   */
+  private findPosition(coin: string, positions: Position[]): Position | undefined {
+    const symbol = this.buildSymbol(coin);
+    return positions.find(p => p.symbol === symbol);
+  }
+
+  /**
+   * Convert position side to order side
+   * Long positions need to be sold to close, short positions need to be bought to close
+   */
+  private positionSideToOrderSide(positionSide: 'long' | 'short'): 'buy' | 'sell' {
+    return positionSide === 'long' ? 'sell' : 'buy';
+  }
+
+  /**
+   * Handle error and return standardized error result
+   */
+  private handleError(context: string, error: unknown): OrderResult {
+    this.logger.error(`Error executing ${context}`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : `${context} execution failed`,
+    };
+  }
+
   async executeSignal(
     signal: TradingSignal,
     account: Account,
@@ -78,7 +112,7 @@ export class OrderExecutor {
     side: 'buy' | 'sell'
   ): Promise<OrderResult> {
     try {
-      const symbol = `${signal.coin}/USDT`;
+      const symbol = this.buildSymbol(signal.coin);
       const amount = sizing.suggestedSize;
       const price = signal.entry_price || currentPrice;
       const leverage = sizing.leverage;
@@ -95,11 +129,7 @@ export class OrderExecutor {
         };
       }
     } catch (error) {
-      this.logger.error(`Error executing ${side.toUpperCase()} order`, error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Order execution failed',
-      };
+      return this.handleError(`${side.toUpperCase()} order`, error);
     }
   }
 
@@ -124,27 +154,21 @@ export class OrderExecutor {
     currentPositions: Position[]
   ): Promise<OrderResult> {
     try {
-      const position = currentPositions.find(p => p.symbol === signal.coin);
+      const position = this.findPosition(signal.coin, currentPositions);
 
       if (!position) {
         return { success: false, error: `No position found for ${signal.coin}` };
       }
 
-      const symbol = `${signal.coin}/USDT`;
-      const side = position.side === 'long' ? 'sell' : 'buy';
+      const symbol = this.buildSymbol(signal.coin);
+      const side = this.positionSideToOrderSide(position.side);
       const amount = position.size;
-
-      // Silent during backtest
 
       const order = await this.exchange.placeOrder(symbol, side, amount);
 
       return { success: true, order };
     } catch (error) {
-      this.logger.error('Error executing CLOSE order', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Order execution failed',
-      };
+      return this.handleError('CLOSE order', error);
     }
   }
 
@@ -159,17 +183,13 @@ export class OrderExecutor {
   ): Promise<OrderResult> {
     try {
       const symbol = ensureUsdtSuffix(position.symbol);
-      const side = position.side === 'long' ? 'sell' : 'buy';
+      const side = this.positionSideToOrderSide(position.side);
       const amount = position.size;
 
       const order = await this.exchange.placeOrder(symbol, side, amount, currentPrice);
       return { success: true, order };
     } catch (error) {
-      this.logger.error(`Error executing ${context}`, error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : `${context} execution failed`,
-      };
+      return this.handleError(context, error);
     }
   }
 
