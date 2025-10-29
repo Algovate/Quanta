@@ -16,7 +16,6 @@ import {
   PerformanceMetrics,
 } from '../types/index.js';
 import { PerformanceAnalytics } from '../analytics/performance.js';
-import { SimulatorExchange } from '../exchange/simulator.js';
 import cliProgress from 'cli-progress';
 
 // Constants
@@ -125,16 +124,9 @@ export class BacktestEngine {
     }
 
     // Initialize exchange with historical data provider
-    // Create a minimal simulator exchange for the data provider
-    const simulatorExchange = new SimulatorExchange(10000);
+    this.historicalDataProvider = new HistoricalDataProvider();
 
-    this.historicalDataProvider = new HistoricalDataProvider(simulatorExchange);
-
-    this.exchange = new BacktestExchange(
-      config.initialBalance,
-      this.historicalDataProvider,
-      this.startTime
-    );
+    this.exchange = new BacktestExchange(config.initialBalance, this.startTime);
 
     this.marketDataProvider = new MarketDataProvider(this.exchange);
     this.aiAgent = new MockAIAgent();

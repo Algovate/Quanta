@@ -1,10 +1,4 @@
 // Core types for Quanta CLI
-export interface ApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  timestamp: number;
-}
 
 export interface ExchangeCredentials {
   apiKey?: string;
@@ -273,10 +267,6 @@ export interface BacktestResult {
   signalStats: SignalStatistics;
 }
 
-export interface HistoricalCandlestick extends Candlestick {
-  symbol: string;
-}
-
 export interface Config {
   mode: 'live' | 'simulation' | 'backtest';
   dataSources: {
@@ -331,4 +321,5 @@ export interface Exchange {
   cancelOrder(orderId: string, symbol: string): Promise<boolean>;
   getTicker(symbol: string): Promise<{ price: number; timestamp: number }>;
   getCompletedTrades?(): CompletedTrade[]; // Optional method for getting completed trades
+  getExchangeName(): string; // Get the name of the exchange
 }

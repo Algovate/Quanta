@@ -4,6 +4,7 @@ import { TestCommands } from './commands/test.js';
 import { ConfigCommands } from './commands/config.js';
 import { HelpCommand } from './commands/help.js';
 import { SimulateCommands } from './commands/simulate.js';
+import { ServerCommands } from './commands/server.js';
 
 export class CLIApplication {
   private program: Command;
@@ -37,6 +38,9 @@ export class CLIApplication {
     // Simulation commands
     const simulate = this.program.command('simulate').description('Simulation and demonstration');
     SimulateCommands.register(simulate);
+
+    // Server commands
+    ServerCommands.register(this.program);
 
     // Help command
     HelpCommand.register(this.program);

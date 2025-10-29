@@ -2,6 +2,8 @@ import { Exchange, TradingSignal, Order, Position, Account } from '../exchange/t
 import { RiskManager, PositionSizing } from './risk.js';
 import { ensureUsdtSuffix } from '../utils/symbol-utils.js';
 import { Logger } from '../utils/logger.js';
+import { TradingManager } from '../web/trading-manager.js';
+import type { OrderEvent } from '../web/types.js';
 
 export interface OrderResult {
   success: boolean;
@@ -54,6 +56,29 @@ export class OrderExecutor {
     };
   }
 
+  private pushOrderEvent(
+    order: Order,
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    price?: number
+  ): void {
+    try {
+      const event: OrderEvent = {
+        id: order?.id ?? `${symbol}-${Date.now()}`,
+        timestamp: Date.now(),
+        symbol,
+        side,
+        amount,
+        status: order?.status ?? 'open',
+        ...(price !== undefined ? { price } : {}),
+      };
+      TradingManager.getInstance().pushOrder(event);
+    } catch {
+      // Silently ignore TradingManager push errors
+    }
+  }
+
   async executeSignal(
     signal: TradingSignal,
     account: Account,
@@ -62,8 +87,12 @@ export class OrderExecutor {
   ): Promise<OrderResult> {
     try {
       // Validate signal
-      if (!this.riskManager.validateSignal(signal, account, currentPositions)) {
-        return { success: false, error: 'Signal validation failed' };
+      const validationResult = this.riskManager.validateSignal(signal, account, currentPositions);
+      if (!validationResult.valid) {
+        this.logger.warn(
+          `Signal validation failed for ${signal.coin} ${signal.action}: ${validationResult.reason}`
+        );
+        return { success: false, error: validationResult.reason || 'Signal validation failed' };
       }
 
       // Calculate position sizing
@@ -118,9 +147,14 @@ export class OrderExecutor {
       const leverage = sizing.leverage;
 
       const order = await this.exchange.placeOrder(symbol, side, amount, price, leverage);
+      this.pushOrderEvent(order, symbol, side, amount, price);
 
       // Check if order was actually filled
       if (order.status === 'filled') {
+        return { success: true, order };
+      } else if (order.status === 'open') {
+        // For limit orders that cannot fill immediately, this is expected behavior
+        // The order will remain open until market conditions allow it to fill
         return { success: true, order };
       } else {
         return {
@@ -165,6 +199,7 @@ export class OrderExecutor {
       const amount = position.size;
 
       const order = await this.exchange.placeOrder(symbol, side, amount);
+      this.pushOrderEvent(order, symbol, side, amount);
 
       return { success: true, order };
     } catch (error) {
@@ -187,6 +222,7 @@ export class OrderExecutor {
       const amount = position.size;
 
       const order = await this.exchange.placeOrder(symbol, side, amount, currentPrice);
+      this.pushOrderEvent(order, symbol, side, amount, currentPrice);
       return { success: true, order };
     } catch (error) {
       return this.handleError(context, error);

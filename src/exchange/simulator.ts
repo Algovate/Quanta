@@ -1,4 +1,5 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
+import { TradingManager } from '../web/trading-manager.js';
 import { normalizeSymbol, calculatePositionPnl } from '../utils/symbol-utils.js';
 import { CompletedTrade } from '../types/index.js';
 
@@ -138,7 +139,8 @@ export class SimulatorExchange implements Exchange {
     leverage: number = 1
   ): Promise<Order> {
     const normalizedSymbol = normalizeSymbol(symbol);
-    const orderPrice = price || this.getBasePrice(normalizedSymbol);
+    const currentPrice = this.getBasePrice(normalizedSymbol);
+    const orderPrice = price || currentPrice;
 
     const order: Order = {
       id: `sim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -146,13 +148,13 @@ export class SimulatorExchange implements Exchange {
       side,
       amount,
       price: orderPrice,
-      status: 'open',
+      status: 'open', // Start as open, will be updated by executeOrder
       timestamp: Date.now(),
     };
 
     this.orders.push(order);
 
-    // Execute order immediately (synchronously) with leverage
+    // Execute the order immediately to simulate real exchange behavior
     await this.executeOrder(order, leverage);
 
     return order;
@@ -307,29 +309,89 @@ export class SimulatorExchange implements Exchange {
   }
 
   private async executeOrder(order: Order, leverage: number = 1): Promise<void> {
-    // For now, use order price or a placeholder since getCurrentPrice is now async
-    // The actual price will be set when the order is executed
-    const currentPrice = order.price || this.getBasePrice(order.symbol);
-    const executedPrice = order.price || currentPrice;
-    const notionalValue = order.amount * executedPrice; // Total position value
-    const marginRequired = notionalValue / leverage; // Margin needed with leverage
+    const currentPrice = this.getBasePrice(order.symbol);
 
-    if (order.side === 'buy' || order.side === 'sell') {
-      // Check if we have enough margin
-      if (marginRequired <= this.account.availableMargin) {
-        // Create position first
-        this.updatePosition(order.symbol, order.side, order.amount, executedPrice, leverage);
+    // Simulate realistic order execution behavior
+    let executedPrice: number;
 
-        // Update account balances
-        // For futures: balance stays the same, only used margin increases
-        // balance = initial cash - realized P&L only (not affected by opening positions)
-        this.account.availableMargin -= marginRequired;
-        this.account.usedMargin += marginRequired;
+    if (order.price && order.price !== currentPrice) {
+      // Limit order - check if it can fill at current market price
+      const canFill =
+        (order.side === 'buy' && order.price >= currentPrice) ||
+        (order.side === 'sell' && order.price <= currentPrice);
 
-        order.status = 'filled';
-        order.price = executedPrice;
-      } else {
-        order.status = 'rejected';
+      if (!canFill) {
+        // Limit order cannot fill immediately - keep as open
+        order.status = 'open';
+        // Emit open status so UI knows it's still pending
+        try {
+          TradingManager.getInstance().pushOrder({
+            id: order.id,
+            timestamp: Date.now(),
+            symbol: order.symbol,
+            side: order.side,
+            amount: order.amount,
+            price: order.price,
+            status: order.status,
+          });
+        } catch {
+          // Silently ignore TradingManager push errors
+        }
+        return;
+      }
+      executedPrice = order.price;
+    } else {
+      // Market order - apply realistic slippage
+      const slippagePercent = Math.random() * 0.1; // 0-0.1% slippage
+      const slippageMultiplier = order.side === 'buy' ? 1 + slippagePercent : 1 - slippagePercent;
+      executedPrice = currentPrice * slippageMultiplier;
+    }
+
+    const notionalValue = order.amount * executedPrice;
+    const marginRequired = notionalValue / leverage;
+
+    // Check margin requirements
+    if (marginRequired <= this.account.availableMargin) {
+      // Execute the order
+      this.updatePosition(order.symbol, order.side, order.amount, executedPrice, leverage);
+
+      // Update account balances
+      this.account.availableMargin -= marginRequired;
+      this.account.usedMargin += marginRequired;
+
+      // Update order with execution details
+      order.status = 'filled';
+      order.price = executedPrice; // Update with actual execution price
+
+      // Emit filled status
+      try {
+        TradingManager.getInstance().pushOrder({
+          id: order.id,
+          timestamp: Date.now(),
+          symbol: order.symbol,
+          side: order.side,
+          amount: order.amount,
+          price: order.price,
+          status: order.status,
+        });
+      } catch {
+        // Silently ignore TradingManager push errors
+      }
+    } else {
+      // Insufficient margin - reject order
+      order.status = 'rejected';
+      try {
+        TradingManager.getInstance().pushOrder({
+          id: order.id,
+          timestamp: Date.now(),
+          symbol: order.symbol,
+          side: order.side,
+          amount: order.amount,
+          price: order.price,
+          status: order.status,
+        });
+      } catch {
+        // Silently ignore TradingManager push errors
       }
     }
   }
@@ -353,10 +415,14 @@ export class SimulatorExchange implements Exchange {
 
     if (oppositePosition) {
       // Closing or reducing opposite position
-      if (amount >= oppositePosition.size) {
-        // Full close: remove position and if there's remaining amount, open new
+      // Use 1% tolerance to handle floating point errors and price volatility
+      const tolerance = oppositePosition.size * 0.01; // 1% tolerance
+      const isFullClose = amount >= oppositePosition.size - tolerance;
+
+      if (isFullClose) {
+        // Full close: remove position completely
         const closedSize = oppositePosition.size;
-        const remainingAmount = amount - closedSize;
+        const remainingAmount = Math.max(0, amount - closedSize);
 
         // Calculate realized P&L
         const realizedPnl = calculatePositionPnl(
@@ -395,8 +461,11 @@ export class SimulatorExchange implements Exchange {
           this.positions.splice(closeIndex, 1);
         }
 
-        // If there's remaining amount, open new position
-        if (remainingAmount > 0) {
+        // Only open new position if remaining amount is significant
+        // Use 5% threshold to prevent accidental reverse positions from close orders
+        // This is intentionally conservative to avoid the common bug where CLOSE creates opposite position
+        const significantThreshold = closedSize * 0.05; // 5% threshold
+        if (remainingAmount > significantThreshold) {
           this.createNewPosition(symbol, positionSide, remainingAmount, price, leverage);
         }
       } else {

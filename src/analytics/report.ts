@@ -1,6 +1,7 @@
 import { BacktestResult, PerformanceMetrics } from '../types/index.js';
 import chalk from 'chalk';
 import fs from 'fs';
+import type { EquitySnapshot } from '../types/index.js';
 
 export class BacktestReport {
   private result: BacktestResult;
@@ -282,7 +283,7 @@ export class BacktestReport {
   /**
    * Find peaks in equity curve
    */
-  private findPeaks(snapshots: any[]): number[] {
+  private findPeaks(snapshots: EquitySnapshot[]): number[] {
     const peaks: number[] = [];
     let currentPeak = snapshots[0].equity;
 
@@ -299,7 +300,7 @@ export class BacktestReport {
   /**
    * Find lows in equity curve
    */
-  private findLows(snapshots: any[]): number[] {
+  private findLows(snapshots: EquitySnapshot[]): number[] {
     const lows: number[] = [];
     let currentLow = snapshots[0].equity;
 

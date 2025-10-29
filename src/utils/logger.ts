@@ -9,8 +9,6 @@ import { LogLevel, LogMetadata, LogConfig, BufferedLogEntry } from './logger-typ
 import { LogFormatter } from './logger-formatter.js';
 import { LogRotation } from './logger-rotation.js';
 
-export { LogLevel, LogMetadata, LogConfig } from './logger-types.js';
-
 export class Logger {
   private static instance: Logger;
   private static currentLogDate: string = '';
@@ -112,6 +110,11 @@ export class Logger {
     }
   }
 
+  /**
+   * Flush buffered log entries to outputs
+   * - Background mode: Outputs to both console and file
+   * - Foreground mode: Only outputs to file (console is handled synchronously elsewhere)
+   */
   private flush(): void {
     if (this.isShuttingDown || this.writeBuffer.length === 0) {
       return;
@@ -120,34 +123,54 @@ export class Logger {
     const entries = [...this.writeBuffer];
     this.writeBuffer = [];
 
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = undefined;
+    this.clearFlushTimer();
+
+    // Console output only in background mode (foreground uses direct console.log)
+    if (this.config.backgroundMode) {
+      this.outputToConsole(entries);
     }
 
-    this.outputToConsole(entries);
-
+    // File output in all modes
     if (this.config.fileOutput) {
       this.outputToFile(entries);
     }
   }
 
+  /**
+   * Clear the auto-flush timer if active
+   */
+  private clearFlushTimer(): void {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
+    }
+  }
+
+  /**
+   * Output log entries to console (background mode only)
+   */
   private outputToConsole(entries: BufferedLogEntry[]): void {
     for (const entry of entries) {
       const formatted = this.formatter.formatForConsole(entry);
+      this.writeToConsole(entry.level, formatted);
+    }
+  }
 
-      switch (entry.level) {
-        case LogLevel.ERROR:
-          console.error(formatted);
-          break;
-        case LogLevel.WARN:
-          console.warn(formatted);
-          break;
-        case LogLevel.INFO:
-        case LogLevel.DEBUG:
-          console.log(formatted);
-          break;
-      }
+  /**
+   * Write a formatted message to the appropriate console stream
+   */
+  private writeToConsole(level: LogLevel, message: string): void {
+    switch (level) {
+      case LogLevel.ERROR:
+        console.error(message);
+        break;
+      case LogLevel.WARN:
+        console.warn(message);
+        break;
+      case LogLevel.INFO:
+      case LogLevel.DEBUG:
+        console.log(message);
+        break;
     }
   }
 

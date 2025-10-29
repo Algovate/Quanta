@@ -172,18 +172,29 @@ export class RiskManager {
     return Math.round(leverage * 2) / 2;
   }
 
-  validateSignal(signal: TradingSignal, _account: Account, currentPositions: Position[]): boolean {
+  validateSignal(
+    signal: TradingSignal,
+    _account: Account,
+    currentPositions: Position[]
+  ): { valid: boolean; reason?: string } {
     try {
       // Check signal format
       if (!signal.coin || !signal.action || !signal.confidence) {
-        // Silent rejection
-        return false;
+        const missingFields = [];
+        if (!signal.coin) missingFields.push('coin');
+        if (!signal.action) missingFields.push('action');
+        if (!signal.confidence) missingFields.push('confidence');
+
+        const reason = `Missing required fields: ${missingFields.join(', ')}`;
+        this.logger.warn(`Signal validation failed: ${reason}`);
+        return { valid: false, reason };
       }
 
       // Check confidence threshold
       if (signal.confidence < SIGNAL_VALIDATION.MIN_CONFIDENCE) {
-        // Silent rejection
-        return false;
+        const reason = `Confidence too low: ${(signal.confidence * 100).toFixed(1)}% < ${(SIGNAL_VALIDATION.MIN_CONFIDENCE * 100).toFixed(1)}% required`;
+        this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
+        return { valid: false, reason };
       }
 
       // Check if we already have a position in this coin
@@ -191,8 +202,9 @@ export class RiskManager {
       const positionSymbol = `${signal.coin}/USDT`;
       const existingPosition = currentPositions.find(p => p.symbol === positionSymbol);
       if (existingPosition && (signal.action === 'LONG' || signal.action === 'SHORT')) {
-        // Silent rejection
-        return false;
+        const reason = `Position already exists for ${signal.coin} (${existingPosition.side} ${existingPosition.size} ${signal.coin})`;
+        this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
+        return { valid: false, reason };
       }
 
       // Check stop loss validity
@@ -201,8 +213,9 @@ export class RiskManager {
         (signal.stop_loss < SIGNAL_VALIDATION.MIN_STOP_LOSS ||
           signal.stop_loss > SIGNAL_VALIDATION.MAX_STOP_LOSS)
       ) {
-        // Silent rejection
-        return false;
+        const reason = `Invalid stop loss: ${(signal.stop_loss * 100).toFixed(1)}% not in range ${(SIGNAL_VALIDATION.MIN_STOP_LOSS * 100).toFixed(1)}%-${(SIGNAL_VALIDATION.MAX_STOP_LOSS * 100).toFixed(1)}%`;
+        this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
+        return { valid: false, reason };
       }
 
       // Check profit target validity
@@ -211,14 +224,16 @@ export class RiskManager {
         signal.stop_loss &&
         signal.profit_target < signal.stop_loss * SIGNAL_VALIDATION.MIN_RISK_REWARD_RATIO
       ) {
-        // Silent rejection
-        return false;
+        const reason = `Invalid risk/reward ratio: ${(signal.profit_target / signal.stop_loss).toFixed(2)} < ${SIGNAL_VALIDATION.MIN_RISK_REWARD_RATIO} required`;
+        this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
+        return { valid: false, reason };
       }
 
-      return true;
+      return { valid: true };
     } catch (error) {
+      const reason = `Validation error: ${error instanceof Error ? error.message : 'Unknown error'}`;
       this.logger.error('Error validating signal', error);
-      return false;
+      return { valid: false, reason };
     }
   }
 

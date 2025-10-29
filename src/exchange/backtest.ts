@@ -1,6 +1,5 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { normalizeSymbol, calculatePositionPnl } from '../utils/symbol-utils.js';
-import { HistoricalDataProvider } from '../data/historical.js';
 import { CompletedTrade } from '../types/index.js';
 
 /**
@@ -14,15 +13,8 @@ export class BacktestExchange implements Exchange {
   private currentTime: number;
   private historicalData: Map<string, Candlestick[]>;
   private completedTrades: CompletedTrade[] = [];
-  // @ts-expect-error - Reserved for future use
-  private _historicalDataProvider: HistoricalDataProvider;
 
-  constructor(
-    initialBalance: number,
-    historicalDataProvider: HistoricalDataProvider,
-    initialTime: number
-  ) {
-    this._historicalDataProvider = historicalDataProvider;
+  constructor(initialBalance: number, initialTime: number) {
     this.account = {
       balance: initialBalance,
       equity: initialBalance,
@@ -36,7 +28,6 @@ export class BacktestExchange implements Exchange {
     this.orders = [];
     this.currentTime = initialTime;
     this.historicalData = new Map();
-    this._historicalDataProvider = historicalDataProvider;
   }
 
   /**
@@ -283,7 +274,27 @@ export class BacktestExchange implements Exchange {
 
   private executeOrder(order: Order, leverage: number = 1): void {
     const currentPrice = this.getCurrentPrice(order.symbol);
-    const executedPrice = order.price || currentPrice;
+
+    // Simulate realistic order execution with slippage
+    let executedPrice: number;
+    if (order.price && order.price !== currentPrice) {
+      // Limit order - check if it can fill at historical price
+      const canFill =
+        (order.side === 'buy' && order.price >= currentPrice) ||
+        (order.side === 'sell' && order.price <= currentPrice);
+
+      if (!canFill) {
+        order.status = 'open'; // Keep as open limit order
+        return;
+      }
+      executedPrice = order.price;
+    } else {
+      // Market order - apply historical slippage
+      const slippagePercent = Math.random() * 0.05; // 0-0.05% slippage for backtest
+      const slippageMultiplier = order.side === 'buy' ? 1 + slippagePercent : 1 - slippagePercent;
+      executedPrice = currentPrice * slippageMultiplier;
+    }
+
     const notionalValue = order.amount * executedPrice;
     const marginRequired = notionalValue / leverage;
 
@@ -293,7 +304,7 @@ export class BacktestExchange implements Exchange {
         this.account.availableMargin -= marginRequired;
         this.account.usedMargin += marginRequired;
         order.status = 'filled';
-        order.price = executedPrice;
+        order.price = executedPrice; // Update with actual execution price
       } else {
         order.status = 'rejected';
       }
@@ -318,9 +329,13 @@ export class BacktestExchange implements Exchange {
 
     if (oppositePosition) {
       // Closing or reducing opposite position
-      if (amount >= oppositePosition.size) {
+      // Use 1% tolerance to handle floating point errors and price volatility
+      const tolerance = oppositePosition.size * 0.01; // 1% tolerance
+      const isFullClose = amount >= oppositePosition.size - tolerance;
+
+      if (isFullClose) {
         const closedSize = oppositePosition.size;
-        const remainingAmount = amount - closedSize;
+        const remainingAmount = Math.max(0, amount - closedSize);
 
         const realizedPnl = calculatePositionPnl(
           oppositePosition.side,
@@ -338,7 +353,10 @@ export class BacktestExchange implements Exchange {
           this.positions.splice(closeIndex, 1);
         }
 
-        if (remainingAmount > 0) {
+        // Only open new position if remaining amount is significant
+        // Use 5% threshold to prevent accidental reverse positions from close orders
+        const significantThreshold = closedSize * 0.05; // 5% threshold
+        if (remainingAmount > significantThreshold) {
           this.createNewPosition(symbol, positionSide, remainingAmount, price, leverage);
         }
       } else {

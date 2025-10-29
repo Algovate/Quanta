@@ -1,13 +1,10 @@
 import { Candlestick } from '../types/index.js';
-import { SimulatorExchange } from '../exchange/simulator.js';
 
 export class HistoricalDataProvider {
   private cache: Map<string, Candlestick[]> = new Map();
-  // @ts-expect-error - Reserved for future use
-  private _simulatorExchange: SimulatorExchange;
 
-  constructor(simulatorExchange: SimulatorExchange) {
-    this._simulatorExchange = simulatorExchange;
+  constructor() {
+    // Constructor simplified - no longer needs SimulatorExchange
   }
 
   /**
@@ -24,7 +21,10 @@ export class HistoricalDataProvider {
 
     // Check cache
     if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey)!;
+      const cached = this.cache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
     }
 
     // Generate historical-looking data for the date range

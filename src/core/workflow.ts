@@ -5,6 +5,7 @@ import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
+import { EventBus } from './event-bus.js';
 import { aggregatePositionMetrics } from '../execution/position-utils.js';
 import { Logger } from '../utils/logger.js';
 import chalk from 'chalk';
@@ -17,7 +18,9 @@ export interface SystemState {
   totalSignals: number;
   totalTrades: number;
   rejectedSignals: number; // Track rejected signals for efficiency calculation
-  totalPnl: number;
+  initialBalance: number; // Initial account balance for total P&L calculation
+  totalPnl: number; // Total P&L from initial balance (realized + unrealized)
+  unrealizedPnl: number; // Unrealized P&L from open positions
   winRate: number;
   lastCountdownTime?: number;
   previousEquity?: number; // Track equity from previous cycle
@@ -76,25 +79,72 @@ export class TradingWorkflow {
       totalSignals: 0,
       totalTrades: 0,
       rejectedSignals: 0,
+      initialBalance: 0, // Will be set when trading starts
       totalPnl: 0,
+      unrealizedPnl: 0,
       winRate: 0,
       previousEquity: 0,
       cyclePnl: 0,
     };
   }
 
+  public getExchange(): Exchange {
+    return this.exchange;
+  }
+
+  public getConfig(): WorkflowConfig {
+    return { ...this.config };
+  }
+
+  /**
+   * Emit log message with proper handling for foreground vs background mode
+   * - Foreground: Direct synchronous console output for chronological ordering
+   * - Background: Buffered logger output for efficiency
+   */
   private emitLog(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
-    // In background mode, strip chalk formatting for file logs but keep for console
     const plainMessage = this.stripAnsiCodes(message);
 
-    if (level === 'error') {
-      this.logger.error(message, undefined);
-    } else if (level === 'warn') {
-      this.logger.warn(plainMessage);
-    } else if (level === 'success') {
-      this.logger.info(plainMessage);
+    if (this.isBackgroundMode) {
+      // Background mode: Use buffered logger for both console and file output
+      this.logToStructuredLogger(level, plainMessage);
     } else {
-      this.logger.info(plainMessage);
+      // Foreground mode: Direct console output for immediate chronological display
+      this.logToConsole(level, plainMessage);
+    }
+  }
+
+  /**
+   * Log directly to console (foreground mode only)
+   */
+  private logToConsole(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
+    switch (level) {
+      case 'error':
+        console.error(message);
+        break;
+      case 'warn':
+        console.warn(message);
+        break;
+      default:
+        console.log(message);
+    }
+  }
+
+  /**
+   * Log to structured logger (background mode only)
+   */
+  private logToStructuredLogger(
+    level: 'info' | 'warn' | 'error' | 'success',
+    message: string
+  ): void {
+    switch (level) {
+      case 'error':
+        this.logger.error(message, undefined);
+        break;
+      case 'warn':
+        this.logger.warn(message);
+        break;
+      default:
+        this.logger.info(message);
     }
   }
 
@@ -147,6 +197,13 @@ export class TradingWorkflow {
       this.state.cycleCount++;
       this.state.lastUpdate = Date.now();
 
+      // Emit cycle start event
+      EventBus.emit('cycle:start', {
+        cycleCount: this.state.cycleCount,
+        timestamp: Date.now(),
+        startTime: this.state.startTime,
+      });
+
       // Display cycle header with emphasis
       this.emitLog('info', '');
       this.emitLog(
@@ -167,6 +224,11 @@ export class TradingWorkflow {
       // 1. Get account and positions
       const account = await this.exchange.getAccount();
       const positions = await this.exchange.getPositions();
+
+      // Set initial balance on first cycle
+      if (this.state.cycleCount === 1 && this.state.initialBalance === 0) {
+        this.state.initialBalance = account.equity;
+      }
 
       this.emitLog(
         'info',
@@ -209,22 +271,32 @@ export class TradingWorkflow {
       );
       this.state.totalSignals += signals.length;
 
+      // Emit signals generated event
+      EventBus.emit('cycle:signals', {
+        cycleCount: this.state.cycleCount,
+        timestamp: Date.now(),
+        signalCount: signals.length,
+        signals: signals.map(s => ({ coin: s.coin, action: s.action, confidence: s.confidence })),
+      });
+
       // 5. Execute signals
       // Display signal summary in table format
       if (signals.length > 0) {
         const signalSummary = `🤖 Generated ${signals.length} signal${signals.length > 1 ? 's' : ''}:`;
-        this.logger.info(signalSummary);
+        this.emitLog('info', signalSummary);
 
-        // Log to structured logger for file output
-        this.logger.info('AI Signal Generation', {
-          signalCount: signals.length,
-          signals: signals.map(s => ({
-            coin: s.coin,
-            action: s.action,
-            confidence: s.confidence,
-            reasoning: s.reasoning,
-          })),
-        });
+        // Log to structured logger for file output (background mode only to avoid buffering delays)
+        if (this.isBackgroundMode) {
+          this.logger.info('AI Signal Generation', {
+            signalCount: signals.length,
+            signals: signals.map(s => ({
+              coin: s.coin,
+              action: s.action,
+              confidence: s.confidence,
+              reasoning: s.reasoning,
+            })),
+          });
+        }
 
         // Console output with formatting (only if not background mode)
         if (!this.isBackgroundMode) {
@@ -251,12 +323,45 @@ export class TradingWorkflow {
           });
           console.log(''); // Empty line before execution results
         }
+
+        // Push signals to UI buffer via event bus (decoupled)
+        for (let i = 0; i < signals.length; i++) {
+          const sig = signals[i];
+          const action = sig.action;
+          const symbol = `${sig.coin}/USDT`;
+          let price: number | undefined = undefined;
+          try {
+            const ticker = await this.exchange.getTicker(symbol);
+            price = (ticker as { price: number }).price;
+          } catch {
+            // Ignore ticker fetch errors
+          }
+          EventBus.emit('signal:buffer', {
+            id: `${sig.coin}-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+            timestamp: Date.now(),
+            symbol,
+            action,
+            confidence: sig.confidence,
+            reasoning: sig.reasoning,
+            price,
+            strategy: 'AI',
+            status: 'generated',
+          });
+        }
       }
 
       // Execute all signals
       for (const signal of signals) {
         await this.executeSignal(signal, account, positions);
       }
+
+      // Emit execution phase event
+      EventBus.emit('cycle:execution', {
+        cycleCount: this.state.cycleCount,
+        timestamp: Date.now(),
+        executedSignals: signals.filter(s => s.action !== 'HOLD').length,
+        totalTrades: this.state.totalTrades,
+      });
 
       // 5.5. Refresh account and positions after executing signals
       const updatedAccount = await this.exchange.getAccount();
@@ -267,8 +372,25 @@ export class TradingWorkflow {
 
       // 7. Log cycle summary with latest data
       this.logCycleSummary(updatedAccount, updatedPositions, signals);
+
+      // Notify cycle completion via event bus
+      EventBus.emit('cycle:complete', {
+        cycleCount: this.state.cycleCount,
+        timestamp: Date.now(),
+        duration: Date.now() - this.state.lastUpdate,
+        totalSignals: this.state.totalSignals,
+        totalTrades: this.state.totalTrades,
+        totalPnl: this.state.totalPnl,
+      });
     } catch (error) {
       this.emitLog('error', `Error in trading cycle: ${error}`);
+
+      // Emit cycle error event
+      EventBus.emit('cycle:error', {
+        cycleCount: this.state.cycleCount,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+      });
     }
   }
 
@@ -326,11 +448,16 @@ export class TradingWorkflow {
 
       if (result.success && result.order) {
         this.state.totalTrades++;
+
+        // Use actual order execution price, not estimated ticker price
+        const actualPrice = result.order.price || currentPrice;
         const leverage = sizing.leverage || 1;
-        const positionSize = sizing.suggestedSize * currentPrice;
-        const notional = positionSize;
-        const marginUsed = notional / leverage;
-        const detailMsg = `✅ Executed ${signal.action} signal for ${signal.coin} @ $${currentPrice.toFixed(2)} | ${leverage}x leverage | Notional: $${notional.toFixed(2)} | Margin: $${marginUsed.toFixed(2)}`;
+
+        // Calculate estimates for display (actual values will be in position data)
+        const estimatedPositionSize = sizing.suggestedSize * actualPrice;
+        const estimatedMargin = estimatedPositionSize / leverage;
+
+        const detailMsg = `✅ Executed ${signal.action} signal for ${signal.coin} @ $${actualPrice.toFixed(2)} | ${leverage}x leverage | Est. Notional: $${estimatedPositionSize.toFixed(2)} | Est. Margin: $${estimatedMargin.toFixed(2)}`;
         this.emitLog('success', detailMsg);
       } else if (!result.success) {
         this.emitLog(
@@ -343,10 +470,14 @@ export class TradingWorkflow {
     }
   }
 
-  private updatePerformanceMetrics(_account: Account, positions: Position[]): void {
-    // Update total PnL from open positions using optimized aggregation
+  private updatePerformanceMetrics(account: Account, positions: Position[]): void {
+    // Update unrealized P&L from open positions using optimized aggregation
     const aggregates = aggregatePositionMetrics(positions);
-    this.state.totalPnl = aggregates.totalPnl;
+    this.state.unrealizedPnl = aggregates.totalPnl;
+
+    // Calculate total P&L: (Current Equity - Initial Balance)
+    // This includes both realized P&L from closed trades and unrealized P&L from open positions
+    this.state.totalPnl = account.equity - this.state.initialBalance;
 
     // Calculate win rate from completed trades
     this.state.winRate = this.calculateWinRate();
@@ -381,12 +512,19 @@ export class TradingWorkflow {
 
     // Use optimized single-pass aggregation instead of multiple reduce() calls
     const aggregates = aggregatePositionMetrics(positions);
-    const totalPnl = aggregates.totalPnl;
+    const unrealizedPnl = aggregates.totalPnl;
     const totalNotional = aggregates.totalNotional;
     const totalMarginUsed = aggregates.totalMarginUsed;
 
-    const pnlPercent = (totalPnl / account.equity) * 100;
-    const pnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
+    // Calculate total P&L from initial balance
+    const totalPnl = this.state.totalPnl;
+    const totalPnlPercent =
+      this.state.initialBalance > 0 ? (totalPnl / this.state.initialBalance) * 100 : 0;
+    const totalPnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
+
+    // Unrealized P&L color and percent
+    const unrealizedPnlPercent = account.equity > 0 ? (unrealizedPnl / account.equity) * 100 : 0;
+    const unrealizedPnlColor = unrealizedPnl >= 0 ? chalk.green : chalk.red;
 
     // Calculate cycle P&L change
     const cyclePnlChange = this.state.previousEquity
@@ -401,7 +539,7 @@ export class TradingWorkflow {
 
     // Log structured cycle summary for file logs only (not console)
     // This prevents duplicate "Cycle Summary" text in console output
-    if (this.logger.isBackgroundMode()) {
+    if (this.isBackgroundMode) {
       this.logger.info('Cycle Summary', {
         cycle: this.state.cycleCount,
         runtime: `${runtimeMinutes}m ${runtimeSeconds}s`,
@@ -416,7 +554,9 @@ export class TradingWorkflow {
           exposure: totalNotional,
           leverage: (totalNotional / account.equity).toFixed(2),
           totalPnl,
-          pnlPercent,
+          totalPnlPercent,
+          unrealizedPnl,
+          unrealizedPnlPercent,
         },
         positions: positions.map(p => ({
           symbol: p.symbol,
@@ -474,7 +614,10 @@ export class TradingWorkflow {
         `   Equity: ${equityDisplay} | Available: $${account.availableMargin.toFixed(2)} | Used: $${totalMarginUsed.toFixed(2)}`
       );
       console.log(
-        `   Exposure: $${totalNotional.toFixed(2)} | Leverage: ${(totalNotional / account.equity).toFixed(2)}x | Total P&L: ${pnlColor(`$${totalPnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`)}`
+        `   Exposure: $${totalNotional.toFixed(2)} | Leverage: ${(totalNotional / account.equity).toFixed(2)}x`
+      );
+      console.log(
+        `   Total P&L: ${totalPnlColor(`$${totalPnl.toFixed(2)} (${totalPnlPercent.toFixed(2)}%)`)} | Unrealized: ${unrealizedPnlColor(`$${unrealizedPnl.toFixed(2)} (${unrealizedPnlPercent.toFixed(2)}%)`)}`
       );
 
       // Cycle P&L change if applicable

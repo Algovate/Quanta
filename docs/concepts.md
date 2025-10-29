@@ -1094,3 +1094,27 @@ function calculateStopLoss(
 
 **Last Updated**: January 2025  
 **Version**: 0.1.0
+
+---
+
+## Appendix: Updates (January 2025)
+
+### P&L Definitions
+- Total P&L = Current Equity − Initial Balance (realized + unrealized)
+- Unrealized P&L = Sum of open positions' unrealized P&L
+- Cycle P&L = Equity change during the current cycle
+
+### Execution Messages
+- Execution messages use the actual order fill price where available.
+- Notional/Margin in execution lines are estimates and labeled “Est.”; authoritative values appear in the positions table.
+
+### Event Bus Timestamps
+Cycle events include timestamps for reliable ordering in UI/analytics:
+- cycle:start { cycleCount, timestamp, startTime }
+- cycle:signals { cycleCount, timestamp, signalCount, signals[] }
+- cycle:execution { cycleCount, timestamp, executedSignals, totalTrades }
+- cycle:complete { cycleCount, timestamp, duration, totalSignals, totalTrades, totalPnl }
+
+### Close Order Safeguards (Simulation/Backtest)
+- Full-close tolerance: within 1% size difference is treated as a full close
+- New reverse position opens only if remaining amount > 5% of the original size

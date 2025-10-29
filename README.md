@@ -29,7 +29,7 @@ quanta test ai --type mock --coin BTC
 - **🔄 Multiple Modes**: Simulation (mock data), Paper (real data, simulated trades), Live (real trading)
 - **💼 Portfolio Management**: Multi-coin multi-position support (2-3 concurrent positions)
 - **🎯 Mock AI**: Built-in simulated AI for testing without API keys
-- **⚡ Real-time Monitoring**: Live trading updates and performance tracking
+- **⚡ Real-time Monitoring**: Live trading updates and performance tracking (synchronous console output in interactive mode)
 - **📈 Enhanced Backtest Reports**: Visual formatting, progress bars, color-coded metrics, and comprehensive statistics
 
 ## Commands
@@ -118,6 +118,35 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 - 💡 [Core Concepts](docs/concepts.md)
 - 🏦 [Supported Exchanges](docs/exchanges.md)
 - 📝 [Logging Guide](docs/logging-guide.md)
+
+## Important Concepts (Updated)
+
+### P&L Definitions
+- **Total P&L** = Current Equity − Initial Balance (includes realized + unrealized).
+- **Unrealized P&L** = Sum of open positions' unrealized P&L.
+- **Cycle P&L** = Equity change during the current cycle.
+
+Console output shows both Total P&L and Unrealized P&L explicitly.
+
+### Logging Behavior
+- Foreground (interactive terminal): console output is synchronous to preserve event order; structured logs still persist to files.
+- Background (non-TTY): buffered logger outputs to both console and files for efficiency.
+
+### Execution Messages
+- Use actual order fill price when available.
+- Notional/Margin in execution lines are estimates and labeled as “Est.”; authoritative values are shown in the positions table.
+
+### Event Bus (Timestamps)
+Cycle events include timestamps for reliable ordering:
+- `cycle:start` { cycleCount, timestamp, startTime }
+- `cycle:signals` { cycleCount, timestamp, signalCount, signals[] }
+- `cycle:execution` { cycleCount, timestamp, executedSignals, totalTrades }
+- `cycle:complete` { cycleCount, timestamp, duration, totalSignals, totalTrades, totalPnl }
+
+### Close Order Safeguards (Simulation/Backtest)
+To prevent accidental reverse positions when closing:
+- Full-close tolerance: within 1% size difference is treated as a full close.
+- New reverse position opens only if remaining amount > 5% of the original size.
 
 ## Development
 
