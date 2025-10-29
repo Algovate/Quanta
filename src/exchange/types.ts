@@ -52,6 +52,11 @@ export const TradingSignalSchema = z.object({
 
 // Market data with indicators
 export const TechnicalIndicatorsSchema = z.object({
+  // Moving averages
+  sma5: z.number().optional(),
+  sma20: z.number().optional(),
+  sma50: z.number().optional(),
+  ema5: z.number().optional(),
   ema20: z.number(),
   ema50: z.number(),
   macd: z.object({
@@ -59,8 +64,37 @@ export const TechnicalIndicatorsSchema = z.object({
     signal: z.number(),
     histogram: z.number(),
   }),
+  // Momentum & volatility
   rsi14: z.number(),
   atr14: z.number(),
+  // Bollinger Bands
+  bollinger: z
+    .object({
+      upper: z.number(),
+      middle: z.number(),
+      lower: z.number(),
+      percentB: z.number(),
+      bandwidth: z.number(),
+      position: z.enum(['above', 'upper', 'middle', 'lower', 'below']),
+    })
+    .optional(),
+  // Support and resistance
+  supportResistance: z
+    .object({
+      support: z.number().nullable(),
+      resistance: z.number().nullable(),
+      distToSupport: z.number().nullable(),
+      distToResistance: z.number().nullable(),
+    })
+    .optional(),
+  // Volume metrics
+  volume: z
+    .object({
+      sma20: z.number(),
+      ratio: z.number(),
+      obv: z.number().optional(),
+    })
+    .optional(),
 });
 
 export const MarketDataSchema = z.object({

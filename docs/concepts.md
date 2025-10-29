@@ -397,6 +397,14 @@ All completed trades are tracked with full details:
 - EMA 50: Medium-term trend
 - EMA 200: Long-term trend
 
+**SMA (Simple Moving Average)**
+- Arithmetic mean of last n closes
+- Smoother, slower to react vs EMA
+- Common: SMA 5/20/50 for micro/short/medium trend context
+
+**In Quanta:**
+- Calculates EMA 5/20/50 and SMA 5/20/50
+
 ### MACD (Moving Average Convergence Divergence)
 
 **Components:**
@@ -422,6 +430,33 @@ All completed trades are tracked with full details:
 - Neutral: 30 < RSI < 70
 
 ### ATR (Average True Range)
+### Bollinger Bands
+
+Formula (n=20, k=2):
+- middle = SMA(n)
+- std = standard deviation of last n closes
+- upper = middle + k·std
+- lower = middle − k·std
+
+Derived metrics:
+- %B = (close − lower) / (upper − lower)
+- Bandwidth = (upper − lower) / middle
+- Position: above | upper | middle | lower | below
+
+Usage:
+- Volatility envelopes, mean reversion vs breakout context
+
+### Support/Resistance (Pivots)
+
+- Detect recent swing highs/lows in a small lookback window (e.g., 5)
+- Report nearest support/resistance and distances to current price
+
+### Volume Analysis
+
+- Volume SMA20: average of last 20 volumes
+- Volume ratio: current volume / volSMA20 (spike detection)
+- OBV (optional): cumulative signed volume by close-to-close change
+
 
 **Calculation:**
 - True Range = Max of:

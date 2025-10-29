@@ -10,6 +10,11 @@ export interface Candlestick {
 }
 
 export interface TechnicalIndicators {
+  // Moving averages
+  sma5?: number;
+  sma20?: number;
+  sma50?: number;
+  ema5?: number;
   ema20: number;
   ema50: number;
   macd: {
@@ -17,10 +22,33 @@ export interface TechnicalIndicators {
     signal: number;
     histogram: number;
   };
+  // Momentum & volatility
   rsi7: number;
   rsi14: number;
   atr3: number;
   atr14: number;
+  // Bands
+  bollinger?: {
+    upper: number;
+    middle: number;
+    lower: number;
+    percentB: number;
+    bandwidth: number;
+    position: 'above' | 'upper' | 'middle' | 'lower' | 'below';
+  };
+  // Structure levels
+  supportResistance?: {
+    support: number | null;
+    resistance: number | null;
+    distToSupport: number | null;
+    distToResistance: number | null;
+  };
+  // Volume metrics
+  volume?: {
+    sma20: number;
+    ratio: number;
+    obv?: number;
+  };
 }
 
 export interface MarketData {
@@ -81,16 +109,135 @@ export class MarketDataProvider {
     const closes = candlesticks.map(c => c.close);
     const highs = candlesticks.map(c => c.high);
     const lows = candlesticks.map(c => c.low);
+    const volumes = candlesticks.map(c => c.volume);
+
+    const ema20 = this.calculateEMA(closes, 20);
+    const ema50 = this.calculateEMA(closes, 50);
+    const ema5 = this.calculateEMA(closes, 5);
+    const sma5 = this.calculateSMA(closes, 5);
+    const sma20 = this.calculateSMA(closes, 20);
+    const sma50 = this.calculateSMA(closes, 50);
+    const macd = this.calculateMACD(closes);
+    const rsi7 = this.calculateRSI(closes, 7);
+    const rsi14 = this.calculateRSI(closes, 14);
+    const atr3 = this.calculateATR(highs, lows, closes, 3);
+    const atr14 = this.calculateATR(highs, lows, closes, 14);
+    const bollinger = this.calculateBollinger(closes, 20, 2);
+    const supportResistance = this.calculateSupportResistance(candlesticks, 5);
+    const volume = this.calculateVolumeStats(closes, volumes, 20);
 
     return {
-      ema20: this.calculateEMA(closes, 20),
-      ema50: this.calculateEMA(closes, 50),
-      macd: this.calculateMACD(closes),
-      rsi7: this.calculateRSI(closes, 7),
-      rsi14: this.calculateRSI(closes, 14),
-      atr3: this.calculateATR(highs, lows, closes, 3),
-      atr14: this.calculateATR(highs, lows, closes, 14),
+      sma5,
+      sma20,
+      sma50,
+      ema5,
+      ema20,
+      ema50,
+      macd,
+      rsi7,
+      rsi14,
+      atr3,
+      atr14,
+      bollinger: bollinger ?? undefined,
+      supportResistance,
+      volume,
     };
+  }
+
+  private calculateSMA(values: number[], period: number): number | undefined {
+    if (values.length < period) return undefined;
+    const slice = values.slice(-period);
+    const sum = slice.reduce((acc, v) => acc + v, 0);
+    return sum / period;
+  }
+
+  private calculateStdDev(values: number[], period: number): number | undefined {
+    if (values.length < period) return undefined;
+    const slice = values.slice(-period);
+    const mean = slice.reduce((acc, v) => acc + v, 0) / period;
+    const variance = slice.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / period;
+    return Math.sqrt(variance);
+  }
+
+  private calculateBollinger(
+    closes: number[],
+    period: number = 20,
+    k: number = 2
+  ): {
+    upper: number;
+    middle: number;
+    lower: number;
+    percentB: number;
+    bandwidth: number;
+    position: 'above' | 'upper' | 'middle' | 'lower' | 'below';
+  } | null {
+    const middle = this.calculateSMA(closes, period);
+    const std = this.calculateStdDev(closes, period);
+    if (middle === undefined || std === undefined) return null;
+    const upper = middle + k * std;
+    const lower = middle - k * std;
+    const last = closes[closes.length - 1];
+    const width = upper - lower;
+    const percentB = width !== 0 ? (last - lower) / width : 0.5;
+    const bandwidth = middle !== 0 ? width / middle : 0;
+    let position: 'above' | 'upper' | 'middle' | 'lower' | 'below' = 'middle';
+    if (last > upper) position = 'above';
+    else if (last >= middle && last <= upper) position = 'upper';
+    else if (last >= lower && last < middle) position = 'lower';
+    else if (last < lower) position = 'below';
+    return { upper, middle, lower, percentB, bandwidth, position };
+  }
+
+  private calculateSupportResistance(
+    candles: Candlestick[],
+    lookback: number = 5
+  ): {
+    support: number | null;
+    resistance: number | null;
+    distToSupport: number | null;
+    distToResistance: number | null;
+  } {
+    if (candles.length < lookback + 2) {
+      return { support: null, resistance: null, distToSupport: null, distToResistance: null };
+    }
+    const recent = candles.slice(-(lookback + 2));
+    let support: number | null = null;
+    let resistance: number | null = null;
+    // Simple pivot-based: local minima/maxima in the window
+    for (let i = 1; i < recent.length - 1; i++) {
+      const prev = recent[i - 1];
+      const curr = recent[i];
+      const next = recent[i + 1];
+      if (curr.low < prev.low && curr.low < next.low) {
+        support = support == null ? curr.low : Math.max(support, curr.low);
+      }
+      if (curr.high > prev.high && curr.high > next.high) {
+        resistance = resistance == null ? curr.high : Math.min(resistance, curr.high);
+      }
+    }
+    const lastClose = recent[recent.length - 1].close;
+    const distToSupport = support != null ? (lastClose - support) / lastClose : null;
+    const distToResistance = resistance != null ? (resistance - lastClose) / lastClose : null;
+    return { support, resistance, distToSupport, distToResistance };
+  }
+
+  private calculateVolumeStats(
+    closes: number[],
+    volumes: number[],
+    period: number = 20
+  ): { sma20: number; ratio: number; obv?: number } | undefined {
+    if (volumes.length < period) return undefined;
+    const volSMA = this.calculateSMA(volumes, period)!;
+    const lastVol = volumes[volumes.length - 1];
+    const ratio = volSMA !== 0 ? lastVol / volSMA : 1;
+    // OBV optional: cumulative based on close change sign
+    if (closes.length < 2) return { sma20: volSMA, ratio };
+    let obv = 0;
+    for (let i = 1; i < closes.length; i++) {
+      if (closes[i] > closes[i - 1]) obv += volumes[i];
+      else if (closes[i] < closes[i - 1]) obv -= volumes[i];
+    }
+    return { sma20: volSMA, ratio, obv };
   }
 
   private calculateEMA(prices: number[], period: number): number {

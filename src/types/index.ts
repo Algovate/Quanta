@@ -79,6 +79,11 @@ export interface MarketData {
 }
 
 export interface TechnicalIndicators {
+  // Moving averages
+  sma5?: number;
+  sma20?: number;
+  sma50?: number;
+  ema5?: number;
   ema20: number;
   ema50: number;
   macd: {
@@ -86,8 +91,31 @@ export interface TechnicalIndicators {
     signal: number;
     histogram: number;
   };
+  // Momentum & volatility
   rsi14: number;
   atr14: number;
+  // Bands
+  bollinger?: {
+    upper: number;
+    middle: number;
+    lower: number;
+    percentB: number;
+    bandwidth: number;
+    position: 'above' | 'upper' | 'middle' | 'lower' | 'below';
+  };
+  // Structure levels
+  supportResistance?: {
+    support: number | null;
+    resistance: number | null;
+    distToSupport: number | null;
+    distToResistance: number | null;
+  };
+  // Volume metrics
+  volume?: {
+    sma20: number;
+    ratio: number;
+    obv?: number;
+  };
 }
 
 export interface Candlestick {

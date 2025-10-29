@@ -298,6 +298,19 @@ export class SimulateCommands {
           console.log(chalk.gray(`      - EMA20: $${data.indicators.ema20.toFixed(2)} | EMA50: $${data.indicators.ema50.toFixed(2)}`));
           console.log(chalk.gray(`      - MACD: ${data.indicators.macd.macd.toFixed(4)} | Signal: ${data.indicators.macd.signal.toFixed(4)}`));
           console.log(chalk.gray(`      - RSI(14): ${data.indicators.rsi14.toFixed(2)} | ATR(14): $${data.indicators.atr14.toFixed(2)}`));
+          if (data.indicators.bollinger) {
+            const b = data.indicators.bollinger;
+            console.log(chalk.gray(`      - Bollinger: pos=${b.position} | %B=${b.percentB.toFixed(2)} | BW=${b.bandwidth.toFixed(3)}`));
+          }
+          if (data.indicators.volume) {
+            console.log(chalk.gray(`      - Volume: SMA20=${data.indicators.volume.sma20.toFixed(0)} | Ratio=${data.indicators.volume.ratio.toFixed(2)}`));
+          }
+          if (data.indicators.supportResistance) {
+            const sr = data.indicators.supportResistance;
+            const ds = sr.distToSupport != null ? (sr.distToSupport * 100).toFixed(2) + '%' : 'n/a';
+            const dr = sr.distToResistance != null ? (sr.distToResistance * 100).toFixed(2) + '%' : 'n/a';
+            console.log(chalk.gray(`      - S/R: S=${sr.support ?? 'n/a'} | R=${sr.resistance ?? 'n/a'} | dS=${ds} | dR=${dr}`));
+          }
         });
       });
     }
