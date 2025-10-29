@@ -218,6 +218,18 @@ export class APIServer {
       }
     });
 
+    // Equity history
+    this.app.get('/api/equity/history', (req, res) => {
+      try {
+        const limit = Math.max(1, Math.min(1000, parseInt(String(req.query.limit || '500'), 10)));
+        const items = this.tradingManager.getEquityHistory(limit) || [];
+        res.json(items);
+      } catch (error) {
+        logger.error('Error getting equity history', error);
+        res.status(500).json({ error: 'Failed to get equity history' });
+      }
+    });
+
     // Run backtest
     this.app.post('/api/backtest/run', async (req, res) => {
       try {

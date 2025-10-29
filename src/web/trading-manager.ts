@@ -25,6 +25,7 @@ export class TradingManager extends EventEmitter {
   private logger: Logger;
   private signals: SignalEvent[] = [];
   private orders: OrderEvent[] = [];
+  private equityHistory: Array<{ timestamp: number; equity: number }> = [];
   private latestRisk: RiskSnapshot | null = null;
   private updateIntervalId?: NodeJS.Timeout;
 
@@ -142,6 +143,14 @@ export class TradingManager extends EventEmitter {
           this.emit('account:update', account);
           this.emit('position:update', positions);
 
+          // Store equity snapshot
+          if (account && account.equity !== undefined && account.timestamp) {
+            this.pushEquitySnapshot({
+              timestamp: account.timestamp,
+              equity: account.equity,
+            });
+          }
+
           // Emit risk snapshot if portfolio metrics are available
           type ExchangeWithPM = Exchange & {
             getPortfolioMetrics: () => Promise<{
@@ -248,6 +257,22 @@ export class TradingManager extends EventEmitter {
 
   getOrders(limit: number = 50): OrderEvent[] {
     return this.orders.slice(0, limit);
+  }
+
+  // Equity history buffer management
+  pushEquitySnapshot(snapshot: { timestamp: number; equity: number }): void {
+    // Add new snapshot
+    this.equityHistory.unshift(snapshot);
+    // Keep last 500 snapshots (same as frontend store limit)
+    this.equityHistory = this.equityHistory.slice(0, 500);
+  }
+
+  getEquityHistory(limit: number = 500): Array<{ timestamp: number; equity: number }> {
+    // Return in chronological order (oldest first) to match frontend expectations
+    // Backend stores with unshift (newest first), so we reverse to get oldest-first,
+    // then take the most recent N items, which will be at the end after reverse
+    const reversed = [...this.equityHistory].reverse(); // [oldest, ..., newest]
+    return reversed.slice(-limit); // Take last N items (most recent, in chronological order)
   }
 
   // Risk snapshot

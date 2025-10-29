@@ -76,7 +76,8 @@ export class BacktestExchange implements Exchange {
     let totalValue = 0;
 
     this.positions.forEach(position => {
-      const positionValue = position.size * position.markPrice;
+      // Use position.notional which already includes leverage (size * markPrice * leverage)
+      const positionValue = position.notional;
       bySymbol[position.symbol] = (bySymbol[position.symbol] || 0) + positionValue;
       totalValue += positionValue;
     });
@@ -408,7 +409,8 @@ export class BacktestExchange implements Exchange {
         const notionalValue = amount * price;
         const additionalMargin = notionalValue / leverage;
         existingPosition.marginUsed += additionalMargin;
-        existingPosition.notional = totalSize * this.getCurrentPrice(symbol);
+        // Update notional with leverage (matches real exchanges: size * markPrice * leverage)
+        existingPosition.notional = totalSize * this.getCurrentPrice(symbol) * leverage;
         existingPosition.leverage = leverage;
 
         this.account.availableMargin -= additionalMargin;
@@ -438,7 +440,7 @@ export class BacktestExchange implements Exchange {
       markPrice: price,
       unrealizedPnl: 0,
       marginUsed: marginRequired,
-      notional: notionalValue,
+      notional: notionalValue * leverage, // Full position value with leverage (matches real exchanges: size * markPrice * leverage)
       leverage: leverage,
       timestamp: this.currentTime,
     });
@@ -454,7 +456,8 @@ export class BacktestExchange implements Exchange {
         position.entryPrice,
         position.size
       );
-      position.notional = position.size * currentPrice;
+      // Notional = position size * current price * leverage (matches real exchanges)
+      position.notional = position.size * currentPrice * position.leverage;
     });
   }
 

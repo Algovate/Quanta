@@ -52,13 +52,23 @@ export class SimulatorExchange implements Exchange {
     return this.positions.filter(p => p.symbol === symbol);
   }
 
+  /**
+   * Get total exposure across all positions
+   * 
+   * Exposure represents the total notional value of all open positions.
+   * Formula: Total Exposure = sum of all position.notional
+   * where position.notional = size * markPrice * leverage
+   * 
+   * @returns Total exposure value and breakdown by symbol
+   */
   async getTotalExposure(): Promise<{ totalValue: number; bySymbol: Record<string, number> }> {
     await this.updateAllPositions();
     const bySymbol: Record<string, number> = {};
     let totalValue = 0;
 
     this.positions.forEach(position => {
-      const positionValue = position.size * position.markPrice;
+      // Use position.notional which already includes leverage (size * markPrice * leverage)
+      const positionValue = position.notional;
       bySymbol[position.symbol] = (bySymbol[position.symbol] || 0) + positionValue;
       totalValue += positionValue;
     });
@@ -66,6 +76,18 @@ export class SimulatorExchange implements Exchange {
     return { totalValue, bySymbol };
   }
 
+  /**
+   * Get comprehensive portfolio metrics
+   * 
+   * Calculation formulas:
+   * - Total Leverage = Total Exposure / Equity
+   *   (This is the portfolio-level leverage, not per-position leverage)
+   * - Average Leverage = mean of individual position leverages (calculated elsewhere)
+   * - Total Exposure = sum of all position notional values
+   * - Total Unrealized P&L = sum of all position unrealized P&L
+   * 
+   * @returns Portfolio metrics including exposure, P&L, and leverage
+   */
   async getPortfolioMetrics(): Promise<{
     totalPositions: number;
     totalExposure: number;
@@ -84,6 +106,7 @@ export class SimulatorExchange implements Exchange {
       pnlBySymbol[position.symbol] = (pnlBySymbol[position.symbol] || 0) + position.unrealizedPnl;
     });
 
+    // Total leverage = total exposure / equity (portfolio-level metric)
     const leverage = this.account.equity > 0 ? exposure.totalValue / this.account.equity : 0;
 
     return {
@@ -539,8 +562,9 @@ export class SimulatorExchange implements Exchange {
         const notionalValue = amount * price;
         const additionalMargin = notionalValue / leverage;
         existingPosition.marginUsed += additionalMargin;
-        // Update notional will be handled by updateAllPositions
-        existingPosition.notional = totalSize * existingPosition.markPrice;
+        // Update notional with leverage (matches real exchanges: size * markPrice * leverage)
+        // Note: leverage might have changed, use the new leverage value
+        existingPosition.notional = totalSize * existingPosition.markPrice * leverage;
         existingPosition.leverage = leverage; // Update leverage
 
         // Update account margins
@@ -553,6 +577,21 @@ export class SimulatorExchange implements Exchange {
     }
   }
 
+  /**
+   * Create a new position
+   * 
+   * Calculation formulas:
+   * - Notional Value = amount * price (base position value)
+   * - Margin Required = Notional Value / leverage
+   * - Position Notional = Notional Value * leverage = size * markPrice * leverage
+   *   (matches real exchanges: Binance, Hyperliquid, OKX, Coinbase all use this formula)
+   * 
+   * @param symbol - Trading symbol (e.g., 'BTC/USDT')
+   * @param side - Position side ('long' or 'short')
+   * @param amount - Position size in base currency
+   * @param price - Entry price
+   * @param leverage - Leverage multiplier (default: 1)
+   */
   private createNewPosition(
     symbol: string,
     side: 'long' | 'short',
@@ -572,7 +611,7 @@ export class SimulatorExchange implements Exchange {
       markPrice: price,
       unrealizedPnl: 0,
       marginUsed: marginRequired, // Only margin, not full notional
-      notional: notionalValue, // Full position value
+      notional: notionalValue * leverage, // Full position value with leverage (matches real exchanges: size * markPrice * leverage)
       leverage: leverage, // Actual leverage used
       timestamp: Date.now(),
     });
@@ -584,6 +623,8 @@ export class SimulatorExchange implements Exchange {
       position.markPrice = currentPrice;
 
       // Calculate P&L using utility function
+      // Formula: For LONG: P&L = (currentPrice - entryPrice) * size
+      //         For SHORT: P&L = (entryPrice - currentPrice) * size
       position.unrealizedPnl = calculatePositionPnl(
         position.side,
         currentPrice,
@@ -591,11 +632,54 @@ export class SimulatorExchange implements Exchange {
         position.size
       );
 
-      // Notional = position size * current price
-      position.notional = position.size * currentPrice;
+      // Notional = position size * current price * leverage (matches real exchanges)
+      // This represents the total position value at current market price with leverage applied
+      position.notional = position.size * currentPrice * position.leverage;
+
+      // Verify leverage consistency: leverage = notional / (size * markPrice)
+      // Also verify: leverage ≈ notional / marginUsed when marginUsed > 0
+      if (position.marginUsed > 0) {
+        const calculatedLeverageFromNotional = position.notional / (position.size * currentPrice);
+        const calculatedLeverageFromMargin = position.notional / position.marginUsed;
+        
+        // Check if stored leverage matches calculated leverage (with tolerance for floating point)
+        const tolerance = 0.01;
+        if (
+          Math.abs(position.leverage - calculatedLeverageFromNotional) > tolerance ||
+          Math.abs(position.leverage - calculatedLeverageFromMargin) > tolerance
+        ) {
+          console.warn(
+            `Position leverage mismatch for ${position.symbol}:`,
+            {
+              stored: position.leverage,
+              fromNotional: calculatedLeverageFromNotional,
+              fromMargin: calculatedLeverageFromMargin,
+              notional: position.notional,
+              marginUsed: position.marginUsed,
+              size: position.size,
+              markPrice: currentPrice,
+            }
+          );
+        }
+      }
     }
   }
 
+  /**
+   * Update account equity and related metrics
+   * 
+   * Calculation formulas:
+   * - Used Margin = sum of all position.marginUsed
+   * - Unrealized P&L = sum of all position.unrealizedPnl
+   * - Equity = Balance + Unrealized P&L
+   *   - Balance = Initial Capital + All Realized P&L (from closed positions)
+   *   - Unrealized P&L = Current P&L from open positions (not yet locked in)
+   * - Available Margin = Equity - Used Margin (cannot go below 0)
+   * - Margin Ratio = Used Margin / Equity (0 if equity <= 0)
+   * 
+   * Note: Used margin is recalculated from positions to ensure consistency,
+   * preventing floating-point accumulation errors.
+   */
   private async updateAccountEquity(): Promise<void> {
     await this.updateAllPositions();
 
