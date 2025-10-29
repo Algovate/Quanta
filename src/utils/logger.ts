@@ -113,7 +113,7 @@ export class Logger {
   /**
    * Flush buffered log entries to outputs
    * - Background mode: Outputs to both console and file
-   * - Foreground mode: Only outputs to file (console is handled synchronously elsewhere)
+   * - Foreground mode: Outputs to both console and file
    */
   private flush(): void {
     if (this.isShuttingDown || this.writeBuffer.length === 0) {
@@ -125,10 +125,8 @@ export class Logger {
 
     this.clearFlushTimer();
 
-    // Console output only in background mode (foreground uses direct console.log)
-    if (this.config.backgroundMode) {
-      this.outputToConsole(entries);
-    }
+    // Console output in all modes
+    this.outputToConsole(entries);
 
     // File output in all modes
     if (this.config.fileOutput) {
@@ -147,7 +145,7 @@ export class Logger {
   }
 
   /**
-   * Output log entries to console (background mode only)
+   * Output log entries to console
    */
   private outputToConsole(entries: BufferedLogEntry[]): void {
     for (const entry of entries) {
