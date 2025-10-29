@@ -20,6 +20,26 @@ const ConfigSchema = z.object({
     apiKey: z.string(),
     model: z.string().default('deepseek/deepseek-chat'),
     temperature: z.number().min(0).max(2).default(0.7),
+    prompt: z
+      .object({
+        candles: z
+          .object({
+            m3: z.number().int().min(1).max(200).default(10),
+            h4: z.number().int().min(1).max(200).default(5),
+          })
+          .default({ m3: 10, h4: 5 }),
+        sections: z
+          .object({
+            candlesTA: z.boolean().default(true),
+            sentiment: z.boolean().default(true),
+            technicalState: z.boolean().default(true),
+          })
+          .default({ candlesTA: true, sentiment: true, technicalState: true }),
+      })
+      .default({
+        candles: { m3: 10, h4: 5 },
+        sections: { candlesTA: true, sentiment: true, technicalState: true },
+      }),
   }),
   trading: z.object({
     coins: z.array(z.string()).default(['BTC', 'ETH', 'SOL']),
@@ -73,6 +93,10 @@ const DEFAULT_CONFIG: Partial<Config> = {
     apiKey: '',
     model: 'deepseek/deepseek-chat-v3-0324',
     temperature: 0.7,
+    prompt: {
+      candles: { m3: 10, h4: 5 },
+      sections: { candlesTA: true, sentiment: true, technicalState: true },
+    },
   },
   trading: {
     coins: ['BTC', 'ETH', 'SOL'],
@@ -129,6 +153,17 @@ function parseEnvConfig(): Partial<Config> {
       apiKey: process.env.OPENROUTER_API_KEY || '',
       model: process.env.AI_MODEL || 'deepseek/deepseek-chat',
       temperature: parseFloat(process.env.AI_TEMPERATURE || '0.7'),
+      prompt: {
+        candles: {
+          m3: parseInt(process.env.PROMPT_CANDLES_3M || '10'),
+          h4: parseInt(process.env.PROMPT_CANDLES_4H || '5'),
+        },
+        sections: {
+          candlesTA: process.env.PROMPT_SECTIONS_CANDLES_TA !== 'false',
+          sentiment: process.env.PROMPT_SECTIONS_SENTIMENT !== 'false',
+          technicalState: process.env.PROMPT_SECTIONS_TECH_STATE !== 'false',
+        },
+      },
     },
     trading: {
       coins,

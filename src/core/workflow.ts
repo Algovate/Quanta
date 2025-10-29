@@ -261,6 +261,15 @@ export class TradingWorkflow {
         maxLeverage: this.config.riskParams.maxLeverage,
         minLeverage: this.config.riskParams.minLeverage,
         defaultStopLoss: this.config.riskParams.defaultStopLoss,
+        promptOptions: {
+          candles3m: (this as any).config.ai?.prompt?.candles?.m3 ?? 10,
+          candles4h: (this as any).config.ai?.prompt?.candles?.h4 ?? 5,
+          sections: {
+            candlesTA: (this as any).config.ai?.prompt?.sections?.candlesTA ?? true,
+            sentiment: (this as any).config.ai?.prompt?.sections?.sentiment ?? true,
+            technicalState: (this as any).config.ai?.prompt?.sections?.technicalState ?? true,
+          },
+        },
       };
 
       const signals = await this.aiAgent.generateTradingSignal(
