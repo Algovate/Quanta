@@ -1,4 +1,5 @@
 import { Exchange, TradingSignal, Order, Position, Account } from '../exchange/types.js';
+import { calculatePositionPnl } from '../utils/symbol-utils.js';
 import { RiskManager, PositionSizing } from './risk.js';
 import { ensureUsdtSuffix } from '../utils/symbol-utils.js';
 import { Logger } from '../utils/logger.js';
@@ -9,6 +10,8 @@ export interface OrderResult {
   success: boolean;
   order?: Order;
   error?: string;
+  realizedPnl?: number;
+  fees?: number;
 }
 
 export class OrderExecutor {
@@ -198,10 +201,24 @@ export class OrderExecutor {
       const side = this.positionSideToOrderSide(position.side);
       const amount = position.size;
 
+      // Fetch current price to compute realized P&L for display
+      let priceForPnl: number | undefined;
+      try {
+        const ticker = await this.exchange.getTicker(symbol);
+        priceForPnl = (ticker as { price: number }).price;
+      } catch {
+        // If ticker fails, proceed without realized pnl
+      }
+
       const order = await this.exchange.placeOrder(symbol, side, amount);
       this.pushOrderEvent(order, symbol, side, amount);
 
-      return { success: true, order };
+      const realizedPnl =
+        priceForPnl !== undefined
+          ? calculatePositionPnl(position.side, priceForPnl, position.entryPrice, position.size)
+          : undefined;
+
+      return { success: true, order, realizedPnl, fees: 0 };
     } catch (error) {
       return this.handleError('CLOSE order', error);
     }

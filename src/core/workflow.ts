@@ -25,6 +25,7 @@ export interface SystemState {
   lastCountdownTime?: number;
   previousEquity?: number; // Track equity from previous cycle
   cyclePnl?: number; // P&L change in this cycle
+  previousBalance?: number; // Track balance for realized P&L per-cycle
 }
 
 export interface WorkflowConfig {
@@ -85,6 +86,7 @@ export class TradingWorkflow {
       winRate: 0,
       previousEquity: 0,
       cyclePnl: 0,
+      previousBalance: 0,
     };
   }
 
@@ -460,14 +462,25 @@ export class TradingWorkflow {
 
         // Use actual order execution price, not estimated ticker price
         const actualPrice = result.order.price || currentPrice;
-        const leverage = sizing.leverage || 1;
 
-        // Calculate estimates for display (actual values will be in position data)
-        const estimatedPositionSize = sizing.suggestedSize * actualPrice;
-        const estimatedMargin = estimatedPositionSize / leverage;
+        if (signal.action === 'CLOSE') {
+          // For CLOSE, avoid leverage/margin estimates (misleading for exits)
+          const realizedText =
+            result.realizedPnl !== undefined
+              ? ` | Realized P&L: $${result.realizedPnl.toFixed(2)}`
+              : '';
+          const feesText = result.fees ? ` | Fees: $${result.fees.toFixed(2)}` : '';
+          const detailMsg = `✅ Executed CLOSE signal for ${signal.coin} @ $${actualPrice.toFixed(2)}${realizedText}${feesText}`;
+          this.emitLog('success', detailMsg);
+        } else {
+          const leverage = sizing.leverage || 1;
+          // Calculate estimates for display (actual values will be in position data)
+          const estimatedPositionSize = sizing.suggestedSize * actualPrice;
+          const estimatedMargin = estimatedPositionSize / leverage;
 
-        const detailMsg = `✅ Executed ${signal.action} signal for ${signal.coin} @ $${actualPrice.toFixed(2)} | ${leverage}x leverage | Est. Notional: $${estimatedPositionSize.toFixed(2)} | Est. Margin: $${estimatedMargin.toFixed(2)}`;
-        this.emitLog('success', detailMsg);
+          const detailMsg = `✅ Executed ${signal.action} signal for ${signal.coin} @ $${actualPrice.toFixed(2)} | ${leverage}x leverage | Est. Notional: $${estimatedPositionSize.toFixed(2)} | Est. Margin: $${estimatedMargin.toFixed(2)}`;
+          this.emitLog('success', detailMsg);
+        }
       } else if (!result.success) {
         this.emitLog(
           'error',
@@ -535,7 +548,7 @@ export class TradingWorkflow {
     const unrealizedPnlPercent = account.equity > 0 ? (unrealizedPnl / account.equity) * 100 : 0;
     const unrealizedPnlColor = unrealizedPnl >= 0 ? chalk.green : chalk.red;
 
-    // Calculate cycle P&L change
+    // Calculate cycle P&L change (equity-based)
     const cyclePnlChange = this.state.previousEquity
       ? account.equity - this.state.previousEquity
       : 0;
@@ -545,6 +558,12 @@ export class TradingWorkflow {
     const cyclePnlColor = cyclePnlChange >= 0 ? chalk.green : chalk.red;
     this.state.previousEquity = account.equity;
     this.state.cyclePnl = cyclePnlChange;
+
+    // Calculate realized P&L for this cycle from balance delta
+    const realizedCyclePnl = this.state.previousBalance
+      ? account.balance - this.state.previousBalance
+      : 0;
+    this.state.previousBalance = account.balance;
 
     // Log structured cycle summary for file logs only (not console)
     // This prevents duplicate "Cycle Summary" text in console output
@@ -626,7 +645,7 @@ export class TradingWorkflow {
         `   Exposure: $${totalNotional.toFixed(2)} | Leverage: ${(totalNotional / account.equity).toFixed(2)}x`
       );
       console.log(
-        `   Total P&L: ${totalPnlColor(`$${totalPnl.toFixed(2)} (${totalPnlPercent.toFixed(2)}%)`)} | Unrealized: ${unrealizedPnlColor(`$${unrealizedPnl.toFixed(2)} (${unrealizedPnlPercent.toFixed(2)}%)`)}`
+        `   Total P&L: ${totalPnlColor(`$${totalPnl.toFixed(2)} (${totalPnlPercent.toFixed(2)}%)`)} | Unrealized: ${unrealizedPnlColor(`$${unrealizedPnl.toFixed(2)} (${unrealizedPnlPercent.toFixed(2)}%)`)} | Realized (cycle): $${realizedCyclePnl.toFixed(2)}`
       );
 
       // Cycle P&L change if applicable
@@ -643,12 +662,11 @@ export class TradingWorkflow {
       // Get additional risk metrics from position monitor
       const positionSummary = this.positionMonitor.getPositionSummary(positions);
       const averageLeverage = positionSummary.averageLeverage.toFixed(2);
-      const riskLevelColor =
-        positionSummary.riskLevel === 'high'
-          ? chalk.red
-          : positionSummary.riskLevel === 'medium'
-            ? chalk.yellow
-            : chalk.green;
+      // Override risk label using margin usage thresholds for consistency
+      let riskLabel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+      if (marginUsage >= 20) riskLabel = 'HIGH';
+      else if (marginUsage >= 10) riskLabel = 'MEDIUM';
+      const riskLevelColor = riskLabel === 'HIGH' ? chalk.red : riskLabel === 'MEDIUM' ? chalk.yellow : chalk.green;
 
       console.log(chalk.magenta(`\n⚠️  Risk Status:`));
       console.log(
@@ -657,7 +675,7 @@ export class TradingWorkflow {
 
       if (positions.length > 0) {
         console.log(
-          `   Risk Level: ${riskLevelColor(positionSummary.riskLevel.toUpperCase())} | Avg Leverage: ${averageLeverage}x`
+          `   Risk Level: ${riskLevelColor(riskLabel)} (margin ${marginUsage.toFixed(2)}%) | Avg Leverage: ${averageLeverage}x`
         );
 
         // Display diversification metrics

@@ -445,6 +445,13 @@ export class BacktestExchange implements Exchange {
   private updateAccountEquity(): void {
     this.updateAllPositions();
 
+    // Reconcile used margin with current positions to ensure identity holds
+    const recalculatedUsedMargin = this.positions.reduce(
+      (sum, pos) => sum + (pos.marginUsed || 0),
+      0
+    );
+    this.account.usedMargin = recalculatedUsedMargin;
+
     const unrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
     this.account.equity = this.account.balance + unrealizedPnl;
     this.account.availableMargin = Math.max(0, this.account.equity - this.account.usedMargin);

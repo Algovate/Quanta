@@ -584,6 +584,13 @@ export class SimulatorExchange implements Exchange {
   private async updateAccountEquity(): Promise<void> {
     await this.updateAllPositions();
 
+    // Reconcile used margin with current positions to ensure identity holds
+    const recalculatedUsedMargin = this.positions.reduce(
+      (sum, pos) => sum + (pos.marginUsed || 0),
+      0
+    );
+    this.account.usedMargin = recalculatedUsedMargin;
+
     // Calculate total P&L from all open positions (unrealized)
     const unrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
 
