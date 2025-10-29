@@ -19,7 +19,19 @@
     "model": "deepseek/deepseek-chat-v3-0324",
     "_comment_model": "AI model to use for trading signals",
     "temperature": 0.7,
-    "_comment_temperature": "AI creativity level (0.0-2.0, lower = more conservative)"
+    "_comment_temperature": "AI creativity level (0.0-2.0, lower = more conservative)",
+    "prompt": {
+      "_comment": "Controls what the AI sees in the prompt",
+      "candles": {
+        "m3": 10,
+        "h4": 5
+      },
+      "sections": {
+        "candlesTA": true,
+        "sentiment": true,
+        "technicalState": true
+      }
+    }
   },
 
   "trading": {

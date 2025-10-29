@@ -22,7 +22,11 @@ Used for live trading and general settings:
   "ai": {
     "apiKey": "sk-or-v1-your-api-key-here",
     "model": "deepseek/deepseek-chat-v3-0324",
-    "temperature": 0.7
+    "temperature": 0.7,
+    "prompt": {
+      "candles": { "m3": 10, "h4": 5 },
+      "sections": { "candlesTA": true, "sentiment": true, "technicalState": true }
+    }
   },
   "trading": {
     "coins": ["BTC", "ETH", "SOL"],
@@ -94,6 +98,13 @@ EXCHANGE_API_SECRET=your_secret
 OPENROUTER_API_KEY=your_key
 AI_MODEL=deepseek/deepseek-chat-v3-0324
 AI_TEMPERATURE=0.7
+
+# AI Prompt (optional)
+PROMPT_CANDLES_3M=10
+PROMPT_CANDLES_4H=5
+PROMPT_SECTIONS_CANDLES_TA=true
+PROMPT_SECTIONS_SENTIMENT=true
+PROMPT_SECTIONS_TECH_STATE=true
 
 # Trading
 TRADING_COINS=BTC,ETH,SOL

@@ -596,7 +596,7 @@ Usage:
    - Analyze price action
 
 2. **AI Decision**
-   - Process market data
+   - Process market data (with configurable prompt sections)
    - Generate signal
    - Assign confidence score
    - Provide reasoning
@@ -613,6 +613,45 @@ Usage:
    - Monitor position
 
 ### Confidence Levels
+### AI Prompt Context (Configurable)
+
+The AI receives a structured prompt that can be customized via `ai.prompt`:
+
+- **Candles & Technical Analysis** (per coin)
+  - Multi-timeframe candles: 3m (default last 10) and 4h (default last 5)
+  - Indicators: EMA20/50, MACD, RSI14, ATR14, Bollinger (if available), Volume metrics
+  - Toggle: `sections.candlesTA`
+
+- **Market Sentiment (Derived)**
+  - Derived from EMA alignment, MACD vs Signal, RSI14 zones, Bollinger %B, overall trend
+  - Outputs sentiment (bullish/bearish/neutral) with score and drivers
+  - Toggle: `sections.sentiment`
+
+- **Current Technical State (Summary)**
+  - One-line summary: trend | EMA alignment | MACD relation | RSI zone | volatility
+  - Toggle: `sections.technicalState`
+
+Candles per timeframe are configurable via:
+
+```json
+{
+  "ai": {
+    "prompt": {
+      "candles": { "m3": 10, "h4": 5 }
+    }
+  }
+}
+```
+
+Environment overrides:
+
+```bash
+PROMPT_CANDLES_3M=10
+PROMPT_CANDLES_4H=5
+PROMPT_SECTIONS_CANDLES_TA=true
+PROMPT_SECTIONS_SENTIMENT=true
+PROMPT_SECTIONS_TECH_STATE=true
+```
 
 **High (0.7-1.0)**
 - Clear trend

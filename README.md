@@ -134,7 +134,7 @@ Console output shows both Total P&L and Unrealized P&L explicitly.
 
 ### Execution Messages
 - Use actual order fill price when available.
-- Notional/Margin in execution lines are estimates and labeled as “Est.”; authoritative values are shown in the positions table.
+- Notional/Margin in execution lines are estimates and labeled as "Est."; authoritative values are shown in the positions table.
 
 ### Event Bus (Timestamps)
 Cycle events include timestamps for reliable ordering:
