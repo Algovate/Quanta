@@ -50,3 +50,42 @@ export const ORDER_EXECUTION = {
   /** Default risk/reward ratio for take profit */
   DEFAULT_RISK_REWARD_RATIO: 2,
 } as const;
+
+/**
+ * Position closing and update thresholds
+ */
+export const POSITION_CLOSING = {
+  /**
+   * Tolerance for full position close (as percentage of position size)
+   * Used to handle floating point errors when comparing order amount to position size
+   */
+  CLOSE_TOLERANCE_PERCENT: 0.01, // 1%
+
+  /**
+   * Threshold for creating new position after closing opposite position (as percentage of closed size)
+   * Very strict threshold to prevent CLOSE orders from accidentally creating new positions
+   */
+  NEW_POSITION_THRESHOLD_PERCENT: 0.001, // 0.1%
+
+  /**
+   * Minimum absolute threshold for new position creation (to handle very small positions)
+   */
+  NEW_POSITION_MIN_THRESHOLD: 0.000001,
+
+  /**
+   * Threshold for logging small remainders after position close (as percentage)
+   * Only log if remainder is significant enough to avoid spam
+   */
+  LOG_REMAINDER_THRESHOLD_PERCENT: 0.0001, // 0.01%
+} as const;
+
+/**
+ * Account validation thresholds
+ */
+export const ACCOUNT_VALIDATION = {
+  /** Maximum allowed difference for equity calculation validation (in USD) */
+  EQUITY_TOLERANCE: 0.01,
+
+  /** Maximum allowed difference for margin calculation validation (in USD) */
+  MARGIN_TOLERANCE: 0.01,
+} as const;

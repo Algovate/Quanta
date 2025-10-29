@@ -7,6 +7,7 @@ import { PositionMonitorService } from '../execution/monitor.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
 import { EventBus } from './event-bus.js';
 import { aggregatePositionMetrics } from '../execution/position-utils.js';
+import { validateAccount } from '../utils/account-validation.js';
 import { Logger } from '../utils/logger.js';
 import chalk from 'chalk';
 
@@ -565,6 +566,23 @@ export class TradingWorkflow {
       : 0;
     this.state.previousBalance = account.balance;
 
+    // Validate numerical consistency using shared validation utilities
+    const validation = validateAccount(account, positions, totalMarginUsed);
+    if (!validation.isValid) {
+      if (validation.equityCheck && !validation.equityCheck.isValid) {
+        this.logger.warn('Equity calculation mismatch detected in cycle summary', {
+          cycle: this.state.cycleCount,
+          ...validation.equityCheck,
+        });
+      }
+      if (validation.marginCheck && !validation.marginCheck.isValid) {
+        this.logger.warn('Available margin calculation mismatch detected in cycle summary', {
+          cycle: this.state.cycleCount,
+          ...validation.marginCheck,
+        });
+      }
+    }
+
     // Log structured cycle summary for file logs only (not console)
     // This prevents duplicate "Cycle Summary" text in console output
     if (this.isBackgroundMode) {
@@ -666,7 +684,8 @@ export class TradingWorkflow {
       let riskLabel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
       if (marginUsage >= 20) riskLabel = 'HIGH';
       else if (marginUsage >= 10) riskLabel = 'MEDIUM';
-      const riskLevelColor = riskLabel === 'HIGH' ? chalk.red : riskLabel === 'MEDIUM' ? chalk.yellow : chalk.green;
+      const riskLevelColor =
+        riskLabel === 'HIGH' ? chalk.red : riskLabel === 'MEDIUM' ? chalk.yellow : chalk.green;
 
       console.log(chalk.magenta(`\n⚠️  Risk Status:`));
       console.log(

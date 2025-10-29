@@ -1,6 +1,8 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { TradingManager } from '../web/trading-manager.js';
 import { normalizeSymbol, calculatePositionPnl } from '../utils/symbol-utils.js';
+import { shouldCreatePositionAfterClose } from '../utils/position-close-utils.js';
+import { POSITION_CLOSING } from '../execution/constants.js';
 import { CompletedTrade } from '../types/index.js';
 
 export class SimulatorExchange implements Exchange {
@@ -415,8 +417,8 @@ export class SimulatorExchange implements Exchange {
 
     if (oppositePosition) {
       // Closing or reducing opposite position
-      // Use 1% tolerance to handle floating point errors and price volatility
-      const tolerance = oppositePosition.size * 0.01; // 1% tolerance
+      // Use tolerance from constants to handle floating point errors and price volatility
+      const tolerance = oppositePosition.size * POSITION_CLOSING.CLOSE_TOLERANCE_PERCENT;
       const isFullClose = amount >= oppositePosition.size - tolerance;
 
       if (isFullClose) {
@@ -461,12 +463,25 @@ export class SimulatorExchange implements Exchange {
           this.positions.splice(closeIndex, 1);
         }
 
-        // Only open new position if remaining amount is significant
-        // Use 5% threshold to prevent accidental reverse positions from close orders
-        // This is intentionally conservative to avoid the common bug where CLOSE creates opposite position
-        const significantThreshold = closedSize * 0.05; // 5% threshold
-        if (remainingAmount > significantThreshold) {
+        // Check if we should create a new position after closing
+        // This prevents CLOSE orders from accidentally creating new positions
+        const closeCheck = shouldCreatePositionAfterClose(
+          remainingAmount,
+          closedSize,
+          symbol,
+          positionSide
+        );
+
+        if (closeCheck.shouldCreatePosition) {
+          if (closeCheck.warningMessage) {
+            console.warn(closeCheck.warningMessage);
+          }
           this.createNewPosition(symbol, positionSide, remainingAmount, price, leverage);
+        } else if (closeCheck.shouldLogRemainder) {
+          console.debug(
+            `Ignoring small remaining amount (${remainingAmount}) after closing ${symbol} position ` +
+              `(likely floating point precision). Closed size: ${closedSize}`
+          );
         }
       } else {
         // Partial close: reduce position size
@@ -603,6 +618,9 @@ export class SimulatorExchange implements Exchange {
     // Margin ratio = used margin / equity
     this.account.marginRatio =
       this.account.equity > 0 ? this.account.usedMargin / this.account.equity : 0;
+
+    // Update timestamp to current time for accurate equity history tracking
+    this.account.timestamp = Date.now();
 
     // Verify: equity - usedMargin = availableMargin
     if (

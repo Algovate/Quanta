@@ -199,7 +199,12 @@ export class OrderExecutor {
 
       const symbol = this.buildSymbol(signal.coin);
       const side = this.positionSideToOrderSide(position.side);
-      const amount = position.size;
+
+      // For CLOSE orders, use exact position size to prevent creating new positions
+      // This ensures the order amount exactly matches the position size, preventing
+      // floating point precision issues that could cause small remainders and trigger
+      // new position creation in updatePosition()
+      const exactAmount = position.size;
 
       // Fetch current price to compute realized P&L for display
       let priceForPnl: number | undefined;
@@ -210,8 +215,8 @@ export class OrderExecutor {
         // If ticker fails, proceed without realized pnl
       }
 
-      const order = await this.exchange.placeOrder(symbol, side, amount);
-      this.pushOrderEvent(order, symbol, side, amount);
+      const order = await this.exchange.placeOrder(symbol, side, exactAmount);
+      this.pushOrderEvent(order, symbol, side, exactAmount);
 
       const realizedPnl =
         priceForPnl !== undefined
