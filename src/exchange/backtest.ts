@@ -1,8 +1,18 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
-import { normalizeSymbol, calculatePositionPnl } from '../utils/symbol-utils.js';
+import { normalizeSymbol } from '../utils/symbol-utils.js';
 import { shouldCreatePositionAfterClose } from '../utils/position-close-utils.js';
 import { POSITION_CLOSING } from '../execution/constants.js';
 import { CompletedTrade } from '../types/index.js';
+import {
+  createPosition,
+  updatePositionWithPrice,
+  updateAccountEquity as calculateAccountEquity,
+  calculateRealizedPnl,
+  createCompletedTrade,
+  calculateAverageEntryPrice,
+  calculateMargin,
+  calculateNotional,
+} from './position-calculations.js';
 
 /**
  * BacktestExchange - Time-aware exchange for historical data replay
@@ -211,28 +221,17 @@ export class BacktestExchange implements Exchange {
     }
 
     const currentPrice = this.getCurrentPrice(position.symbol);
-    const pnl = calculatePositionPnl(
-      position.side,
+
+    // Record completed trade using shared utility
+    const completedTrade = createCompletedTrade(
+      position,
       currentPrice,
-      position.entryPrice,
-      position.size
+      this.currentTime,
+      this.completedTrades.length + 1,
+      'end_of_backtest'
     );
 
-    // Record completed trade
-    const completedTrade = {
-      id: `trade_${this.completedTrades.length + 1}`,
-      symbol: position.symbol,
-      side: position.side,
-      entryTime: position.timestamp,
-      exitTime: this.currentTime,
-      entryPrice: position.entryPrice,
-      exitPrice: currentPrice,
-      size: position.size,
-      pnl,
-      pnlPercent: (pnl / (position.size * position.entryPrice)) * 100,
-      holdingPeriod: (this.currentTime - position.timestamp) / 1000, // Convert milliseconds to seconds
-      reason: 'end_of_backtest' as const,
-    };
+    const pnl = completedTrade.pnl;
 
     this.completedTrades.push(completedTrade);
 
@@ -340,7 +339,7 @@ export class BacktestExchange implements Exchange {
         const closedSize = oppositePosition.size;
         const remainingAmount = Math.max(0, amount - closedSize);
 
-        const realizedPnl = calculatePositionPnl(
+        const realizedPnl = calculateRealizedPnl(
           oppositePosition.side,
           price,
           oppositePosition.entryPrice,
@@ -380,7 +379,7 @@ export class BacktestExchange implements Exchange {
         const ratio = amount / oppositePosition.size;
         const marginToReturn = oppositePosition.marginUsed * ratio;
 
-        const realizedPnl = calculatePositionPnl(
+        const realizedPnl = calculateRealizedPnl(
           oppositePosition.side,
           price,
           oppositePosition.entryPrice,
@@ -400,17 +399,25 @@ export class BacktestExchange implements Exchange {
       );
 
       if (existingPosition) {
-        const totalValue = existingPosition.size * existingPosition.entryPrice + amount * price;
-        const totalSize = existingPosition.size + amount;
-        existingPosition.entryPrice = totalValue / totalSize;
-        existingPosition.size = totalSize;
+        // Update existing position with average entry price
+        existingPosition.entryPrice = calculateAverageEntryPrice(
+          existingPosition.size,
+          existingPosition.entryPrice,
+          amount,
+          price
+        );
+        existingPosition.size += amount;
 
-        // Calculate margin with leverage
-        const notionalValue = amount * price;
-        const additionalMargin = notionalValue / leverage;
+        // Calculate margin with leverage for the additional position
+        const additionalMargin = calculateMargin(amount, price, leverage);
         existingPosition.marginUsed += additionalMargin;
+
         // Update notional with leverage (matches real exchanges: size * markPrice * leverage)
-        existingPosition.notional = totalSize * this.getCurrentPrice(symbol) * leverage;
+        existingPosition.notional = calculateNotional(
+          existingPosition.size,
+          this.getCurrentPrice(symbol),
+          leverage
+        );
         existingPosition.leverage = leverage;
 
         this.account.availableMargin -= additionalMargin;
@@ -421,6 +428,9 @@ export class BacktestExchange implements Exchange {
     }
   }
 
+  /**
+   * Create a new position using shared calculation utilities
+   */
   private createNewPosition(
     symbol: string,
     side: 'long' | 'short',
@@ -428,53 +438,23 @@ export class BacktestExchange implements Exchange {
     price: number,
     leverage: number = 1
   ): void {
-    const normalizedSymbol = normalizeSymbol(symbol);
-    const notionalValue = amount * price;
-    const marginRequired = notionalValue / leverage;
-
-    this.positions.push({
-      symbol: normalizedSymbol,
-      side,
-      size: amount,
-      entryPrice: price,
-      markPrice: price,
-      unrealizedPnl: 0,
-      marginUsed: marginRequired,
-      notional: notionalValue * leverage, // Full position value with leverage (matches real exchanges: size * markPrice * leverage)
-      leverage: leverage,
-      timestamp: this.currentTime,
-    });
+    const position = createPosition(symbol, side, amount, price, leverage, this.currentTime);
+    this.positions.push(position);
   }
 
   private updateAllPositions(): void {
     this.positions.forEach(position => {
       const currentPrice = this.getCurrentPrice(position.symbol);
-      position.markPrice = currentPrice;
-      position.unrealizedPnl = calculatePositionPnl(
-        position.side,
-        currentPrice,
-        position.entryPrice,
-        position.size
-      );
-      // Notional = position size * current price * leverage (matches real exchanges)
-      position.notional = position.size * currentPrice * position.leverage;
+      updatePositionWithPrice(position, currentPrice);
     });
   }
 
+  /**
+   * Update account equity and related metrics using shared calculation utilities
+   */
   private updateAccountEquity(): void {
     this.updateAllPositions();
-
-    // Reconcile used margin with current positions to ensure identity holds
-    const recalculatedUsedMargin = this.positions.reduce(
-      (sum, pos) => sum + (pos.marginUsed || 0),
-      0
-    );
-    this.account.usedMargin = recalculatedUsedMargin;
-
-    const unrealizedPnl = this.positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
-    this.account.equity = this.account.balance + unrealizedPnl;
-    this.account.availableMargin = Math.max(0, this.account.equity - this.account.usedMargin);
-    this.account.marginRatio =
-      this.account.equity > 0 ? this.account.usedMargin / this.account.equity : 0;
+    this.account.timestamp = this.currentTime;
+    calculateAccountEquity(this.account, this.positions);
   }
 }
