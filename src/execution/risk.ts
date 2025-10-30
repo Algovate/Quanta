@@ -1,7 +1,23 @@
 import { Account, Position, TradingSignal } from '../exchange/types.js';
-import { POSITION_SIZING, SIGNAL_VALIDATION, ORDER_EXECUTION } from './constants.js';
+import {
+  POSITION_SIZING,
+  SIGNAL_VALIDATION,
+  ORDER_EXECUTION,
+  ACCOUNT_VALIDATION,
+  POSITION_MONITORING,
+} from './constants.js';
 import { aggregatePositionMetrics } from './position-utils.js';
 import { Logger } from '../utils/logger.js';
+import {
+  safeMultiply,
+  safeDivide,
+  safeSubtract,
+  safeAdd,
+  safePercentage,
+  roundToPrecision,
+  getSymbolPrecision,
+  EXCHANGE_PRECISION,
+} from '../utils/precision.js';
 
 export interface RiskParams {
   maxRiskPerTrade: number; // 0.05 = 5%
@@ -37,6 +53,28 @@ export class RiskManager {
     currentPrice: number
   ): PositionSizing | null {
     try {
+      // Validate inputs
+      if (account.equity <= ACCOUNT_VALIDATION.MIN_EQUITY) {
+        this.logger.warn('Account equity too low for trading', {
+          equity: account.equity,
+          minimum: ACCOUNT_VALIDATION.MIN_EQUITY,
+        });
+        return null;
+      }
+
+      if (currentPrice <= ACCOUNT_VALIDATION.MIN_VALID_PRICE) {
+        this.logger.error('Invalid current price', { currentPrice, signal: signal.coin });
+        return null;
+      }
+
+      if (signal.entry_price && signal.entry_price <= ACCOUNT_VALIDATION.MIN_VALID_PRICE) {
+        this.logger.error('Invalid entry price in signal', {
+          entryPrice: signal.entry_price,
+          signal: signal.coin,
+        });
+        return null;
+      }
+
       // Check if we can open new positions
       if (currentPositions.length >= this.params.maxPositions) {
         // Silent rejection
@@ -45,55 +83,99 @@ export class RiskManager {
 
       // Check total margin usage to prevent over-leveraging using optimized aggregation
       const aggregates = aggregatePositionMetrics(currentPositions);
-      const currentMarginUsage = aggregates.totalMarginUsed / account.equity;
+      const currentMarginUsage = safeDivide(
+        aggregates.totalMarginUsed,
+        account.equity,
+        6
+      ).toNumber();
       if (currentMarginUsage >= this.params.maxTotalRisk) {
         // Silent rejection - margin limit reached
         return null;
       }
 
-      // Calculate position size based on risk
+      // Calculate position size based on risk using precision-safe arithmetic
       const stopLoss = signal.stop_loss || this.params.defaultStopLoss;
-      const riskAmount = account.equity * this.params.maxRiskPerTrade; // Maximum $ loss
-      const priceRisk =
-        Math.abs(currentPrice - (signal.entry_price || currentPrice)) / currentPrice;
+      const riskAmount = safePercentage(account.equity, this.params.maxRiskPerTrade).toNumber(); // Maximum $ loss
+
+      // Calculate price risk with precision
+      const entryPrice = signal.entry_price || currentPrice;
+      const priceDiff = safeSubtract(currentPrice, entryPrice).toNumber();
+      const priceRisk = safeDivide(Math.abs(priceDiff), currentPrice, 6).toNumber();
 
       // Use the larger of signal stop loss or price risk
-      const actualStopLoss = Math.max(stopLoss, priceRisk);
+      let actualStopLoss = Math.max(stopLoss, priceRisk);
 
-      if (actualStopLoss <= 0) {
-        // Silent rejection
-        return null;
+      // Enforce minimum stop loss to prevent division issues and unrealistic position sizes
+      if (actualStopLoss < POSITION_SIZING.MIN_STOP_LOSS_THRESHOLD) {
+        this.logger.warn('Stop loss too small, using minimum threshold', {
+          original: actualStopLoss,
+          minimum: POSITION_SIZING.MIN_STOP_LOSS_THRESHOLD,
+          coin: signal.coin,
+        });
+        actualStopLoss = POSITION_SIZING.MIN_STOP_LOSS_THRESHOLD;
       }
 
-      // Step 1: Calculate position value based on risk
+      // Step 1: Calculate position value based on risk using precision-safe division
       // We want: max $ loss = position value × stop loss %
       // Therefore: position value = max $ loss / stop loss %
       const pricePerUnit = signal.entry_price || currentPrice;
-      const riskBasedPositionValue = riskAmount / actualStopLoss;
+      const riskBasedPositionValue = safeDivide(
+        riskAmount,
+        actualStopLoss,
+        EXCHANGE_PRECISION.USDT
+      ).toNumber();
 
-      // Step 2: Limit position size to avoid over-leveraging
+      // Step 2: Limit position size to avoid over-leveraging using precision-safe arithmetic
       // Use max 30% of available capital per trade to ensure we can open multiple positions
       // But ensure we leave at least 40% available for other trades
-      const availableForTrade = account.availableMargin * (1 - POSITION_SIZING.MIN_RESERVE_PERCENT);
-      const maxCapitalBasedValue = availableForTrade * POSITION_SIZING.MAX_CAPITAL_PERCENT;
+      const reservePercent = safeSubtract(1, POSITION_SIZING.MIN_RESERVE_PERCENT, 6).toNumber();
+      const availableForTrade = safeMultiply(account.availableMargin, reservePercent).toNumber();
+      const maxCapitalBasedValue = safePercentage(
+        availableForTrade,
+        POSITION_SIZING.MAX_CAPITAL_PERCENT
+      ).toNumber();
 
       // Step 3: Apply utilization factor based on number of open positions
       // Scale position size inversely with position count to maintain diversification
-      const utilizationFactor = 1 - currentPositions.length / this.params.maxPositions;
-      // Factor ranges from 1.0 (no positions) down to ~0.17 (at max positions)
-      const positionValueWithUtil =
-        Math.min(maxCapitalBasedValue, riskBasedPositionValue) * utilizationFactor;
+      // Use a more gradual scaling with a minimum floor
+      const positionRatio = safeDivide(
+        currentPositions.length,
+        this.params.maxPositions,
+        6
+      ).toNumber();
+      const utilizationReduction = safeMultiply(positionRatio, 0.7).toNumber();
+      const utilizationFactor = Math.max(
+        POSITION_SIZING.MIN_UTILIZATION_FACTOR,
+        safeSubtract(1, utilizationReduction, 6).toNumber()
+      );
+      // Factor ranges from 1.0 (no positions) down to 0.3 (at max positions)
+      const smallerValue = Math.min(maxCapitalBasedValue, riskBasedPositionValue);
+      const positionValueWithUtil = safeMultiply(
+        smallerValue,
+        utilizationFactor,
+        EXCHANGE_PRECISION.USDT
+      ).toNumber();
 
-      // Ensure minimum position value (1% of account or $200, whichever is higher)
+      // Ensure minimum position value (1% of account or $200, whichever is higher) using precision
       // This scales with account size and prevents tiny positions
+      const minPositionValueFromPercent = safePercentage(
+        account.equity,
+        POSITION_SIZING.MIN_POSITION_PERCENT
+      ).toNumber();
       const minPositionValue = Math.max(
         POSITION_SIZING.MIN_POSITION_VALUE_USD,
-        account.equity * POSITION_SIZING.MIN_POSITION_PERCENT
+        minPositionValueFromPercent
       );
       const adjustedPositionValue = Math.max(minPositionValue, positionValueWithUtil);
 
-      // Step 4: Calculate position size in units (this is the amount we'll buy/sell)
-      const suggestedSize = adjustedPositionValue / pricePerUnit;
+      // Step 4: Calculate position size in units using precision-safe division
+      // Safety check: ensure position doesn't exceed maximum size cap
+      const maxPositionValue = safePercentage(
+        account.equity,
+        POSITION_SIZING.MAX_POSITION_SIZE_PERCENT
+      ).toNumber();
+      const cappedPositionValue = Math.min(adjustedPositionValue, maxPositionValue);
+      const cappedSize = safeDivide(cappedPositionValue, pricePerUnit, 8).toNumber();
 
       // Step 5: Determine dynamic leverage based on confidence and risk
       const leverage = this.calculateDynamicLeverage(
@@ -103,16 +185,33 @@ export class RiskManager {
         currentPositions.length
       );
 
-      // Calculate stop loss price
-      const stopLossPrice =
-        signal.action === 'LONG'
-          ? pricePerUnit * (1 - actualStopLoss)
-          : pricePerUnit * (1 + actualStopLoss);
+      // Calculate stop loss price using precision-safe arithmetic
+      let stopLossMultiplier: number;
+      if (signal.action === 'LONG') {
+        stopLossMultiplier = safeSubtract(1, actualStopLoss, 6).toNumber();
+      } else {
+        stopLossMultiplier = safeAdd(1, actualStopLoss, 6).toNumber();
+      }
+      const stopLossPrice = roundToPrecision(
+        safeMultiply(pricePerUnit, stopLossMultiplier).toNumber(),
+        getSymbolPrecision(`${signal.coin}/USDT`)
+      );
+
+      // Final validation
+      if (!isFinite(cappedSize) || cappedSize <= 0) {
+        this.logger.error('Invalid position size calculated', {
+          cappedSize,
+          adjustedPositionValue,
+          pricePerUnit,
+          signal: signal.coin,
+        });
+        return null;
+      }
 
       return {
         coin: signal.coin,
-        suggestedSize: suggestedSize, // Size in units (coins), NOT leveraged
-        maxSize: suggestedSize,
+        suggestedSize: cappedSize, // Size in units (coins), NOT leveraged
+        maxSize: cappedSize,
         riskAmount,
         stopLossPrice,
         leverage, // This is for reference, actual leverage applied by exchange
@@ -125,6 +224,7 @@ export class RiskManager {
 
   /**
    * Calculate dynamic leverage based on signal confidence, account risk, and position count
+   * Uses additive adjustments instead of multiplicative to avoid compounding errors
    */
   private calculateDynamicLeverage(
     signal: TradingSignal,
@@ -132,44 +232,57 @@ export class RiskManager {
     totalMarginUsed: number,
     positionCount: number
   ): number {
-    // Base leverage starts at minimum
-    let leverage = this.params.minLeverage;
-
-    // Factor 1: Signal confidence
-    // Higher confidence = can use higher leverage
-    const confidenceFactor = signal.confidence;
-    if (confidenceFactor >= 0.75) {
-      // High confidence signals: use up to max leverage
-      leverage = Math.min(this.params.maxLeverage, leverage * 1.5);
-    } else if (confidenceFactor >= 0.65) {
-      // Medium-high confidence: use slightly higher leverage
-      leverage = Math.min(this.params.maxLeverage, leverage * 1.2);
+    // Validate inputs
+    if (account.equity <= 0) {
+      this.logger.error('Invalid equity for leverage calculation', { equity: account.equity });
+      return this.params.minLeverage;
     }
-    // Low confidence (0.55-0.65): keep at min leverage
 
-    // Factor 2: Account risk exposure
-    // Lower leverage when already heavily leveraged
-    const marginUsage = totalMarginUsed / account.equity;
-    if (marginUsage > 0.2) {
-      // Already using >20% of account: reduce leverage significantly
-      leverage = leverage * 0.6;
-    } else if (marginUsage > 0.15) {
-      // Using 15-20%: reduce leverage moderately
-      leverage = leverage * 0.8;
-    }
-    // Under 15%: no reduction
+    // Start with base leverage using precision-safe arithmetic
+    const leverageRange = safeSubtract(this.params.maxLeverage, this.params.minLeverage).toNumber();
+    let leverage = safeAdd(this.params.minLeverage, 0);
 
-    // Factor 3: Number of open positions
-    // More positions = lower per-position leverage for diversification
-    const positionFactor = 1 - positionCount / (this.params.maxPositions * 2);
-    leverage = leverage * Math.max(0.7, positionFactor);
-    // Never go below 70% of calculated leverage due to position count
+    // Factor 1: Signal confidence boost (additive) using precision
+    // Scale confidence from 0.55-1.0 to 0-1 range
+    const confidenceDiff = safeSubtract(signal.confidence, 0.55).toNumber();
+    const confidenceRange = safeSubtract(1.0, 0.55).toNumber();
+    const confidenceBoost = Math.max(0, safeDivide(confidenceDiff, confidenceRange, 6).toNumber());
+    const confidenceAdjustment = safeMultiply(
+      leverageRange,
+      safeMultiply(confidenceBoost, 0.5)
+    ).toNumber();
+    leverage = safeAdd(leverage, confidenceAdjustment);
+
+    // Factor 2: Margin usage penalty (additive reduction) using precision
+    // Reduce leverage when margin usage is high
+    const marginUsage = safeDivide(totalMarginUsed, account.equity, 6).toNumber();
+    const marginUsageAboveThreshold = safeSubtract(marginUsage, 0.1).toNumber();
+    const marginPenaltyRange = safeSubtract(0.25, 0.1).toNumber(); // 0.1 to 0.25 range
+    const marginPenalty = Math.max(
+      0,
+      safeDivide(marginUsageAboveThreshold, marginPenaltyRange, 6).toNumber()
+    );
+    const marginAdjustment = safeMultiply(
+      leverageRange,
+      safeMultiply(marginPenalty, 0.3)
+    ).toNumber();
+    leverage = safeSubtract(leverage, marginAdjustment);
+
+    // Factor 3: Position count penalty (additive reduction) using precision
+    // Reduce leverage as portfolio fills up
+    const positionPenalty = safeDivide(positionCount, this.params.maxPositions, 6).toNumber();
+    const positionAdjustment = safeMultiply(
+      leverageRange,
+      safeMultiply(positionPenalty, 0.2)
+    ).toNumber();
+    leverage = safeSubtract(leverage, positionAdjustment);
 
     // Ensure leverage stays within bounds
-    leverage = Math.max(this.params.minLeverage, Math.min(this.params.maxLeverage, leverage));
+    let leverageNum = leverage.toNumber();
+    leverageNum = Math.max(this.params.minLeverage, Math.min(this.params.maxLeverage, leverageNum));
 
     // Round to nearest 0.5 for cleaner display
-    return Math.round(leverage * 2) / 2;
+    return roundToPrecision(leverageNum, 1);
   }
 
   validateSignal(
@@ -314,11 +427,87 @@ export class RiskManager {
   }
 
   /**
-   * Update trailing stop loss for a position
+   * Check if portfolio drawdown exceeds maximum allowed threshold
+   * @param account - Current account state
+   * @param initialBalance - Initial account balance at start of trading
+   * @returns true if drawdown limit exceeded, false otherwise
+   */
+  checkPortfolioDrawdown(account: Account, initialBalance: number): boolean {
+    if (initialBalance <= 0) {
+      this.logger.error('Invalid initial balance for drawdown calculation', { initialBalance });
+      return false;
+    }
+
+    const drawdown = (initialBalance - account.equity) / initialBalance;
+
+    if (drawdown > POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN) {
+      this.logger.error('Portfolio drawdown limit exceeded - emergency close recommended', {
+        drawdown: (drawdown * 100).toFixed(2) + '%',
+        limit: (POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 100).toFixed(2) + '%',
+        currentEquity: account.equity,
+        initialBalance,
+      });
+      return true;
+    }
+
+    // Warn at 75% of limit
+    if (drawdown > POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 0.75) {
+      this.logger.warn('Portfolio drawdown approaching limit', {
+        drawdown: (drawdown * 100).toFixed(2) + '%',
+        limit: (POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 100).toFixed(2) + '%',
+      });
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if daily loss limit has been exceeded
+   * @param account - Current account state
+   * @param startOfDayBalance - Account balance at start of day
+   * @returns true if daily loss limit exceeded, false otherwise
+   */
+  checkDailyLossLimit(account: Account, startOfDayBalance: number): boolean {
+    if (startOfDayBalance <= 0) {
+      this.logger.error('Invalid start of day balance', { startOfDayBalance });
+      return false;
+    }
+
+    const dailyLoss = (startOfDayBalance - account.equity) / startOfDayBalance;
+
+    if (dailyLoss > POSITION_MONITORING.MAX_DAILY_LOSS) {
+      this.logger.error('Daily loss limit exceeded - trading should be paused', {
+        dailyLoss: (dailyLoss * 100).toFixed(2) + '%',
+        limit: (POSITION_MONITORING.MAX_DAILY_LOSS * 100).toFixed(2) + '%',
+        currentEquity: account.equity,
+        startOfDayBalance,
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Calculate trailing stop loss for a position
+   * Returns both the stop price and updated peak price (immutable)
    * Trail begins when position is +2% and moves to breakeven
    * At +5% profit, trail at -2% from peak
    */
-  updateTrailingStop(position: Position, currentPrice: number): number | null {
+  updateTrailingStop(
+    position: Position,
+    currentPrice: number
+  ): { stopPrice: number | null; newPeakPrice: number } {
+    // Validate inputs
+    if (position.entryPrice <= 0 || currentPrice <= 0) {
+      this.logger.warn('Invalid prices for trailing stop calculation', {
+        entryPrice: position.entryPrice,
+        currentPrice,
+        symbol: position.symbol,
+      });
+      return { stopPrice: null, newPeakPrice: position.peakPrice || currentPrice };
+    }
+
     const isLong = position.side === 'long';
     const entryPrice = position.entryPrice;
 
@@ -326,40 +515,46 @@ export class RiskManager {
     const pnlPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
     const actualPnlPercent = isLong ? pnlPercent : -pnlPercent;
 
-    // Update peak price if we're at a new high
-    if (
-      !position.peakPrice ||
-      (isLong ? currentPrice > position.peakPrice : currentPrice < position.peakPrice)
-    ) {
-      position.peakPrice = currentPrice;
+    // Calculate new peak price (immutable - don't modify position)
+    const currentPeak = position.peakPrice || currentPrice;
+    const newPeakPrice = isLong
+      ? Math.max(currentPeak, currentPrice)
+      : Math.min(currentPeak, currentPrice);
+
+    let stopPrice: number | null = null;
+
+    // Trailing stop conditions using constants
+    if (actualPnlPercent >= ORDER_EXECUTION.TRAILING_STOP_ACTIVATION * 100) {
+      if (actualPnlPercent >= ORDER_EXECUTION.TRAILING_STOP_ACTIVATION * 250) {
+        // At +5% or more: trail stop at 2% below peak
+        stopPrice = isLong
+          ? newPeakPrice * (1 - ORDER_EXECUTION.TRAILING_STOP_DISTANCE)
+          : newPeakPrice * (1 + ORDER_EXECUTION.TRAILING_STOP_DISTANCE);
+      } else {
+        // At +2% to +5%: move stop to breakeven
+        stopPrice = entryPrice;
+      }
     }
 
-    // Trailing stop conditions
-    if (actualPnlPercent >= 5.0) {
-      // At +5% or more: trail stop at 2% below peak
-      const trailPercent = 0.02; // 2%
-      return isLong
-        ? (position.peakPrice || currentPrice) * (1 - trailPercent)
-        : (position.peakPrice || currentPrice) * (1 + trailPercent);
-    } else if (actualPnlPercent >= 2.0) {
-      // At +2% to +5%: move stop to breakeven
-      return entryPrice;
-    }
-
-    // Before +2%: use regular stop loss
-    return null;
+    // Before +2%: use regular stop loss (return null)
+    return { stopPrice, newPeakPrice };
   }
 
   /**
    * Check if trailing stop or regular stop loss should trigger
+   * Updates position.peakPrice and position.trailingStopPrice as side effects
    */
   checkStopLossWithTrailing(position: Position, currentPrice: number): boolean {
     // Check trailing stop first (more aggressive)
-    const trailingStopPrice = this.updateTrailingStop(position, currentPrice);
-    if (trailingStopPrice) {
+    const { stopPrice, newPeakPrice } = this.updateTrailingStop(position, currentPrice);
+
+    // Update position state with new peak price
+    position.peakPrice = newPeakPrice;
+
+    if (stopPrice) {
       const isLong = position.side === 'long';
-      position.trailingStopPrice = trailingStopPrice;
-      return isLong ? currentPrice <= trailingStopPrice : currentPrice >= trailingStopPrice;
+      position.trailingStopPrice = stopPrice;
+      return isLong ? currentPrice <= stopPrice : currentPrice >= stopPrice;
     }
 
     // Otherwise use regular stop loss

@@ -16,6 +16,7 @@ import {
   PerformanceMetrics,
 } from '../types/index.js';
 import { PerformanceAnalytics } from '../analytics/performance.js';
+import { Logger } from '../utils/logger.js';
 import cliProgress from 'cli-progress';
 
 // Constants
@@ -111,6 +112,8 @@ export class BacktestEngine {
     timeframes: string;
   } | null = null;
   private signalStats = { generated: 0, accepted: 0, rejected: 0 };
+  private errorCount: number = 0;
+  private logger = Logger.getInstance('BacktestEngine');
 
   constructor(config: BacktestConfig) {
     this.config = config;
@@ -190,19 +193,24 @@ export class BacktestEngine {
 
     for (const coin of this.config.coins) {
       const symbol = `${coin}/USDT`;
-      let coinCandles = 0;
 
-      for (const timeframe of timeframes) {
+      // Fetch all timeframes for a coin in parallel
+      const framePromises = timeframes.map(async timeframe => {
         const candlesticks = await this.historicalDataProvider.getHistoricalCandlesticks(
           symbol,
           timeframe,
           startDate,
           endDate
         );
-
         this.exchange.loadHistoricalData(`${symbol}_${timeframe}`, candlesticks);
-        coinCandles += candlesticks.length;
-      }
+        return candlesticks.length;
+      });
+
+      const results = await Promise.allSettled(framePromises);
+      const coinCandles = results.reduce(
+        (sum, r) => (r.status === 'fulfilled' ? sum + r.value : sum),
+        0
+      );
 
       totalCandles += coinCandles;
       dataInfo.push(`${coin}: ${coinCandles} candles`);
@@ -242,8 +250,13 @@ export class BacktestEngine {
       if (this.shouldExecuteCycle(cycleCount, cyclePeriodMs)) {
         try {
           await this.executeCycle(currentTime);
-        } catch {
-          // Continue on error
+        } catch (error) {
+          this.logger.error('Error executing backtest cycle', error, {
+            currentTime: new Date(currentTime).toISOString(),
+            cycleCount,
+          });
+          // Continue simulation but track error
+          this.errorCount++;
         }
       }
 
@@ -334,20 +347,28 @@ export class BacktestEngine {
    * Collect market data for all configured coins
    */
   private async collectMarketData(): Promise<MarketData[]> {
-    const allMarketData: MarketData[] = [];
     const timeframes = ['3m', '4h'];
 
-    for (const coin of this.config.coins) {
-      const symbol = `${coin}/USDT`;
-      try {
-        const marketData = await this.marketDataProvider.getMarketData(symbol, timeframes);
-        allMarketData.push(...marketData);
-      } catch {
-        // Skip if no data available
+    // Fetch market data for all coins in parallel; continue on failures
+    const results = await Promise.allSettled(
+      this.config.coins.map(async coin => {
+        const symbol = `${coin}/USDT`;
+        try {
+          return await this.marketDataProvider.getMarketData(symbol, timeframes);
+        } catch (error) {
+          this.logger.warn(`No market data available for ${symbol}`, error);
+          return [] as MarketData[];
+        }
+      })
+    );
+
+    const aggregated: MarketData[] = [];
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        aggregated.push(...r.value);
       }
     }
-
-    return allMarketData;
+    return aggregated;
   }
 
   /**
@@ -405,8 +426,9 @@ export class BacktestEngine {
         } else {
           this.signalStats.rejected++;
         }
-      } catch {
+      } catch (error) {
         // Count exceptions as rejected signals
+        this.logger.error(`Failed to execute signal for ${signal.coin}`, error);
         this.signalStats.rejected++;
       }
     }

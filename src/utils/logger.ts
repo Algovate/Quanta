@@ -98,14 +98,23 @@ export class Logger {
   }
 
   private addToBuffer(entry: BufferedLogEntry): void {
+    // Add entry atomically
     this.writeBuffer.push(entry);
+    const bufferLength = this.writeBuffer.length;
 
-    if (this.writeBuffer.length >= 50) {
+    // Flush immediately if buffer is full
+    if (bufferLength >= 50) {
+      // Clear any pending timer to avoid duplicate flush
+      if (this.flushTimer) {
+        clearTimeout(this.flushTimer);
+        this.flushTimer = undefined;
+      }
       this.flush();
     } else if (!this.flushTimer) {
+      // Schedule a flush if not already scheduled
       this.flushTimer = setTimeout(() => {
+        this.flushTimer = undefined; // Clear before flush to allow new timers
         this.flush();
-        this.flushTimer = undefined;
       }, 100);
     }
   }
@@ -114,15 +123,23 @@ export class Logger {
    * Flush buffered log entries to outputs
    * - Background mode: Outputs to both console and file
    * - Foreground mode: Outputs to both console and file
+   * Thread-safe: creates a snapshot of the buffer before clearing
    */
   private flush(): void {
-    if (this.isShuttingDown || this.writeBuffer.length === 0) {
+    if (this.isShuttingDown) {
       return;
     }
 
+    // Check buffer length before proceeding
+    if (this.writeBuffer.length === 0) {
+      return;
+    }
+
+    // Create snapshot and clear buffer atomically
     const entries = [...this.writeBuffer];
     this.writeBuffer = [];
 
+    // Clear timer after buffer is cleared
     this.clearFlushTimer();
 
     // Console output in all modes
@@ -257,7 +274,17 @@ export class Logger {
     this.log(LogLevel.DEBUG, message, undefined, metadata);
   }
 
+  /**
+   * Synchronously flush all buffered logs
+   * Should be called before process exit to ensure all logs are written
+   */
   flushSync(): void {
+    // Clear any pending timer first
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
+    }
+    // Flush immediately
     this.flush();
   }
 

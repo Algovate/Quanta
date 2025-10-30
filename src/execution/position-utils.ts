@@ -1,4 +1,12 @@
 import { Position } from '../exchange/types.js';
+import { calculatePositionPnl } from '../utils/symbol-utils.js';
+import {
+  safeDivide,
+  safeMultiply,
+  safeAdd,
+  roundToPrecision,
+  EXCHANGE_PRECISION,
+} from '../utils/precision.js';
 
 export interface PositionAggregates {
   totalPnl: number;
@@ -9,48 +17,68 @@ export interface PositionAggregates {
 
 /**
  * Aggregate position metrics in a single pass for performance
+ * Uses precision-safe arithmetic to prevent floating-point errors
  * @param positions - Array of positions to aggregate
  * @returns Aggregated position metrics
  */
 export function aggregatePositionMetrics(positions: Position[]): PositionAggregates {
   const aggregates = positions.reduce(
-    (acc, pos) => ({
-      totalPnl: acc.totalPnl + pos.unrealizedPnl,
-      totalNotional: acc.totalNotional + pos.notional,
-      totalMarginUsed: acc.totalMarginUsed + pos.marginUsed,
-      positionCount: acc.positionCount + 1,
-    }),
+    (acc, pos) => {
+      // Use precision-safe addition for all financial values
+      return {
+        totalPnl: safeAdd(acc.totalPnl, pos.unrealizedPnl).toNumber(),
+        totalNotional: safeAdd(acc.totalNotional, pos.notional).toNumber(),
+        totalMarginUsed: safeAdd(acc.totalMarginUsed, pos.marginUsed).toNumber(),
+        positionCount: acc.positionCount + 1,
+      };
+    },
     { totalPnl: 0, totalNotional: 0, totalMarginUsed: 0, positionCount: 0 }
   );
-  return aggregates;
+
+  // Round aggregated values to USDT precision
+  return {
+    totalPnl: roundToPrecision(aggregates.totalPnl, EXCHANGE_PRECISION.USDT),
+    totalNotional: roundToPrecision(aggregates.totalNotional, EXCHANGE_PRECISION.USDT),
+    totalMarginUsed: roundToPrecision(aggregates.totalMarginUsed, EXCHANGE_PRECISION.USDT),
+    positionCount: aggregates.positionCount,
+  };
 }
 
 /**
  * Calculate unrealized profit and loss for a position
+ * Uses precision-safe arithmetic to prevent floating-point errors
  * @param position - The position to calculate P&L for
  * @param currentPrice - Current market price
  * @returns Unrealized P&L (positive for profit, negative for loss)
  */
 export function calculateUnrealizedPnl(position: Position, currentPrice: number): number {
-  if (position.side === 'long') {
-    // For long positions: profit when price increases
-    return (currentPrice - position.entryPrice) * position.size;
-  } else {
-    // For short positions: profit when price decreases
-    return (position.entryPrice - currentPrice) * position.size;
-  }
+  // Use precision-safe P&L calculation
+  return calculatePositionPnl(
+    position.side,
+    currentPrice,
+    position.entryPrice,
+    position.size,
+    position.symbol
+  );
 }
 
 /**
  * Calculate P&L as percentage of position value
+ * Uses precision-safe arithmetic
  * @param position - The position to calculate P&L for
  * @param currentPrice - Current market price
  * @returns P&L percentage
  */
 export function calculatePnlPercent(position: Position, currentPrice: number): number {
   const unrealizedPnl = calculateUnrealizedPnl(position, currentPrice);
-  const positionValue = position.size * position.entryPrice;
-  return (unrealizedPnl / positionValue) * 100;
+  const positionValue = safeMultiply(position.size, position.entryPrice).toNumber();
+
+  if (positionValue === 0) {
+    return 0;
+  }
+
+  const pnlPercent = safeDivide(unrealizedPnl, positionValue, 4);
+  return roundToPrecision(safeMultiply(pnlPercent, 100).toNumber(), 2);
 }
 
 /**

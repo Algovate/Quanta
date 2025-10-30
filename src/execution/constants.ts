@@ -15,6 +15,12 @@ export const POSITION_SIZING = {
   MIN_POSITION_PERCENT: 0.01,
   /** Absolute minimum position value in USD */
   MIN_POSITION_VALUE_USD: 200,
+  /** Minimum stop loss to prevent division issues (0.1%) */
+  MIN_STOP_LOSS_THRESHOLD: 0.001,
+  /** Minimum utilization factor even at max positions */
+  MIN_UTILIZATION_FACTOR: 0.3,
+  /** Maximum position size as percentage of equity (safety cap) */
+  MAX_POSITION_SIZE_PERCENT: 0.25,
 } as const;
 
 /**
@@ -35,12 +41,16 @@ export const SIGNAL_VALIDATION = {
  * Position monitoring and risk thresholds
  */
 export const POSITION_MONITORING = {
-  /** Emergency stop loss threshold (percentage) */
+  /** Emergency stop loss threshold (percentage of margin used) */
   EMERGENCY_STOP_LOSS_THRESHOLD: 0.1,
-  /** Medium risk level threshold */
-  MEDIUM_RISK_THRESHOLD: 0.05,
-  /** High risk level threshold */
-  HIGH_RISK_THRESHOLD: 0.1,
+  /** Medium risk level threshold (margin ratio) */
+  MEDIUM_RISK_THRESHOLD: 0.15,
+  /** High risk level threshold (margin ratio) */
+  HIGH_RISK_THRESHOLD: 0.25,
+  /** Maximum portfolio drawdown before emergency close */
+  MAX_PORTFOLIO_DRAWDOWN: 0.15,
+  /** Maximum daily loss limit (percentage of initial balance) */
+  MAX_DAILY_LOSS: 0.05,
 } as const;
 
 /**
@@ -49,6 +59,12 @@ export const POSITION_MONITORING = {
 export const ORDER_EXECUTION = {
   /** Default risk/reward ratio for take profit */
   DEFAULT_RISK_REWARD_RATIO: 2,
+  /** Trailing stop activation threshold (percentage profit) */
+  TRAILING_STOP_ACTIVATION: 0.02,
+  /** Trailing stop distance from peak (percentage) */
+  TRAILING_STOP_DISTANCE: 0.02,
+  /** Breakeven threshold (percentage profit) */
+  BREAKEVEN_THRESHOLD: 0.02,
 } as const;
 
 /**
@@ -88,4 +104,10 @@ export const ACCOUNT_VALIDATION = {
 
   /** Maximum allowed difference for margin calculation validation (in USD) */
   MARGIN_TOLERANCE: 0.01,
+
+  /** Minimum equity to allow trading (in USD) */
+  MIN_EQUITY: 100,
+
+  /** Minimum price value to be considered valid */
+  MIN_VALID_PRICE: 0.000001,
 } as const;

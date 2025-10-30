@@ -77,8 +77,10 @@ export class OrderExecutor {
         ...(price !== undefined ? { price } : {}),
       };
       TradingManager.getInstance().pushOrder(event);
-    } catch {
-      // Silently ignore TradingManager push errors
+    } catch (error) {
+      // TradingManager might not be initialized in backtest mode
+      // This is non-critical, so we log at debug level
+      this.logger.debug('Failed to push order to TradingManager', error);
     }
   }
 
@@ -211,8 +213,10 @@ export class OrderExecutor {
       try {
         const ticker = await this.exchange.getTicker(symbol);
         priceForPnl = (ticker as { price: number }).price;
-      } catch {
+      } catch (error) {
         // If ticker fails, proceed without realized pnl
+        // This is non-critical for position closing
+        this.logger.debug(`Failed to fetch ticker for P&L calculation on ${symbol}`, error);
       }
 
       const order = await this.exchange.placeOrder(symbol, side, exactAmount);

@@ -13,6 +13,14 @@ import {
   calculateMargin,
   calculateNotional,
 } from './position-calculations.js';
+import {
+  safeAdd,
+  safeSubtract,
+  safeMultiply,
+  safeDivide,
+  roundToPrecision,
+  EXCHANGE_PRECISION,
+} from '../utils/precision.js';
 
 /**
  * BacktestExchange - Time-aware exchange for historical data replay
@@ -303,8 +311,15 @@ export class BacktestExchange implements Exchange {
     if (order.side === 'buy' || order.side === 'sell') {
       if (marginRequired <= this.account.availableMargin) {
         this.updatePosition(order.symbol, order.side, order.amount, executedPrice, leverage);
-        this.account.availableMargin -= marginRequired;
-        this.account.usedMargin += marginRequired;
+        // Update account balances using precision-safe arithmetic
+        this.account.availableMargin = roundToPrecision(
+          safeSubtract(this.account.availableMargin, marginRequired).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+        this.account.usedMargin = roundToPrecision(
+          safeAdd(this.account.usedMargin, marginRequired).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
         order.status = 'filled';
         order.price = executedPrice; // Update with actual execution price
       } else {
@@ -343,12 +358,26 @@ export class BacktestExchange implements Exchange {
           oppositePosition.side,
           price,
           oppositePosition.entryPrice,
-          closedSize
+          closedSize,
+          symbol
         );
 
-        this.account.balance += realizedPnl;
-        this.account.availableMargin += oppositePosition.marginUsed + realizedPnl;
-        this.account.usedMargin -= oppositePosition.marginUsed;
+        // Update account with realized P&L using precision-safe arithmetic
+        this.account.balance = roundToPrecision(
+          safeAdd(this.account.balance, realizedPnl).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+
+        const marginReleasePlusPnl = safeAdd(oppositePosition.marginUsed, realizedPnl).toNumber();
+        this.account.availableMargin = roundToPrecision(
+          safeAdd(this.account.availableMargin, marginReleasePlusPnl).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+
+        this.account.usedMargin = roundToPrecision(
+          safeSubtract(this.account.usedMargin, oppositePosition.marginUsed).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
 
         const closeIndex = this.positions.findIndex(p => p === oppositePosition);
         if (closeIndex >= 0) {
@@ -376,22 +405,45 @@ export class BacktestExchange implements Exchange {
           );
         }
       } else {
-        const ratio = amount / oppositePosition.size;
-        const marginToReturn = oppositePosition.marginUsed * ratio;
+        // Partial close calculations using precision-safe arithmetic
+        const ratio = safeDivide(amount, oppositePosition.size, 8).toNumber();
+        const marginToReturn = roundToPrecision(
+          safeMultiply(oppositePosition.marginUsed, ratio).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
 
         const realizedPnl = calculateRealizedPnl(
           oppositePosition.side,
           price,
           oppositePosition.entryPrice,
-          amount
+          amount,
+          symbol
         );
 
-        oppositePosition.size -= amount;
-        oppositePosition.marginUsed -= marginToReturn;
+        // Update position using precision
+        oppositePosition.size = roundToPrecision(
+          safeSubtract(oppositePosition.size, amount).toNumber(),
+          8
+        );
+        oppositePosition.marginUsed = roundToPrecision(
+          safeSubtract(oppositePosition.marginUsed, marginToReturn).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
 
-        this.account.balance += realizedPnl;
-        this.account.usedMargin -= marginToReturn;
-        this.account.availableMargin += marginToReturn + realizedPnl;
+        // Update account using precision-safe arithmetic
+        this.account.balance = roundToPrecision(
+          safeAdd(this.account.balance, realizedPnl).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+        this.account.usedMargin = roundToPrecision(
+          safeSubtract(this.account.usedMargin, marginToReturn).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+        const marginPlusPnl = safeAdd(marginToReturn, realizedPnl).toNumber();
+        this.account.availableMargin = roundToPrecision(
+          safeAdd(this.account.availableMargin, marginPlusPnl).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
       }
     } else {
       const existingPosition = this.positions.find(

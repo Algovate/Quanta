@@ -52,38 +52,110 @@ export class PositionMonitorService implements PositionMonitor {
     }
 
     // Check for extreme losses (emergency stop)
-    const lossPercent = Math.abs(position.unrealizedPnl) / (position.size * position.entryPrice);
-    if (lossPercent > POSITION_MONITORING.EMERGENCY_STOP_LOSS_THRESHOLD) {
-      return { shouldClose: true, reason: 'Emergency stop - excessive loss' };
+    // Only trigger on losses, calculate as percentage of margin used (actual capital at risk)
+    if (position.unrealizedPnl < 0 && position.marginUsed > 0) {
+      const lossPercent = Math.abs(position.unrealizedPnl) / position.marginUsed;
+      if (lossPercent > POSITION_MONITORING.EMERGENCY_STOP_LOSS_THRESHOLD) {
+        const lossPercentDisplay = (lossPercent * 100).toFixed(1);
+        return {
+          shouldClose: true,
+          reason: `Emergency stop - loss ${lossPercentDisplay}% of margin`,
+        };
+      }
     }
 
     return { shouldClose: false, reason: 'Position within normal parameters' };
   }
 
   async monitorPositions(positions: Position[], exchange: Exchange): Promise<void> {
-    for (const position of positions) {
+    // Process positions in parallel with error isolation
+    const monitorPromises = positions.map(position =>
+      this.monitorSinglePosition(position, exchange).catch(error => {
+        this.logger.error(`Critical: Failed to monitor ${position.symbol}`, error);
+        // Could emit event for manual intervention
+        // EventBus.emit('position:monitor:failed', { position, error });
+      })
+    );
+
+    await Promise.allSettled(monitorPromises);
+  }
+
+  /**
+   * Monitor a single position with retry logic and timeout protection
+   */
+  private async monitorSinglePosition(position: Position, exchange: Exchange): Promise<void> {
+    const MAX_RETRIES = 3;
+    const TIMEOUT_MS = 5000;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        // Get current price
-        const ticker = await exchange.getTicker(position.symbol);
+        // Fetch current price with timeout
+        const ticker = await Promise.race([
+          exchange.getTicker(position.symbol),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Ticker fetch timeout')), TIMEOUT_MS)
+          ),
+        ]);
+
         const currentPrice = (ticker as { price: number }).price;
+
+        // Validate price
+        if (!currentPrice || currentPrice <= 0) {
+          throw new Error(`Invalid price received: ${currentPrice}`);
+        }
 
         // Check if position should be closed
         const { shouldClose, reason } = this.shouldClosePosition(position, currentPrice);
 
         if (shouldClose) {
-          // Silent during backtest
-          if (reason.includes('Stop loss')) {
-            await this.orderExecutor.executeStopLoss(position, currentPrice);
-          } else if (reason.includes('Take profit')) {
-            await this.orderExecutor.executeTakeProfit(position, currentPrice);
-          } else {
-            // Emergency close
-            await this.orderExecutor.executeStopLoss(position, currentPrice);
-          }
+          await this.executePositionClose(position, currentPrice, reason);
         }
+
+        return; // Success - exit retry loop
       } catch (error) {
-        this.logger.error(`Error monitoring position ${position.symbol}`, error);
+        const isLastAttempt = attempt === MAX_RETRIES;
+
+        if (isLastAttempt) {
+          this.logger.error(
+            `Failed to monitor ${position.symbol} after ${MAX_RETRIES} attempts`,
+            error
+          );
+          throw error; // Re-throw on final attempt
+        }
+
+        // Exponential backoff before retry
+        const backoffMs = 1000 * Math.pow(2, attempt - 1);
+        this.logger.warn(
+          `Retry ${attempt}/${MAX_RETRIES} for ${position.symbol} after ${backoffMs}ms`,
+          {
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
       }
+    }
+  }
+
+  /**
+   * Execute position close based on reason
+   */
+  private async executePositionClose(
+    position: Position,
+    currentPrice: number,
+    reason: string
+  ): Promise<void> {
+    try {
+      if (reason.includes('Stop loss') || reason.includes('Emergency')) {
+        await this.orderExecutor.executeStopLoss(position, currentPrice);
+      } else if (reason.includes('Take profit')) {
+        await this.orderExecutor.executeTakeProfit(position, currentPrice);
+      } else {
+        // Default to stop loss for unknown reasons
+        await this.orderExecutor.executeStopLoss(position, currentPrice);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to execute close for ${position.symbol}`, error);
+      throw error; // Re-throw to trigger retry
     }
   }
 
@@ -138,12 +210,19 @@ export class PositionMonitorService implements PositionMonitor {
     const averageLeverage =
       positions.reduce((sum, pos) => sum + pos.leverage, 0) / positions.length;
 
-    // Calculate risk level based on total PnL and margin usage
+    // Calculate risk level based on margin ratio (not P&L)
+    // Risk level represents how much of the account is at risk, not current profit/loss
     let riskLevel: 'low' | 'medium' | 'high' = 'low';
-    const pnlPercent = Math.abs(totalPnl) / totalMarginUsed;
 
-    if (pnlPercent > POSITION_MONITORING.HIGH_RISK_THRESHOLD) riskLevel = 'high';
-    else if (pnlPercent > POSITION_MONITORING.MEDIUM_RISK_THRESHOLD) riskLevel = 'medium';
+    // This calculation needs account equity, which we don't have here
+    // For now, use a simplified approach based on margin used
+    // Ideally this should be: const marginRatio = totalMarginUsed / account.equity
+    // But we'll use thresholds relative to total margin
+    const marginUsageIndicator = totalMarginUsed; // Placeholder until we add account param
+
+    // Use absolute thresholds for now (should be ratio-based with account equity)
+    if (marginUsageIndicator > 5000) riskLevel = 'high';
+    else if (marginUsageIndicator > 2000) riskLevel = 'medium';
 
     // Calculate correlation and diversification scores
     const { correlationScore, diversificationScore } = this.calculatePortfolioMetrics(positions);

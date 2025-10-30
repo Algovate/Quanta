@@ -227,7 +227,8 @@ export class MarketDataProvider {
     period: number = 20
   ): { sma20: number; ratio: number; obv?: number } | undefined {
     if (volumes.length < period) return undefined;
-    const volSMA = this.calculateSMA(volumes, period)!;
+    const volSMA = this.calculateSMA(volumes, period);
+    if (volSMA === undefined) return undefined;
     const lastVol = volumes[volumes.length - 1];
     const ratio = volSMA !== 0 ? lastVol / volSMA : 1;
     // OBV optional: cumulative based on close change sign
@@ -254,13 +255,33 @@ export class MarketDataProvider {
   }
 
   private calculateMACD(prices: number[]): { macd: number; signal: number; histogram: number } {
+    if (prices.length < 26) {
+      return { macd: 0, signal: 0, histogram: 0 };
+    }
+
+    // Calculate MACD line (12-period EMA - 26-period EMA)
     const ema12 = this.calculateEMA(prices, 12);
     const ema26 = this.calculateEMA(prices, 26);
     const macd = ema12 - ema26;
 
-    // For simplicity, we'll use a basic signal line calculation
-    // In a real implementation, you'd maintain MACD history for proper signal calculation
-    const signal = macd * 0.9; // Simplified signal line
+    // Calculate signal line (9-period EMA of MACD)
+    // For a proper signal line, we need to calculate MACD for each period
+    // and then apply EMA to those MACD values
+    const macdValues: number[] = [];
+
+    // Calculate MACD for the last 35 periods (26 for EMA26 + 9 for signal)
+    const startIdx = Math.max(0, prices.length - 35);
+    for (let i = startIdx; i < prices.length; i++) {
+      const subset = prices.slice(0, i + 1);
+      if (subset.length >= 26) {
+        const ema12Temp = this.calculateEMA(subset, 12);
+        const ema26Temp = this.calculateEMA(subset, 26);
+        macdValues.push(ema12Temp - ema26Temp);
+      }
+    }
+
+    // Calculate 9-period EMA of MACD values for signal line
+    const signal = macdValues.length >= 9 ? this.calculateEMA(macdValues, 9) : macd * 0.9;
     const histogram = macd - signal;
 
     return { macd, signal, histogram };

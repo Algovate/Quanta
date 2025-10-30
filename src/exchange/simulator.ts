@@ -15,6 +15,19 @@ import {
   calculateMargin,
   calculateNotional,
 } from './position-calculations.js';
+import {
+  safeAdd,
+  safeSubtract,
+  safeMultiply,
+  safeDivide,
+  roundToPrecision,
+  EXCHANGE_PRECISION,
+} from '../utils/precision.js';
+import { Logger } from '../utils/logger.js';
+
+// Constants for memory management
+const MAX_COMPLETED_TRADES = 1000; // Keep last 1000 trades
+const MAX_ORDERS_HISTORY = 500; // Keep last 500 orders
 
 export class SimulatorExchange implements Exchange {
   private account: Account;
@@ -23,6 +36,7 @@ export class SimulatorExchange implements Exchange {
   private marketData: Map<string, Candlestick[]>;
   private dataSourceExchange?: Exchange;
   private completedTrades: CompletedTrade[] = [];
+  private logger = Logger.getInstance('SimulatorExchange');
 
   constructor(initialBalance: number = 10000, dataSourceExchange?: Exchange) {
     this.account = {
@@ -179,7 +193,7 @@ export class SimulatorExchange implements Exchange {
     const orderPrice = price || currentPrice;
 
     const order: Order = {
-      id: `sim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `sim_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
       symbol: normalizedSymbol,
       side,
       amount,
@@ -371,7 +385,8 @@ export class SimulatorExchange implements Exchange {
             status: order.status,
           });
         } catch {
-          // Silently ignore TradingManager push errors
+          // TradingManager might not be initialized in backtest mode
+          // This is non-critical, so we silently ignore
         }
         return;
       }
@@ -391,13 +406,24 @@ export class SimulatorExchange implements Exchange {
       // Execute the order
       this.updatePosition(order.symbol, order.side, order.amount, executedPrice, leverage);
 
-      // Update account balances
-      this.account.availableMargin -= marginRequired;
-      this.account.usedMargin += marginRequired;
+      // Update account balances using precision-safe arithmetic
+      this.account.availableMargin = roundToPrecision(
+        safeSubtract(this.account.availableMargin, marginRequired).toNumber(),
+        EXCHANGE_PRECISION.USDT
+      );
+      this.account.usedMargin = roundToPrecision(
+        safeAdd(this.account.usedMargin, marginRequired).toNumber(),
+        EXCHANGE_PRECISION.USDT
+      );
 
       // Update order with execution details
       order.status = 'filled';
       order.price = executedPrice; // Update with actual execution price
+
+      // Prevent memory leak: keep only last N orders
+      if (this.orders.length > MAX_ORDERS_HISTORY) {
+        this.orders.shift(); // Remove oldest order
+      }
 
       // Emit filled status
       try {
@@ -411,7 +437,8 @@ export class SimulatorExchange implements Exchange {
           status: order.status,
         });
       } catch {
-        // Silently ignore TradingManager push errors
+        // TradingManager might not be initialized in backtest mode
+        // This is non-critical, so we silently ignore
       }
     } else {
       // Insufficient margin - reject order
@@ -427,7 +454,8 @@ export class SimulatorExchange implements Exchange {
           status: order.status,
         });
       } catch {
-        // Silently ignore TradingManager push errors
+        // TradingManager might not be initialized in backtest mode
+        // This is non-critical, so we silently ignore
       }
     }
   }
@@ -460,12 +488,13 @@ export class SimulatorExchange implements Exchange {
         const closedSize = oppositePosition.size;
         const remainingAmount = Math.max(0, amount - closedSize);
 
-        // Calculate realized P&L and record completed trade
+        // Calculate realized P&L and record completed trade using precision-safe arithmetic
         const realizedPnl = calculateRealizedPnl(
           oppositePosition.side,
           price,
           oppositePosition.entryPrice,
-          closedSize
+          closedSize,
+          symbol
         );
 
         const completedTrade = createCompletedTrade(
@@ -478,10 +507,28 @@ export class SimulatorExchange implements Exchange {
 
         this.completedTrades.push(completedTrade);
 
-        // Update account with realized P&L
-        this.account.balance += realizedPnl;
-        this.account.availableMargin += oppositePosition.marginUsed + realizedPnl;
-        this.account.usedMargin -= oppositePosition.marginUsed;
+        // Prevent memory leak: keep only last N trades
+        if (this.completedTrades.length > MAX_COMPLETED_TRADES) {
+          this.completedTrades.shift(); // Remove oldest trade
+        }
+
+        // Update account with realized P&L using precision-safe arithmetic
+        this.account.balance = roundToPrecision(
+          safeAdd(this.account.balance, realizedPnl).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+
+        // Calculate margin release plus P&L with precision
+        const marginReleasePlusPnl = safeAdd(oppositePosition.marginUsed, realizedPnl).toNumber();
+        this.account.availableMargin = roundToPrecision(
+          safeAdd(this.account.availableMargin, marginReleasePlusPnl).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+
+        this.account.usedMargin = roundToPrecision(
+          safeSubtract(this.account.usedMargin, oppositePosition.marginUsed).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
 
         // Close the position
         const closeIndex = this.positions.findIndex(p => p === oppositePosition);
@@ -510,16 +557,30 @@ export class SimulatorExchange implements Exchange {
           );
         }
       } else {
-        // Partial close: reduce position size
-        const ratio = amount / oppositePosition.size;
-        const marginToReturn = oppositePosition.marginUsed * ratio;
+        // Partial close: reduce position size using precision-safe arithmetic
+        const ratio = safeDivide(amount, oppositePosition.size, 8).toNumber();
+        const marginToReturn = roundToPrecision(
+          safeMultiply(oppositePosition.marginUsed, ratio).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+
+        // Update position size and margin using precision
+        oppositePosition.size = roundToPrecision(
+          safeSubtract(oppositePosition.size, amount).toNumber(),
+          8 // Max precision for position sizes
+        );
+        oppositePosition.marginUsed = roundToPrecision(
+          safeSubtract(oppositePosition.marginUsed, marginToReturn).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
 
         // Calculate realized P&L for partial close
         const realizedPnl = calculateRealizedPnl(
           oppositePosition.side,
           price,
           oppositePosition.entryPrice,
-          amount
+          amount,
+          symbol
         );
 
         // For partial closes, create a temporary position object for the closed portion
@@ -537,13 +598,22 @@ export class SimulatorExchange implements Exchange {
 
         this.completedTrades.push(completedTrade);
 
-        oppositePosition.size -= amount;
-        oppositePosition.marginUsed -= marginToReturn;
+        // Position size and margin already updated above with precision
 
-        // Update account with partial realized P&L
-        this.account.balance += realizedPnl;
-        this.account.usedMargin -= marginToReturn;
-        this.account.availableMargin += marginToReturn + realizedPnl;
+        // Update account with partial realized P&L using precision-safe arithmetic
+        this.account.balance = roundToPrecision(
+          safeAdd(this.account.balance, realizedPnl).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+        this.account.usedMargin = roundToPrecision(
+          safeSubtract(this.account.usedMargin, marginToReturn).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+        const marginPlusPnl = safeAdd(marginToReturn, realizedPnl).toNumber();
+        this.account.availableMargin = roundToPrecision(
+          safeAdd(this.account.availableMargin, marginPlusPnl).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
       }
     } else {
       // No opposite position, create or update same-side position
@@ -575,8 +645,15 @@ export class SimulatorExchange implements Exchange {
         existingPosition.leverage = leverage;
 
         // Update account margins
-        this.account.availableMargin -= additionalMargin;
-        this.account.usedMargin += additionalMargin;
+        // Update account margins using precision-safe arithmetic
+        this.account.availableMargin = roundToPrecision(
+          safeSubtract(this.account.availableMargin, additionalMargin).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
+        this.account.usedMargin = roundToPrecision(
+          safeAdd(this.account.usedMargin, additionalMargin).toNumber(),
+          EXCHANGE_PRECISION.USDT
+        );
       } else {
         // Create new position
         this.createNewPosition(symbol, positionSide, amount, price, leverage);
@@ -605,8 +682,10 @@ export class SimulatorExchange implements Exchange {
 
       // Verify leverage consistency
       const leverageCheck = verifyLeverageConsistency(position);
+      // Only log when there is a meaningful mismatch on the notional-based check;
+      // margin-based derived figure can legitimately differ due to definition.
       if (!leverageCheck.isValid) {
-        console.warn(`Position leverage mismatch for ${position.symbol}:`, {
+        this.logger.debug(`Position leverage mismatch for ${position.symbol}:`, {
           stored: leverageCheck.stored,
           fromNotional: leverageCheck.fromNotional,
           fromMargin: leverageCheck.fromMargin,

@@ -345,8 +345,10 @@ export class TradingWorkflow {
           try {
             const ticker = await this.exchange.getTicker(symbol);
             price = (ticker as { price: number }).price;
-          } catch {
-            // Ignore ticker fetch errors
+          } catch (error) {
+            // Ticker fetch can fail for various reasons (network, rate limit, etc.)
+            // This is non-critical for signal buffering, so we log and continue
+            this.logger.debug(`Failed to fetch ticker for ${symbol}`, error);
           }
           EventBus.emit('signal:buffer', {
             id: `${sig.coin}-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,

@@ -391,8 +391,10 @@ export class APIServer {
             });
           }
         }
-      } catch {
-        // Silently ignore errors in klines fetching
+      } catch (error) {
+        // Klines fetching can fail for various reasons (network, exchange, etc.)
+        // This is non-critical for the server, so we log and continue
+        logger.warn('Failed to fetch klines for WebSocket broadcast', error);
       }
     });
 
