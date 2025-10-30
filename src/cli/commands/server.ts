@@ -6,9 +6,7 @@ import { handleAsync } from '../../utils/error-handler.js';
 
 export class ServerCommands {
   static register(program: Command): void {
-    const serverCommand = program
-      .command('server')
-      .description('Web server for trading UI');
+    const serverCommand = program.command('server').description('Web server for trading UI');
 
     serverCommand
       .command('start')
@@ -41,7 +39,7 @@ export class ServerCommands {
 
   private static async start(options: { port: string }): Promise<void> {
     const port = parseInt(options.port, 10);
-    
+
     if (isNaN(port)) {
       throw new Error(`Invalid port: ${options.port}`);
     }
@@ -53,10 +51,8 @@ export class ServerCommands {
 
     try {
       const server = new APIServer(port);
-      
-      spinner.succeed(
-        `Server started successfully on port ${port}`
-      );
+
+      spinner.succeed(`Server started successfully on port ${port}`);
 
       console.log(chalk.green('\n✅ Server is running!\n'));
       console.log(chalk.blue('📊 Server Information:'));
@@ -82,9 +78,9 @@ export class ServerCommands {
         server.stop();
         process.exit(0);
       });
-    } catch (error) {
+    } catch {
       spinner.fail('Failed to start server');
-      throw error;
+      throw new Error('Failed to start server');
     }
   }
 
@@ -96,20 +92,19 @@ export class ServerCommands {
 
   private static async showStatus(): Promise<void> {
     console.log(chalk.cyan('📊 API Server Status'));
-    
+
     try {
       const response = await fetch('http://localhost:3001/health');
       const data: any = await response.json();
-      
+
       if (response.ok) {
         console.log(chalk.green('✅ Server is running'));
         console.log(chalk.gray(`   Uptime: ${Date.now() - data.timestamp}ms`));
         console.log(chalk.gray('   API: http://localhost:3001'));
       }
-    } catch (error) {
+    } catch {
       console.log(chalk.red('❌ Server is not running'));
       console.log(chalk.yellow('   Start the server with: quanta server start'));
     }
   }
 }
-

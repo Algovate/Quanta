@@ -225,7 +225,13 @@ export class TradeCommands {
     const exchangeApiKey = updatedConfig.exchange?.apiKey;
     const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
 
-    this.displayModeConfiguration(mode, exchangeName, exchangeTestnet, exchangeApiKey, exchangeApiSecret);
+    this.displayModeConfiguration(
+      mode,
+      exchangeName,
+      exchangeTestnet,
+      exchangeApiKey,
+      exchangeApiSecret
+    );
 
     console.log(`   Coins: ${coins.join(', ')}`);
     console.log('');

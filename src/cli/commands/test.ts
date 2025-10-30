@@ -12,10 +12,10 @@ export class TestCommands {
       .option('-c, --coin <coin>', 'Coin to test', 'BTC')
       .option('-t, --timeframe <timeframe>', 'Timeframe to test', '3m')
       .option('-l, --limit <limit>', 'Number of candles to fetch', '20')
-      .action(async (options) => {
+      .action(async options => {
         try {
           await TestCommands.testKline(options);
-        } catch (error) {
+        } catch {
           // Error already displayed in testKline, just exit
           process.exit(1);
         }
@@ -27,7 +27,7 @@ export class TestCommands {
       .option('-c, --coin <coin>', 'Coin to test', 'BTC')
       .option('-t, --timeframe <timeframe>', 'Timeframe to test', '3m')
       .option('-l, --limit <limit>', 'Number of candles to fetch', '10')
-      .action(async (options) => {
+      .action(async options => {
         await handleAsync(async () => {
           await TestCommands.testExchanges(options);
         }, 'TestCommands.exchanges');
@@ -39,7 +39,7 @@ export class TestCommands {
       .option('-c, --coin <coin>', 'Coin to test', 'BTC')
       .option('-t, --timeframe <timeframe>', 'Timeframe to test', '3m')
       .option('-l, --limit <limit>', 'Number of candles to fetch', '5')
-      .action(async (options) => {
+      .action(async options => {
         await handleAsync(async () => {
           await TestCommands.testDataSources(options);
         }, 'TestCommands.data-sources');
@@ -51,7 +51,7 @@ export class TestCommands {
       .option('-t, --type <type>', 'AI type to test: mock, real, or both', 'both')
       .option('-c, --coin <coin>', 'Coin to test', 'BTC')
       .option('-v, --verbose', 'Show detailed output', false)
-      .action(async (options) => {
+      .action(async options => {
         await handleAsync(async () => {
           await TestCommands.testAI(options);
         }, 'TestCommands.ai');
@@ -65,7 +65,11 @@ export class TestCommands {
     limit: string;
   }): Promise<void> {
     console.log(chalk.cyan('📊 Testing K-line Data Retrieval'));
-    console.log(chalk.gray(`Exchange: ${options.exchange}, Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`));
+    console.log(
+      chalk.gray(
+        `Exchange: ${options.exchange}, Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`
+      )
+    );
 
     const symbol = `${options.coin}/USDT`;
 
@@ -147,18 +151,26 @@ export class TestCommands {
     // Show data source information
     console.log(chalk.blue('📊 Data Source Information:'));
     console.log(`   Exchange: ${exchange.constructor.name}`);
-    console.log(`   Exchange Name: ${exchange.getExchangeName ? exchange.getExchangeName() : 'Simulator'}`);
-    console.log(`   Mode: ${exchange.constructor.name === 'SimulatorExchange' ? 'Simulation (Mock Data)' : 'Live Trading (Real Data)'}`);
+    console.log(
+      `   Exchange Name: ${exchange.getExchangeName ? exchange.getExchangeName() : 'Simulator'}`
+    );
+    console.log(
+      `   Mode: ${exchange.constructor.name === 'SimulatorExchange' ? 'Simulation (Mock Data)' : 'Live Trading (Real Data)'}`
+    );
     console.log(`   Testnet: ${exchange.isTestnetMode ? exchange.isTestnetMode() : 'N/A'}`);
     console.log(`   Symbol: ${symbol}`);
     console.log(`   Timeframe: ${options.timeframe}`);
-    console.log(`   Data Range: ${new Date(klines[0].timestamp).toLocaleString()} - ${new Date(klines[klines.length - 1].timestamp).toLocaleString()}`);
+    console.log(
+      `   Data Range: ${new Date(klines[0].timestamp).toLocaleString()} - ${new Date(klines[klines.length - 1].timestamp).toLocaleString()}`
+    );
 
     // Show latest 3 candles
     console.log(chalk.gray('\n📈 Latest 3 candles:'));
     klines.slice(-3).forEach((kline, index) => {
       const time = new Date(kline.timestamp).toLocaleTimeString();
-      console.log(`   ${index + 1}. ${time}: O:$${kline.open.toFixed(2)} H:$${kline.high.toFixed(2)} L:$${kline.low.toFixed(2)} C:$${kline.close.toFixed(2)} V:${kline.volume.toFixed(2)}`);
+      console.log(
+        `   ${index + 1}. ${time}: O:$${kline.open.toFixed(2)} H:$${kline.high.toFixed(2)} L:$${kline.low.toFixed(2)} C:$${kline.close.toFixed(2)} V:${kline.volume.toFixed(2)}`
+      );
     });
 
     // Test 2: Market data with indicators
@@ -169,9 +181,12 @@ export class TestCommands {
       const data = marketData[0];
       console.log(chalk.green('✅ Market data retrieved:'));
       console.log(chalk.blue('📊 Market Analysis:'));
-      const dataSource = exchange.constructor.name === 'SimulatorExchange'
-        ? 'Simulated Market'
-        : exchange.getExchangeName ? exchange.getExchangeName() : 'Unknown Exchange';
+      const dataSource =
+        exchange.constructor.name === 'SimulatorExchange'
+          ? 'Simulated Market'
+          : exchange.getExchangeName
+            ? exchange.getExchangeName()
+            : 'Unknown Exchange';
       console.log(`   Data Source: ${dataSource}`);
       console.log(`   Analysis Method: Technical Indicators (100-period)`);
       console.log(`   Current Price: $${data.currentPrice.toFixed(2)}`);
@@ -187,16 +202,21 @@ export class TestCommands {
     // Test 3: Account info (skip if no API credentials for non-simulator exchanges)
     console.log(chalk.yellow('\n🔍 Test 3: Account Information'));
     const isSimulator = exchange.constructor.name === 'SimulatorExchange';
-    const hasApiKey = !!(options.exchange === 'simulator' ||
-                       process.env[`${options.exchange.toUpperCase()}_API_KEY`]);
+    const hasApiKey = !!(
+      options.exchange === 'simulator' || process.env[`${options.exchange.toUpperCase()}_API_KEY`]
+    );
 
     if (isSimulator || hasApiKey) {
       try {
         const account = await exchange.getAccount();
         console.log(chalk.green('✅ Account info retrieved:'));
         console.log(chalk.blue('💰 Account Details:'));
-        console.log(`   Account Type: ${isSimulator ? 'Simulation Account' : 'Live Trading Account'}`);
-        console.log(`   Exchange: ${exchange.getExchangeName ? exchange.getExchangeName() : 'Simulator'}`);
+        console.log(
+          `   Account Type: ${isSimulator ? 'Simulation Account' : 'Live Trading Account'}`
+        );
+        console.log(
+          `   Exchange: ${exchange.getExchangeName ? exchange.getExchangeName() : 'Simulator'}`
+        );
         console.log(`   Balance: $${account.balance.toFixed(2)}`);
         console.log(`   Equity: $${account.equity.toFixed(2)}`);
         console.log(`   Available Margin: $${account.availableMargin.toFixed(2)}`);
@@ -208,7 +228,11 @@ export class TestCommands {
       }
     } else {
       console.log(chalk.yellow('⚠️  Account info skipped (requires API credentials)'));
-      console.log(chalk.gray(`   Set ${options.exchange.toUpperCase()}_API_KEY and ${options.exchange.toUpperCase()}_API_SECRET to test account data`));
+      console.log(
+        chalk.gray(
+          `   Set ${options.exchange.toUpperCase()}_API_KEY and ${options.exchange.toUpperCase()}_API_SECRET to test account data`
+        )
+      );
     }
 
     // Summary
@@ -221,7 +245,11 @@ export class TestCommands {
     limit: string;
   }): Promise<void> {
     console.log(chalk.cyan('🏦 Testing Multiple Exchanges'));
-    console.log(chalk.gray(`Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`));
+    console.log(
+      chalk.gray(
+        `Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`
+      )
+    );
 
     const symbol = `${options.coin}/USDT`;
     const exchanges = ['simulator', 'okx', 'coinbase', 'hyperliquid'];
@@ -275,7 +303,11 @@ export class TestCommands {
         const provider = new MarketDataProvider(exchange);
 
         // Test K-line data
-        const klines = await exchange.getCandlesticks(symbol, options.timeframe, parseInt(options.limit));
+        const klines = await exchange.getCandlesticks(
+          symbol,
+          options.timeframe,
+          parseInt(options.limit)
+        );
         console.log(chalk.green(`✅ K-line data: ${klines.length} candles`));
 
         if (klines.length > 0) {
@@ -295,7 +327,6 @@ export class TestCommands {
         console.log(chalk.green(`✅ Account: $${account.balance.toFixed(2)}`));
 
         console.log(chalk.green(`🎯 ${exchangeName.toUpperCase()} test passed!\n`));
-
       } catch (error: any) {
         console.log(chalk.red(`❌ ${exchangeName.toUpperCase()} test failed:`));
         console.log(chalk.red(`   ${error.message}\n`));
@@ -309,7 +340,11 @@ export class TestCommands {
     limit: string;
   }): Promise<void> {
     console.log(chalk.cyan('🔄 Testing Multi-Data Sources'));
-    console.log(chalk.gray(`Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`));
+    console.log(
+      chalk.gray(
+        `Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`
+      )
+    );
 
     const config = getConfig();
     const symbol = `${options.coin}/USDT`;
@@ -330,7 +365,11 @@ export class TestCommands {
     console.log('='.repeat(50));
 
     try {
-      const klines = await exchange.getCandlesticks(symbol, options.timeframe, parseInt(options.limit));
+      const klines = await exchange.getCandlesticks(
+        symbol,
+        options.timeframe,
+        parseInt(options.limit)
+      );
       console.log(chalk.green(`   ✅ K-line data: ${klines.length} candles`));
 
       if (klines.length > 0) {
@@ -346,7 +385,6 @@ export class TestCommands {
       console.log(chalk.green(`   ✅ Positions: ${positions.length} active`));
 
       console.log(chalk.green(`   🎯 Exchange test passed!\n`));
-
     } catch (error: any) {
       console.log(chalk.red(`   ❌ Exchange test failed:`));
       console.log(chalk.red(`      ${error.message}\n`));
@@ -472,7 +510,12 @@ export class TestCommands {
             defaultStopLoss: 0.03,
           };
 
-          const signals = await realAI.generateTradingSignal(marketData, account, positions, context);
+          const signals = await realAI.generateTradingSignal(
+            marketData,
+            account,
+            positions,
+            context
+          );
 
           console.log(chalk.green(`✅ Real AI generated ${signals.length} signal(s)`));
 

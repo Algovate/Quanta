@@ -41,12 +41,12 @@ export function getSymbolPrecision(symbol: string): number {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function roundToPrecision(value: number | any, decimals: number): number {
   // Check if value is already a Decimal by checking for toNumber method
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+
   const decimal =
     typeof value === 'object' && value !== null && 'toNumber' in value
       ? value
       : new DecimalConstructor(value);
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+
   return decimal.toDecimalPlaces(decimals).toNumber();
 }
 
@@ -65,22 +65,19 @@ export function roundToSymbolPrecision(value: number | any, symbol: string): num
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function safeDivide(a: number | any, b: number | any, decimals?: number): any {
   // Check if values are already Decimal instances
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+
   const decimalA =
     typeof a === 'object' && a !== null && 'toNumber' in a ? a : new DecimalConstructor(a);
   const decimalB =
     typeof b === 'object' && b !== null && 'toNumber' in b ? b : new DecimalConstructor(b);
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   if (decimalB.isZero()) {
     throw new Error('Division by zero');
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   const result = decimalA.div(decimalB);
 
   if (decimals !== undefined) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     return result.toDecimalPlaces(decimals);
   }
 
@@ -101,17 +98,15 @@ export function safeDivideNum(a: number | any, b: number | any, decimals?: numbe
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function safeMultiply(a: number | any, b: number | any, decimals?: number): any {
   // Check if values are already Decimal instances
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+
   const decimalA =
     typeof a === 'object' && a !== null && 'toNumber' in a ? a : new DecimalConstructor(a);
   const decimalB =
     typeof b === 'object' && b !== null && 'toNumber' in b ? b : new DecimalConstructor(b);
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   const result = decimalA.mul(decimalB);
 
   if (decimals !== undefined) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     return result.toDecimalPlaces(decimals);
   }
 
@@ -132,17 +127,15 @@ export function safeMultiplyNum(a: number | any, b: number | any, decimals?: num
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function safeAdd(a: number | any, b: number | any, decimals?: number): any {
   // Check if values are already Decimal instances
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+
   const decimalA =
     typeof a === 'object' && a !== null && 'toNumber' in a ? a : new DecimalConstructor(a);
   const decimalB =
     typeof b === 'object' && b !== null && 'toNumber' in b ? b : new DecimalConstructor(b);
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   const result = decimalA.add(decimalB);
 
   if (decimals !== undefined) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     return result.toDecimalPlaces(decimals);
   }
 
@@ -163,17 +156,15 @@ export function safeAddNum(a: number | any, b: number | any, decimals?: number):
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function safeSubtract(a: number | any, b: number | any, decimals?: number): any {
   // Check if values are already Decimal instances
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+
   const decimalA =
     typeof a === 'object' && a !== null && 'toNumber' in a ? a : new DecimalConstructor(a);
   const decimalB =
     typeof b === 'object' && b !== null && 'toNumber' in b ? b : new DecimalConstructor(b);
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   const result = decimalA.sub(decimalB);
 
   if (decimals !== undefined) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     return result.toDecimalPlaces(decimals);
   }
 
@@ -191,13 +182,12 @@ export function safeSubtractNum(a: number | any, b: number | any, decimals?: num
 /**
  * Calculate percentage with precision
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export function safePercentage(
   value: number | any,
   percentage: number | any,
   decimals?: number
 ): any {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   const decimalValue =
     typeof value === 'object' && value !== null && 'toNumber' in value
       ? value
@@ -208,11 +198,10 @@ export function safePercentage(
       : new DecimalConstructor(percentage);
 
   // percentage is typically 0.05 for 5%, etc.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+
   const result = decimalValue.mul(decimalPercentage);
 
   if (decimals !== undefined) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     return result.toDecimalPlaces(decimals);
   }
 
@@ -222,7 +211,7 @@ export function safePercentage(
 /**
  * Calculate percentage returning number
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export function safePercentageNum(
   value: number | any,
   percentage: number | any,
@@ -237,12 +226,11 @@ export function safePercentageNum(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function validateNumber(value: number | any): boolean {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     const decimal =
       typeof value === 'object' && value !== null && 'toNumber' in value
         ? value
         : new DecimalConstructor(value);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+
     return decimal.isFinite() && !decimal.isNaN();
   } catch {
     return false;
@@ -259,10 +247,8 @@ export function toNumber(value: any, decimals?: number): number {
   }
 
   if (decimals !== undefined) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     return value.toDecimalPlaces(decimals).toNumber();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   return value.toNumber();
 }

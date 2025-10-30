@@ -1,7 +1,14 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import fs from 'fs';
-import { getConfig, saveConfig, resetConfig, getConfigFilePath, getConfigExamplePath, validateConfig } from '../../config/settings.js';
+import {
+  getConfig,
+  saveConfig,
+  resetConfig,
+  getConfigFilePath,
+  getConfigExamplePath,
+  validateConfig,
+} from '../../config/settings.js';
 import { handleAsync } from '../../utils/error-handler.js';
 
 export class ConfigCommands {
@@ -10,7 +17,7 @@ export class ConfigCommands {
       .command('show')
       .description('Show current configuration')
       .option('-f, --format <format>', 'Output format: json, yaml, table', 'table')
-      .action(async (options) => {
+      .action(async options => {
         await handleAsync(async () => {
           await ConfigCommands.showConfig(options);
         }, 'ConfigCommands.show');
@@ -90,7 +97,9 @@ export class ConfigCommands {
       console.log(`   Coins: ${config.trading.coins.join(', ')}`);
       console.log(`   Cycle Period: ${config.trading.cyclePeriod / 1000}s`);
       console.log(`   Max Positions: ${config.trading.maxPositions}`);
-      console.log(`   Leverage Range: ${config.trading.leverageRange[0]}x - ${config.trading.leverageRange[1]}x`);
+      console.log(
+        `   Leverage Range: ${config.trading.leverageRange[0]}x - ${config.trading.leverageRange[1]}x`
+      );
       console.log(`   Stop Loss: ${(config.trading.stopLoss * 100).toFixed(1)}%`);
       console.log(`   Max Risk: ${(config.trading.maxRisk * 100).toFixed(1)}%`);
       console.log('');
@@ -106,7 +115,8 @@ export class ConfigCommands {
       if (config.notifications) {
         console.log(chalk.blue('🔔 Notification Settings:'));
         console.log(`   Enabled: ${config.notifications.enabled ? 'yes' : 'no'}`);
-        if (config.notifications.webhook) console.log(`   Webhook: ${config.notifications.webhook.substring(0, 20)}...`);
+        if (config.notifications.webhook)
+          console.log(`   Webhook: ${config.notifications.webhook.substring(0, 20)}...`);
         console.log('');
       }
 
@@ -127,7 +137,7 @@ export class ConfigCommands {
   private static async setConfig(key: string, value: string): Promise<void> {
     const config = getConfig();
     const keys = key.split('.');
-    
+
     // Navigate to the nested property
     let current: any = config;
     for (let i = 0; i < keys.length - 1; i++) {
@@ -194,7 +204,6 @@ export class ConfigCommands {
       } else {
         console.log(chalk.yellow('⚠️  Configuration file: Not found (using defaults)'));
       }
-
     } catch (error) {
       console.log(chalk.red('❌ Configuration validation failed:'));
       console.log(chalk.red(`   ${error}`));

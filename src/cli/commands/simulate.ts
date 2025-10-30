@@ -74,7 +74,7 @@ export class SimulateCommands {
         const configData = fs.readFileSync(configPath, 'utf8');
         return JSON.parse(configData);
       }
-    } catch (error) {
+    } catch {
       console.warn(chalk.yellow('Warning: Could not load simulate.json, using defaults'));
     }
     return {};
@@ -83,13 +83,19 @@ export class SimulateCommands {
   static register(program: Command): void {
     program
       .command('cycle')
-      .description('Simulate a complete trade cycle (Perception → Decision → Execution → Monitoring)')
+      .description(
+        'Simulate a complete trade cycle (Perception → Decision → Execution → Monitoring)'
+      )
       .option('-c, --coins <coins>', 'Comma-separated list of coins (e.g., BTC,ETH,SOL)', 'BTC')
       .option('-b, --initial-balance <amount>', 'Initial balance in USD', '10000')
       .option('-v, --verbose', 'Show detailed logging', false)
       .option('-p, --max-positions <number>', 'Maximum number of concurrent positions', '3')
-      .option('-a, --ai <type>', 'AI type: mock or real (requires API key in config/simulate.json)', 'mock')
-      .action(async (options) => {
+      .option(
+        '-a, --ai <type>',
+        'AI type: mock or real (requires API key in config/simulate.json)',
+        'mock'
+      )
+      .action(async options => {
         if (SimulateCommands.isRunning) {
           return;
         }
@@ -118,9 +124,13 @@ export class SimulateCommands {
 
     // Parse and validate options with simulation config as base
     const coins = options.coins.split(',').map((c: string) => c.trim().toUpperCase());
-    const initialBalance = parseFloat(options.initialBalance) || simulateConfig.simulation?.defaultInitialBalance || 10000;
+    const initialBalance =
+      parseFloat(options.initialBalance) ||
+      simulateConfig.simulation?.defaultInitialBalance ||
+      10000;
     const verbose = options.verbose || simulateConfig.logging?.verbose || false;
-    const maxPositions = parseInt(options.maxPositions) || simulateConfig.simulation?.defaultMaxPositions || 6;
+    const maxPositions =
+      parseInt(options.maxPositions) || simulateConfig.simulation?.defaultMaxPositions || 6;
 
     // Validate options
     const aiType = options.ai.toLowerCase();
@@ -152,7 +162,9 @@ export class SimulateCommands {
 
     console.log(chalk.cyan('🎯 Quanta - Multi-Coin Trade Cycle Simulation'));
     console.log(chalk.gray('='.repeat(60)));
-    console.log(`Coins: ${coins.join(', ')} | Initial Balance: $${initialBalance.toLocaleString()}`);
+    console.log(
+      `Coins: ${coins.join(', ')} | Initial Balance: $${initialBalance.toLocaleString()}`
+    );
     console.log(`Max Positions: ${maxPositions}`);
     console.log(`AI Type: ${useRealAI ? 'Real AI (OpenRouter)' : 'Mock AI'}`);
     if (useRealAI && simulateConfig.ai?.real?.model) {
@@ -177,7 +189,9 @@ export class SimulateCommands {
           console.error(chalk.red('\n❌ Error: Real AI mode requires API key'));
           console.log(chalk.yellow('\n💡 To use real AI:'));
           console.log(chalk.yellow('  1. Get API key from https://openrouter.ai'));
-          console.log(chalk.yellow('  2. Set environment variable or update config/simulate.json:'));
+          console.log(
+            chalk.yellow('  2. Set environment variable or update config/simulate.json:')
+          );
           console.log(chalk.gray('     export OPENROUTER_API_KEY="your_api_key_here"'));
           console.log(chalk.gray('     or edit config/simulate.json: ai.real.apiKey'));
           console.log(chalk.yellow('  3. Or use Mock AI (default):'));
@@ -193,7 +207,7 @@ export class SimulateCommands {
 
       const riskParams = {
         maxRiskPerTrade: simulateConfig.risk?.maxRiskPerTrade || 0.05,
-        maxTotalRisk: simulateConfig.risk?.maxTotalRisk || 0.30,
+        maxTotalRisk: simulateConfig.risk?.maxTotalRisk || 0.3,
         maxPositions: maxPositions,
         defaultStopLoss: simulateConfig.risk?.stopLoss || 0.03,
         maxLeverage: 1, // No leverage for simulations
@@ -219,7 +233,6 @@ export class SimulateCommands {
         useRealAI,
         maxPositions
       );
-
     } catch (error) {
       spinner.fail('Simulation failed');
 
@@ -254,7 +267,7 @@ export class SimulateCommands {
     useRealAI: boolean,
     maxPositions: number
   ): Promise<void> {
-    let cycleStartTime = Date.now();
+    const cycleStartTime = Date.now();
 
     console.log(chalk.blue('\n📊 PHASE 1: PERCEPTION (Market Data Collection)'));
     console.log(chalk.gray('-'.repeat(60)));
@@ -283,11 +296,14 @@ export class SimulateCommands {
 
     if (verbose) {
       // Group market data by coin for better display
-      const marketDataByCoin = allMarketData.reduce((acc, data) => {
-        if (!acc[data.coin]) acc[data.coin] = [];
-        acc[data.coin].push(data);
-        return acc;
-      }, {} as Record<string, any[]>);
+      const marketDataByCoin = allMarketData.reduce(
+        (acc, data) => {
+          if (!acc[data.coin]) acc[data.coin] = [];
+          acc[data.coin].push(data);
+          return acc;
+        },
+        {} as Record<string, any[]>
+      );
 
       Object.entries(marketDataByCoin).forEach(([coin, dataArray]) => {
         console.log(chalk.gray(`\n  📈 ${coin} Analysis:`));
@@ -295,21 +311,46 @@ export class SimulateCommands {
           console.log(chalk.gray(`    ✓ ${data.timeframe}: ${data.candlesticks.length} candles`));
           console.log(chalk.gray(`      - Current Price: $${data.currentPrice.toFixed(2)}`));
           console.log(chalk.gray(`      - Trend: ${data.trend} | Volatility: ${data.volatility}`));
-          console.log(chalk.gray(`      - EMA20: $${data.indicators.ema20.toFixed(2)} | EMA50: $${data.indicators.ema50.toFixed(2)}`));
-          console.log(chalk.gray(`      - MACD: ${data.indicators.macd.macd.toFixed(4)} | Signal: ${data.indicators.macd.signal.toFixed(4)}`));
-          console.log(chalk.gray(`      - RSI(14): ${data.indicators.rsi14.toFixed(2)} | ATR(14): $${data.indicators.atr14.toFixed(2)}`));
+          console.log(
+            chalk.gray(
+              `      - EMA20: $${data.indicators.ema20.toFixed(2)} | EMA50: $${data.indicators.ema50.toFixed(2)}`
+            )
+          );
+          console.log(
+            chalk.gray(
+              `      - MACD: ${data.indicators.macd.macd.toFixed(4)} | Signal: ${data.indicators.macd.signal.toFixed(4)}`
+            )
+          );
+          console.log(
+            chalk.gray(
+              `      - RSI(14): ${data.indicators.rsi14.toFixed(2)} | ATR(14): $${data.indicators.atr14.toFixed(2)}`
+            )
+          );
           if (data.indicators.bollinger) {
             const b = data.indicators.bollinger;
-            console.log(chalk.gray(`      - Bollinger: pos=${b.position} | %B=${b.percentB.toFixed(2)} | BW=${b.bandwidth.toFixed(3)}`));
+            console.log(
+              chalk.gray(
+                `      - Bollinger: pos=${b.position} | %B=${b.percentB.toFixed(2)} | BW=${b.bandwidth.toFixed(3)}`
+              )
+            );
           }
           if (data.indicators.volume) {
-            console.log(chalk.gray(`      - Volume: SMA20=${data.indicators.volume.sma20.toFixed(0)} | Ratio=${data.indicators.volume.ratio.toFixed(2)}`));
+            console.log(
+              chalk.gray(
+                `      - Volume: SMA20=${data.indicators.volume.sma20.toFixed(0)} | Ratio=${data.indicators.volume.ratio.toFixed(2)}`
+              )
+            );
           }
           if (data.indicators.supportResistance) {
             const sr = data.indicators.supportResistance;
             const ds = sr.distToSupport != null ? (sr.distToSupport * 100).toFixed(2) + '%' : 'n/a';
-            const dr = sr.distToResistance != null ? (sr.distToResistance * 100).toFixed(2) + '%' : 'n/a';
-            console.log(chalk.gray(`      - S/R: S=${sr.support ?? 'n/a'} | R=${sr.resistance ?? 'n/a'} | dS=${ds} | dR=${dr}`));
+            const dr =
+              sr.distToResistance != null ? (sr.distToResistance * 100).toFixed(2) + '%' : 'n/a';
+            console.log(
+              chalk.gray(
+                `      - S/R: S=${sr.support ?? 'n/a'} | R=${sr.resistance ?? 'n/a'} | dS=${ds} | dR=${dr}`
+              )
+            );
           }
         });
       });
@@ -362,11 +403,14 @@ export class SimulateCommands {
       console.log(chalk.yellow('  No trading signals generated'));
     } else {
       // Group signals by coin for better display
-      const signalsByCoin = signals.reduce((acc, signal) => {
-        if (!acc[signal.coin]) acc[signal.coin] = [];
-        acc[signal.coin].push(signal);
-        return acc;
-      }, {} as Record<string, any[]>);
+      const signalsByCoin = signals.reduce(
+        (acc, signal) => {
+          if (!acc[signal.coin]) acc[signal.coin] = [];
+          acc[signal.coin].push(signal);
+          return acc;
+        },
+        {} as Record<string, any[]>
+      );
 
       Object.entries(signalsByCoin).forEach(([coin, coinSignals]) => {
         console.log(chalk.green(`\n  📊 ${coin} Signals:`));
@@ -384,7 +428,9 @@ export class SimulateCommands {
               console.log(chalk.gray(`      - Stop Loss: ${(signal.stop_loss * 100).toFixed(1)}%`));
             }
             if (signal.profit_target) {
-              console.log(chalk.gray(`      - Take Profit: ${(signal.profit_target * 100).toFixed(1)}%`));
+              console.log(
+                chalk.gray(`      - Take Profit: ${(signal.profit_target * 100).toFixed(1)}%`)
+              );
             }
             console.log(chalk.gray(`      - Reasoning: ${signal.reasoning}`));
           }
@@ -446,7 +492,9 @@ export class SimulateCommands {
     await exchange.getAccount();
 
     if (updatedPositions.length > 0) {
-      spinner4.succeed(`Monitoring ${updatedPositions.length} position(s) across ${coins.length} coin(s)`);
+      spinner4.succeed(
+        `Monitoring ${updatedPositions.length} position(s) across ${coins.length} coin(s)`
+      );
 
       // Simulate price movement for all coins
       console.log(chalk.gray('  ✓ Simulating market movements...'));
@@ -469,41 +517,47 @@ export class SimulateCommands {
     totalPnl = finalAccount.equity - initialBalance;
 
     if (finalPositions.length > 0 && verbose) {
-        console.log(chalk.gray('\n  📊 Portfolio Overview:'));
-        console.log(chalk.gray(`    - Total Exposure: $${portfolioMetrics.totalExposure.toFixed(2)}`));
-        console.log(chalk.gray(`    - Total Leverage: ${portfolioMetrics.leverage.toFixed(2)}x`));
-        console.log(chalk.gray(`    - Total Unrealized P&L: $${portfolioMetrics.totalUnrealizedPnl.toFixed(2)}`));
+      console.log(chalk.gray('\n  📊 Portfolio Overview:'));
+      console.log(
+        chalk.gray(`    - Total Exposure: $${portfolioMetrics.totalExposure.toFixed(2)}`)
+      );
+      console.log(chalk.gray(`    - Total Leverage: ${portfolioMetrics.leverage.toFixed(2)}x`));
+      console.log(
+        chalk.gray(`    - Total Unrealized P&L: $${portfolioMetrics.totalUnrealizedPnl.toFixed(2)}`)
+      );
 
-        console.log(chalk.gray('\n  📊 Position Details by Symbol:'));
-        Object.entries(portfolioMetrics.exposureBySymbol).forEach(([symbol, exposure]) => {
-          const pnl = portfolioMetrics.pnlBySymbol[symbol] || 0;
-          // Calculate P&L percentage as ROI on invested capital (exposure)
-          // For accurate ROI: P&L / exposure * 100
-          const pnlPercent = exposure > 0
-            ? (pnl / exposure) * 100
-            : 0;
-          console.log(chalk.gray(`    📈 ${symbol}:`));
-          console.log(chalk.gray(`      - Exposure: $${exposure.toFixed(2)}`));
-          console.log(chalk.gray(`      - P&L: $${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}% ROI)`));
-        });
+      console.log(chalk.gray('\n  📊 Position Details by Symbol:'));
+      Object.entries(portfolioMetrics.exposureBySymbol).forEach(([symbol, exposure]) => {
+        const pnl = portfolioMetrics.pnlBySymbol[symbol] || 0;
+        // Calculate P&L percentage as ROI on invested capital (exposure)
+        // For accurate ROI: P&L / exposure * 100
+        const pnlPercent = exposure > 0 ? (pnl / exposure) * 100 : 0;
+        console.log(chalk.gray(`    📈 ${symbol}:`));
+        console.log(chalk.gray(`      - Exposure: $${exposure.toFixed(2)}`));
+        console.log(chalk.gray(`      - P&L: $${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}% ROI)`));
+      });
 
-        console.log(chalk.gray('\n  📊 Individual Positions:'));
+      console.log(chalk.gray('\n  📊 Individual Positions:'));
 
-        // Header
-        console.log(chalk.gray('\n    │ SIDE     │ COIN │ LEVERAGE │ NOTIONAL    │ UNREAL P&L'));
-        console.log(chalk.gray('    ├──────────┼──────┼──────────┼──────────────┼────────────'));
+      // Header
+      console.log(chalk.gray('\n    │ SIDE     │ COIN │ LEVERAGE │ NOTIONAL    │ UNREAL P&L'));
+      console.log(chalk.gray('    ├──────────┼──────┼──────────┼──────────────┼────────────'));
 
-        // Position rows
-        finalPositions.forEach(position => {
-          const sideColor = position.side === 'long' ? chalk.green : chalk.red;
-          const sideText = position.side === 'long' ? 'LONG' : 'SHORT';
-          const leverageText = `${position.leverage}X`;
-          const notionalText = `$${position.notional.toFixed(2)}`;
-          const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
-          const pnlText = `$${position.unrealizedPnl.toFixed(2)}`;
+      // Position rows
+      finalPositions.forEach(position => {
+        const sideColor = position.side === 'long' ? chalk.green : chalk.red;
+        const sideText = position.side === 'long' ? 'LONG' : 'SHORT';
+        const leverageText = `${position.leverage}X`;
+        const notionalText = `$${position.notional.toFixed(2)}`;
+        const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
+        const pnlText = `$${position.unrealizedPnl.toFixed(2)}`;
 
-          console.log(chalk.gray(`    │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.cyan(notionalText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(11))}`));
-        });
+        console.log(
+          chalk.gray(
+            `    │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.cyan(notionalText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(11))}`
+          )
+        );
+      });
     }
 
     // Generate Summary
@@ -517,7 +571,10 @@ export class SimulateCommands {
     );
   }
 
-  private static async simulatePriceMovement(exchange: SimulatorExchange, symbol: string): Promise<void> {
+  private static async simulatePriceMovement(
+    exchange: SimulatorExchange,
+    symbol: string
+  ): Promise<void> {
     // This is a simple simulation - in a real scenario, you'd get live price updates
     console.log(chalk.gray('  ✓ Simulating market movement...'));
 
@@ -527,7 +584,11 @@ export class SimulateCommands {
     const movement = (Math.random() - 0.5) * 0.02; // ±1% movement
     const newPrice = currentPrice * (1 + movement);
 
-    console.log(chalk.gray(`  ✓ Price movement: $${currentPrice.toFixed(2)} → $${newPrice.toFixed(2)} (${(movement * 100).toFixed(2)}%)`));
+    console.log(
+      chalk.gray(
+        `  ✓ Price movement: $${currentPrice.toFixed(2)} → $${newPrice.toFixed(2)} (${(movement * 100).toFixed(2)}%)`
+      )
+    );
   }
 
   private static generateSummary(
@@ -551,7 +612,9 @@ export class SimulateCommands {
     console.log(chalk.magenta(`TOTAL ACCOUNT VALUE: $${finalAccount.equity.toFixed(2)}`));
     console.log(`Initial Balance:    $${initialBalance.toLocaleString()}`);
     console.log(`Available Cash:    $${availableCash.toFixed(2)}`);
-    console.log(`Total P&L:          ${pnlColor(`${pnlSign}$${totalPnl.toFixed(2)} (${pnlSign}${pnlPercent.toFixed(2)}%)`)}`);
+    console.log(
+      `Total P&L:          ${pnlColor(`${pnlSign}$${totalPnl.toFixed(2)} (${pnlSign}${pnlPercent.toFixed(2)}%)`)}`
+    );
     console.log(`Coins Analyzed:     ${coinsAnalyzed}`);
     console.log(`Orders Executed:    ${executedOrders}`);
     console.log(`Open Positions:     ${openPositions}`);
