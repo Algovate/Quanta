@@ -1,7 +1,7 @@
 import { MarketData } from '../data/market.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
 import { TechnicalIndicators } from '../types/index.js';
-import { AIContext } from './agent.js';
+import type { AIContext } from './agent.js';
 import {
   MOCK_AI_SIGNALS,
   TECHNICAL_THRESHOLDS,

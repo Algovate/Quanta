@@ -316,6 +316,20 @@ export class TestCommands {
           console.log(`   📊 Volume: ${latest.volume.toFixed(2)}`);
         }
 
+        // Test ticker (spot check)
+        try {
+          const ticker = await exchange.getTicker(symbol);
+          console.log(
+            chalk.green(
+              `✅ Ticker: $${(ticker.price ?? 0).toFixed(2)} @ ${new Date(
+                ticker.timestamp ?? Date.now()
+              ).toLocaleTimeString()}`
+            )
+          );
+        } catch (e: any) {
+          console.log(chalk.yellow(`⚠️  Ticker unavailable: ${e?.message || String(e)}`));
+        }
+
         // Test market data
         const marketData = await provider.getMarketData(symbol, [options.timeframe]);
         if (marketData.length > 0) {
