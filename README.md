@@ -21,6 +21,20 @@ quanta trade start --mode paper --coins BTC,ETH
 quanta test ai --type mock --coin BTC
 ```
 
+### API Server (for QuantaWeb UI)
+
+```bash
+# Start REST/WebSocket API on port 3001
+npm run api:dev
+```
+
+The QuantaWeb UI expects the API at `http://localhost:3001`. Configure the UI via:
+
+```env
+NEXT_PUBLIC_QUANTA_API_URL=http://localhost:3001
+NEXT_PUBLIC_QUANTA_WS_URL=ws://localhost:3001
+```
+
 ## Core Features
 
 - **🤖 AI Trading**: OpenRouter integration with multiple AI models
@@ -95,6 +109,8 @@ EXCHANGE_API_KEY=your_key
 EXCHANGE_API_SECRET=your_secret
 ```
 
+Additional runtime configuration is managed via JSON files in `config/` (see below) and can be inspected/modified through CLI commands.
+
 ### Configuration Files
 
 - **Trading**: `config/config.json`
@@ -153,8 +169,9 @@ To prevent accidental reverse positions when closing:
 ```bash
 npm run dev      # Development mode
 npm run build    # Build project
-npm run lint      # Lint code
-npm run format    # Format code
+npm run lint     # Lint code
+npm run type-check  # TypeScript type checks (no emit)
+npm run format   # Format code
 ```
 
 ## Risk Warning
