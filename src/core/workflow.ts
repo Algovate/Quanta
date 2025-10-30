@@ -365,6 +365,8 @@ export class TradingWorkflow {
       }
 
       // Execute all signals
+      // Track trades before execution to compute per-cycle tradeCount delta
+      const tradesBefore = this.state.totalTrades;
       for (const signal of signals) {
         await this.executeSignal(signal, account, positions);
       }
@@ -387,7 +389,19 @@ export class TradingWorkflow {
       // 7. Log cycle summary with latest data
       this.logCycleSummary(updatedAccount, updatedPositions, signals);
 
-      // Notify cycle completion via event bus
+      // Prepare per-cycle action distribution
+      const actionCounts = { LONG: 0, SHORT: 0, CLOSE: 0, HOLD: 0 } as {
+        LONG: number;
+        SHORT: number;
+        CLOSE: number;
+        HOLD: number;
+      };
+      for (const s of signals) {
+        const a = s.action as 'LONG' | 'SHORT' | 'CLOSE' | 'HOLD';
+        if (a in actionCounts) actionCounts[a]++;
+      }
+
+      // Notify cycle completion via event bus (include per-cycle deltas)
       EventBus.emit('cycle:complete', {
         cycleCount: this.state.cycleCount,
         timestamp: Date.now(),
@@ -395,6 +409,10 @@ export class TradingWorkflow {
         totalSignals: this.state.totalSignals,
         totalTrades: this.state.totalTrades,
         totalPnl: this.state.totalPnl,
+        signalCount: signals.length,
+        tradeCount: this.state.totalTrades - tradesBefore,
+        cyclePnl: this.state.cyclePnl ?? 0,
+        actionCounts,
       });
     } catch (error) {
       this.emitLog('error', `Error in trading cycle: ${error}`);

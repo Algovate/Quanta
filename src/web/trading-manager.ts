@@ -16,6 +16,12 @@ export interface TradingState {
   totalTrades: number;
   totalPnl: number;
   winRate: number;
+  actionTotals?: {
+    LONG: number;
+    SHORT: number;
+    CLOSE: number;
+    HOLD: number;
+  };
 }
 
 export class TradingManager extends EventEmitter {
@@ -41,6 +47,7 @@ export class TradingManager extends EventEmitter {
       totalTrades: 0,
       totalPnl: 0,
       winRate: 0,
+      actionTotals: { LONG: 0, SHORT: 0, CLOSE: 0, HOLD: 0 },
     };
   }
 
@@ -56,7 +63,28 @@ export class TradingManager extends EventEmitter {
     EventBus.on('cycle:start', payload => this.emit('cycle:start', payload));
     EventBus.on('cycle:signals', payload => this.emit('cycle:signals', payload));
     EventBus.on('cycle:execution', payload => this.emit('cycle:execution', payload));
-    EventBus.on('cycle:complete', payload => this.emit('cycle:complete', payload));
+    EventBus.on('cycle:complete', payload => {
+      // update cumulative state from payload
+      this.state.cycleCount = payload.cycleCount;
+      this.state.lastUpdate = payload.timestamp;
+      this.state.totalSignals = payload.totalSignals;
+      this.state.totalTrades = payload.totalTrades;
+      this.state.totalPnl = payload.totalPnl;
+
+      // accumulate totals by action
+      if (!this.state.actionTotals) {
+        this.state.actionTotals = { LONG: 0, SHORT: 0, CLOSE: 0, HOLD: 0 };
+      }
+      const at = this.state.actionTotals;
+      at.LONG += payload.actionCounts?.LONG ?? 0;
+      at.SHORT += payload.actionCounts?.SHORT ?? 0;
+      at.CLOSE += payload.actionCounts?.CLOSE ?? 0;
+      at.HOLD += payload.actionCounts?.HOLD ?? 0;
+
+      // emit updates
+      this.emit('cycle:complete', payload);
+      this.emit('system:state', { ...this.state });
+    });
     EventBus.on('cycle:error', payload => this.emit('cycle:error', payload));
     EventBus.on('signal:buffer', payload =>
       this.pushSignal({

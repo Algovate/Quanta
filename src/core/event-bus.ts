@@ -44,9 +44,20 @@ type EventPayloads = {
     cycleCount: number;
     timestamp: number;
     duration: number;
-    totalSignals: number;
-    totalTrades: number;
-    totalPnl: number;
+    totalSignals: number; // cumulative
+    totalTrades: number; // cumulative
+    totalPnl: number; // cumulative
+    // New: per-cycle deltas for UI timelines
+    signalCount: number; // signals generated in this cycle
+    tradeCount: number; // trades executed in this cycle
+    cyclePnl: number; // P&L change during this cycle
+    // Per-cycle action distribution (canonical backend types)
+    actionCounts: {
+      LONG: number;
+      SHORT: number;
+      CLOSE: number;
+      HOLD: number;
+    };
   };
 
   /** Emitted when an error occurs during a cycle */
