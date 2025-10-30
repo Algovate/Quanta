@@ -1,10 +1,12 @@
 import { Command } from 'commander';
-import { TradeCommands } from './commands/trade.js';
-import { TestCommands } from './commands/test.js';
-import { ConfigCommands } from './commands/config.js';
-import { HelpCommand } from './commands/help.js';
-import { SimulateCommands } from './commands/simulate.js';
-import { ServerCommands } from './commands/server.js';
+import {
+  TradeCommands,
+  TestCommands,
+  ConfigCommands,
+  HelpCommand,
+  SimulateCommands,
+  ServerCommands,
+} from './commands/index.js';
 
 export class CLIApplication {
   private program: Command;

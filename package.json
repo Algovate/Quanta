@@ -21,7 +21,9 @@
     "web:dev": "cd web && npm run dev",
     "web:build": "cd web && npm run build",
     "api:dev": "tsx src/web/start-server.ts",
-    "dev:all": "npm run api:dev & npm run web:dev"
+    "dev:all": "npm run api:dev & npm run web:dev",
+    "test:okx:ticker": "tsx tests/okx/ticker.ts",
+    "test:okx:unit": "tsx tests/okx/okx.unit.ts"
   },
   "keywords": [
     "quanta",

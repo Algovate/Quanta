@@ -1,22 +1,21 @@
-import { BacktestExchange } from '../exchange/backtest.js';
-import { HistoricalDataProvider } from '../data/historical.js';
-import { MarketDataProvider, MarketData } from '../data/market.js';
-import { MockAIAgent } from '../ai/mock-agent.js';
-import { RiskManager } from '../execution/risk.js';
-import { OrderExecutor } from '../execution/orders.js';
-import { PositionMonitorService } from '../execution/monitor.js';
 import {
-  BacktestResult,
-  BacktestConfig,
-  EquitySnapshot,
-  CompletedTrade,
-  Account,
-  Position,
-  TradingSignal,
-  PerformanceMetrics,
+  BacktestExchange,
+  type Account,
+  type Position,
+  type TradingSignal,
+} from '../exchange/index.js';
+import { HistoricalDataProvider, MarketDataProvider, type MarketData } from '../data/index.js';
+import { MockAIAgent } from '../ai/index.js';
+import { RiskManager, OrderExecutor, PositionMonitorService } from '../execution/index.js';
+import {
+  type BacktestResult,
+  type BacktestConfig,
+  type EquitySnapshot,
+  type CompletedTrade,
+  type PerformanceMetrics,
 } from '../types/index.js';
-import { PerformanceAnalytics } from '../analytics/performance.js';
-import { Logger } from '../utils/logger.js';
+import { PerformanceAnalytics } from '../analytics/index.js';
+import { Logger } from '../utils/index.js';
 import cliProgress from 'cli-progress';
 
 // Constants

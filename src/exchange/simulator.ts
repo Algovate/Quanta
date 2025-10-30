@@ -1,29 +1,14 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { TradingManager } from '../web/trading-manager.js';
 import { normalizeSymbol } from '../utils/symbol-utils.js';
-import { shouldCreatePositionAfterClose } from '../utils/position-close-utils.js';
-import { POSITION_CLOSING } from '../execution/constants.js';
 import { CompletedTrade } from '../types/index.js';
 import {
-  createPosition,
   updatePositionWithPrice,
   verifyLeverageConsistency,
-  updateAccountEquity as calculateAccountEquity,
-  calculateRealizedPnl,
-  createCompletedTrade,
-  calculateAverageEntryPrice,
-  calculateMargin,
-  calculateNotional,
+  updateAccountEquity,
 } from './position-calculations.js';
-import {
-  safeAdd,
-  safeSubtract,
-  safeMultiply,
-  safeDivide,
-  roundToPrecision,
-  EXCHANGE_PRECISION,
-} from '../utils/precision.js';
 import { Logger } from '../utils/logger.js';
+import { PositionUpdateManager } from './position-manager.js';
 
 // Constants for memory management
 const MAX_COMPLETED_TRADES = 1000; // Keep last 1000 trades
@@ -37,6 +22,7 @@ export class SimulatorExchange implements Exchange {
   private dataSourceExchange?: Exchange;
   private completedTrades: CompletedTrade[] = [];
   private logger = Logger.getInstance('SimulatorExchange');
+  private positionManager: PositionUpdateManager;
 
   constructor(initialBalance: number = 10000, dataSourceExchange?: Exchange) {
     this.account = {
@@ -53,6 +39,14 @@ export class SimulatorExchange implements Exchange {
     this.marketData = new Map();
     this.dataSourceExchange = dataSourceExchange;
     this.completedTrades = [];
+
+    // Initialize position manager with config
+    this.positionManager = new PositionUpdateManager({
+      account: this.account,
+      positions: this.positions,
+      completedTrades: this.completedTrades,
+      maxCompletedTrades: MAX_COMPLETED_TRADES,
+    });
 
     // Only initialize mock market data if no external data source is provided
     if (!this.dataSourceExchange) {
@@ -257,7 +251,7 @@ export class SimulatorExchange implements Exchange {
 
   private initializeMarketData(): void {
     const symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'];
-    const timeframes = ['3m', '4h'];
+    const timeframes = ['1m', '3m', '4h', '1d'];
 
     symbols.forEach(symbol => {
       timeframes.forEach(timeframe => {
@@ -403,17 +397,13 @@ export class SimulatorExchange implements Exchange {
 
     // Check margin requirements
     if (marginRequired <= this.account.availableMargin) {
-      // Execute the order
-      this.updatePosition(order.symbol, order.side, order.amount, executedPrice, leverage);
-
-      // Update account balances using precision-safe arithmetic
-      this.account.availableMargin = roundToPrecision(
-        safeSubtract(this.account.availableMargin, marginRequired).toNumber(),
-        EXCHANGE_PRECISION.USDT
-      );
-      this.account.usedMargin = roundToPrecision(
-        safeAdd(this.account.usedMargin, marginRequired).toNumber(),
-        EXCHANGE_PRECISION.USDT
+      // Execute the order using position manager
+      this.positionManager.updatePosition(
+        order.symbol,
+        order.side,
+        order.amount,
+        executedPrice,
+        leverage
       );
 
       // Update order with execution details
@@ -460,221 +450,6 @@ export class SimulatorExchange implements Exchange {
     }
   }
 
-  private updatePosition(
-    symbol: string,
-    side: 'buy' | 'sell',
-    amount: number,
-    price: number,
-    leverage: number = 1
-  ): void {
-    const positionSide = side === 'buy' ? 'long' : 'short';
-    const oppositeSide = positionSide === 'long' ? 'short' : 'long';
-
-    symbol = normalizeSymbol(symbol);
-
-    // Check if there's an opposite position to close/reduce
-    const oppositePosition = this.positions.find(
-      p => p.symbol === symbol && p.side === oppositeSide
-    );
-
-    if (oppositePosition) {
-      // Closing or reducing opposite position
-      // Use tolerance from constants to handle floating point errors and price volatility
-      const tolerance = oppositePosition.size * POSITION_CLOSING.CLOSE_TOLERANCE_PERCENT;
-      const isFullClose = amount >= oppositePosition.size - tolerance;
-
-      if (isFullClose) {
-        // Full close: remove position completely
-        const closedSize = oppositePosition.size;
-        const remainingAmount = Math.max(0, amount - closedSize);
-
-        // Calculate realized P&L and record completed trade using precision-safe arithmetic
-        const realizedPnl = calculateRealizedPnl(
-          oppositePosition.side,
-          price,
-          oppositePosition.entryPrice,
-          closedSize,
-          symbol
-        );
-
-        const completedTrade = createCompletedTrade(
-          oppositePosition,
-          price,
-          Date.now(),
-          this.completedTrades.length + 1,
-          'signal'
-        );
-
-        this.completedTrades.push(completedTrade);
-
-        // Prevent memory leak: keep only last N trades
-        if (this.completedTrades.length > MAX_COMPLETED_TRADES) {
-          this.completedTrades.shift(); // Remove oldest trade
-        }
-
-        // Update account with realized P&L using precision-safe arithmetic
-        this.account.balance = roundToPrecision(
-          safeAdd(this.account.balance, realizedPnl).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        // Calculate margin release plus P&L with precision
-        const marginReleasePlusPnl = safeAdd(oppositePosition.marginUsed, realizedPnl).toNumber();
-        this.account.availableMargin = roundToPrecision(
-          safeAdd(this.account.availableMargin, marginReleasePlusPnl).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        this.account.usedMargin = roundToPrecision(
-          safeSubtract(this.account.usedMargin, oppositePosition.marginUsed).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        // Close the position
-        const closeIndex = this.positions.findIndex(p => p === oppositePosition);
-        if (closeIndex >= 0) {
-          this.positions.splice(closeIndex, 1);
-        }
-
-        // Check if we should create a new position after closing
-        // This prevents CLOSE orders from accidentally creating new positions
-        const closeCheck = shouldCreatePositionAfterClose(
-          remainingAmount,
-          closedSize,
-          symbol,
-          positionSide
-        );
-
-        if (closeCheck.shouldCreatePosition) {
-          if (closeCheck.warningMessage) {
-            console.warn(closeCheck.warningMessage);
-          }
-          this.createNewPosition(symbol, positionSide, remainingAmount, price, leverage);
-        } else if (closeCheck.shouldLogRemainder) {
-          console.debug(
-            `Ignoring small remaining amount (${remainingAmount}) after closing ${symbol} position ` +
-              `(likely floating point precision). Closed size: ${closedSize}`
-          );
-        }
-      } else {
-        // Partial close: reduce position size using precision-safe arithmetic
-        const ratio = safeDivide(amount, oppositePosition.size, 8).toNumber();
-        const marginToReturn = roundToPrecision(
-          safeMultiply(oppositePosition.marginUsed, ratio).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        // Update position size and margin using precision
-        oppositePosition.size = roundToPrecision(
-          safeSubtract(oppositePosition.size, amount).toNumber(),
-          8 // Max precision for position sizes
-        );
-        oppositePosition.marginUsed = roundToPrecision(
-          safeSubtract(oppositePosition.marginUsed, marginToReturn).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        // Calculate realized P&L for partial close
-        const realizedPnl = calculateRealizedPnl(
-          oppositePosition.side,
-          price,
-          oppositePosition.entryPrice,
-          amount,
-          symbol
-        );
-
-        // For partial closes, create a temporary position object for the closed portion
-        const partialPosition: Position = {
-          ...oppositePosition,
-          size: amount,
-        };
-        const completedTrade = createCompletedTrade(
-          partialPosition,
-          price,
-          Date.now(),
-          this.completedTrades.length + 1,
-          'signal'
-        );
-
-        this.completedTrades.push(completedTrade);
-
-        // Position size and margin already updated above with precision
-
-        // Update account with partial realized P&L using precision-safe arithmetic
-        this.account.balance = roundToPrecision(
-          safeAdd(this.account.balance, realizedPnl).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-        this.account.usedMargin = roundToPrecision(
-          safeSubtract(this.account.usedMargin, marginToReturn).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-        const marginPlusPnl = safeAdd(marginToReturn, realizedPnl).toNumber();
-        this.account.availableMargin = roundToPrecision(
-          safeAdd(this.account.availableMargin, marginPlusPnl).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-      }
-    } else {
-      // No opposite position, create or update same-side position
-      const existingPosition = this.positions.find(
-        p => p.symbol === symbol && p.side === positionSide
-      );
-
-      if (existingPosition) {
-        // Update existing position with average entry price
-        existingPosition.entryPrice = calculateAverageEntryPrice(
-          existingPosition.size,
-          existingPosition.entryPrice,
-          amount,
-          price
-        );
-        existingPosition.size += amount;
-
-        // Calculate margin with leverage for the additional position
-        const additionalMargin = calculateMargin(amount, price, leverage);
-        existingPosition.marginUsed += additionalMargin;
-
-        // Update notional with leverage (matches real exchanges: size * markPrice * leverage)
-        // Note: leverage might have changed, use the new leverage value
-        existingPosition.notional = calculateNotional(
-          existingPosition.size,
-          existingPosition.markPrice,
-          leverage
-        );
-        existingPosition.leverage = leverage;
-
-        // Update account margins
-        // Update account margins using precision-safe arithmetic
-        this.account.availableMargin = roundToPrecision(
-          safeSubtract(this.account.availableMargin, additionalMargin).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-        this.account.usedMargin = roundToPrecision(
-          safeAdd(this.account.usedMargin, additionalMargin).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-      } else {
-        // Create new position
-        this.createNewPosition(symbol, positionSide, amount, price, leverage);
-      }
-    }
-  }
-
-  /**
-   * Create a new position using shared calculation utilities
-   */
-  private createNewPosition(
-    symbol: string,
-    side: 'long' | 'short',
-    amount: number,
-    price: number,
-    leverage: number = 1
-  ): void {
-    const position = createPosition(symbol, side, amount, price, leverage, Date.now());
-    this.positions.push(position);
-  }
-
   private async updateAllPositions(): Promise<void> {
     for (const position of this.positions) {
       const currentPrice = await this.getCurrentPrice(position.symbol);
@@ -704,6 +479,6 @@ export class SimulatorExchange implements Exchange {
   private async updateAccountEquity(): Promise<void> {
     await this.updateAllPositions();
     this.account.timestamp = Date.now();
-    calculateAccountEquity(this.account, this.positions);
+    updateAccountEquity(this.account, this.positions);
   }
 }

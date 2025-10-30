@@ -9,6 +9,7 @@ import { EventBus } from './event-bus.js';
 import { aggregatePositionMetrics } from '../execution/position-utils.js';
 import { validateAccount } from '../utils/account-validation.js';
 import { Logger } from '../utils/logger.js';
+import { CycleLogger, CycleDisplay } from './display/index.js';
 import chalk from 'chalk';
 
 export interface SystemState {
@@ -54,6 +55,8 @@ export class TradingWorkflow {
   private state: SystemState;
   private intervalId?: NodeJS.Timeout;
   private logger: Logger;
+  private cycleLogger: CycleLogger;
+  private cycleDisplay: CycleDisplay;
   private isBackgroundMode: boolean;
 
   constructor(
@@ -71,6 +74,8 @@ export class TradingWorkflow {
     this.orderExecutor = new OrderExecutor(exchange, this.riskManager);
     this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor);
     this.logger = Logger.getInstance('Workflow');
+    this.cycleLogger = new CycleLogger();
+    this.cycleDisplay = new CycleDisplay();
     this.isBackgroundMode = this.logger.isBackgroundMode();
 
     this.state = {
@@ -105,56 +110,7 @@ export class TradingWorkflow {
    * - Background: Buffered logger output for efficiency
    */
   private emitLog(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
-    const plainMessage = this.stripAnsiCodes(message);
-
-    if (this.isBackgroundMode) {
-      // Background mode: Use buffered logger for both console and file output
-      this.logToStructuredLogger(level, plainMessage);
-    } else {
-      // Foreground mode: Direct console output for immediate chronological display
-      this.logToConsole(level, plainMessage);
-    }
-  }
-
-  /**
-   * Log directly to console (foreground mode only)
-   */
-  private logToConsole(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
-    switch (level) {
-      case 'error':
-        console.error(message);
-        break;
-      case 'warn':
-        console.warn(message);
-        break;
-      default:
-        console.log(message);
-    }
-  }
-
-  /**
-   * Log to structured logger (background mode only)
-   */
-  private logToStructuredLogger(
-    level: 'info' | 'warn' | 'error' | 'success',
-    message: string
-  ): void {
-    switch (level) {
-      case 'error':
-        this.logger.error(message, undefined);
-        break;
-      case 'warn':
-        this.logger.warn(message);
-        break;
-      default:
-        this.logger.info(message);
-    }
-  }
-
-  private stripAnsiCodes(str: string): string {
-    // Strip ANSI color codes for file logging
-    // eslint-disable-next-line no-control-regex
-    return str.replace(/\u001b\[[0-9;]*m/g, '');
+    this.cycleLogger.log(level, message);
   }
 
   async start(): Promise<void> {
@@ -209,18 +165,8 @@ export class TradingWorkflow {
 
       // Display cycle header with emphasis
       this.emitLog('info', '');
-      this.emitLog(
-        'info',
-        chalk.bold.white(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-      );
-      this.emitLog(
-        'info',
-        chalk.bold.cyan(`  🔄 CYCLE ${this.state.cycleCount} - ${new Date().toLocaleTimeString()}`)
-      );
-      this.emitLog(
-        'info',
-        chalk.bold.white(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-      );
+      const cycleHeader = this.cycleDisplay.formatCycleHeader(this.state.cycleCount);
+      this.emitLog('info', cycleHeader);
 
       this.emitLog('info', chalk.gray('⏳ Fetching account data...'));
 
@@ -312,28 +258,8 @@ export class TradingWorkflow {
 
         // Console output with formatting (only if not background mode)
         if (!this.isBackgroundMode) {
-          signals.forEach((signal, index) => {
-            const actionColor =
-              signal.action === 'LONG'
-                ? chalk.green
-                : signal.action === 'SHORT'
-                  ? chalk.red
-                  : signal.action === 'CLOSE'
-                    ? chalk.yellow
-                    : chalk.cyan;
-            const confidenceColor =
-              signal.confidence > 0.7
-                ? chalk.green
-                : signal.confidence > 0.55
-                  ? chalk.yellow
-                  : chalk.red;
-
-            console.log(
-              `\n   [${index + 1}] ${signal.coin}: ${actionColor(signal.action)} (confidence: ${confidenceColor(signal.confidence.toFixed(2))})`
-            );
-            console.log(`       Reasoning: ${signal.reasoning}`);
-          });
-          console.log(''); // Empty line before execution results
+          const signalsFormatted = this.cycleDisplay.formatSignals(signals);
+          this.cycleLogger.logFormatted(signalsFormatted);
         }
 
         // Push signals to UI buffer via event bus (decoupled)
@@ -486,12 +412,13 @@ export class TradingWorkflow {
 
         if (signal.action === 'CLOSE') {
           // For CLOSE, avoid leverage/margin estimates (misleading for exits)
-          const realizedText =
-            result.realizedPnl !== undefined
-              ? ` | Realized P&L: $${result.realizedPnl.toFixed(2)}`
-              : '';
-          const feesText = result.fees ? ` | Fees: $${result.fees.toFixed(2)}` : '';
-          const detailMsg = `✅ Executed CLOSE signal for ${signal.coin} @ $${actualPrice.toFixed(2)}${realizedText}${feesText}`;
+          const detailMsg = this.cycleDisplay.formatExecutionMessage({
+            action: 'CLOSE',
+            coin: signal.coin,
+            price: actualPrice,
+            realizedPnl: result.realizedPnl,
+            fees: result.fees,
+          });
           this.emitLog('success', detailMsg);
         } else {
           const leverage = sizing.leverage || 1;
@@ -499,7 +426,14 @@ export class TradingWorkflow {
           const estimatedPositionSize = sizing.suggestedSize * actualPrice;
           const estimatedMargin = estimatedPositionSize / leverage;
 
-          const detailMsg = `✅ Executed ${signal.action} signal for ${signal.coin} @ $${actualPrice.toFixed(2)} | ${leverage}x leverage | Est. Notional: $${estimatedPositionSize.toFixed(2)} | Est. Margin: $${estimatedMargin.toFixed(2)}`;
+          const detailMsg = this.cycleDisplay.formatExecutionMessage({
+            action: signal.action,
+            coin: signal.coin,
+            price: actualPrice,
+            leverage,
+            notional: estimatedPositionSize,
+            margin: estimatedMargin,
+          });
           this.emitLog('success', detailMsg);
         }
       } else if (!result.success) {

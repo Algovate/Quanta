@@ -1,26 +1,8 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { normalizeSymbol } from '../utils/symbol-utils.js';
-import { shouldCreatePositionAfterClose } from '../utils/position-close-utils.js';
-import { POSITION_CLOSING } from '../execution/constants.js';
 import { CompletedTrade } from '../types/index.js';
-import {
-  createPosition,
-  updatePositionWithPrice,
-  updateAccountEquity as calculateAccountEquity,
-  calculateRealizedPnl,
-  createCompletedTrade,
-  calculateAverageEntryPrice,
-  calculateMargin,
-  calculateNotional,
-} from './position-calculations.js';
-import {
-  safeAdd,
-  safeSubtract,
-  safeMultiply,
-  safeDivide,
-  roundToPrecision,
-  EXCHANGE_PRECISION,
-} from '../utils/precision.js';
+import { updatePositionWithPrice, updateAccountEquity } from './position-calculations.js';
+import { PositionUpdateManager } from './position-manager.js';
 
 /**
  * BacktestExchange - Time-aware exchange for historical data replay
@@ -33,6 +15,7 @@ export class BacktestExchange implements Exchange {
   private currentTime: number;
   private historicalData: Map<string, Candlestick[]>;
   private completedTrades: CompletedTrade[] = [];
+  private positionManager: PositionUpdateManager;
 
   constructor(initialBalance: number, initialTime: number) {
     this.account = {
@@ -48,6 +31,18 @@ export class BacktestExchange implements Exchange {
     this.orders = [];
     this.currentTime = initialTime;
     this.historicalData = new Map();
+
+    // Initialize position manager with config for backtest
+    this.positionManager = new PositionUpdateManager({
+      account: this.account,
+      positions: this.positions,
+      completedTrades: this.completedTrades,
+      currentTime: initialTime,
+      onAccountUpdate: () => {
+        // Sync time on account updates for backtest
+        this.account.timestamp = this.currentTime;
+      },
+    });
   }
 
   /**
@@ -56,6 +51,8 @@ export class BacktestExchange implements Exchange {
    */
   setCurrentTime(timestamp: number): void {
     this.currentTime = timestamp;
+    // Update position manager with new time instead of recreating it
+    this.positionManager.updateCurrentTime(timestamp);
   }
 
   getCurrentTime(): number {
@@ -229,27 +226,17 @@ export class BacktestExchange implements Exchange {
     }
 
     const currentPrice = this.getCurrentPrice(position.symbol);
+    const side = position.side === 'long' ? 'sell' : 'buy'; // Opposite side to close
 
-    // Record completed trade using shared utility
-    const completedTrade = createCompletedTrade(
-      position,
+    // Use position manager to close the position properly
+    // This ensures all account updates, margin calculations, and trade recording are consistent
+    this.positionManager.updatePosition(
+      position.symbol,
+      side,
+      position.size,
       currentPrice,
-      this.currentTime,
-      this.completedTrades.length + 1,
-      'end_of_backtest'
+      position.leverage
     );
-
-    const pnl = completedTrade.pnl;
-
-    this.completedTrades.push(completedTrade);
-
-    // Update account
-    this.account.balance += pnl;
-    this.account.availableMargin += position.marginUsed + pnl;
-    this.account.usedMargin -= position.marginUsed;
-
-    // Remove position
-    this.positions.splice(positionIndex, 1);
   }
 
   private getCurrentPrice(symbol: string): number {
@@ -310,15 +297,12 @@ export class BacktestExchange implements Exchange {
 
     if (order.side === 'buy' || order.side === 'sell') {
       if (marginRequired <= this.account.availableMargin) {
-        this.updatePosition(order.symbol, order.side, order.amount, executedPrice, leverage);
-        // Update account balances using precision-safe arithmetic
-        this.account.availableMargin = roundToPrecision(
-          safeSubtract(this.account.availableMargin, marginRequired).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-        this.account.usedMargin = roundToPrecision(
-          safeAdd(this.account.usedMargin, marginRequired).toNumber(),
-          EXCHANGE_PRECISION.USDT
+        this.positionManager.updatePosition(
+          order.symbol,
+          order.side,
+          order.amount,
+          executedPrice,
+          leverage
         );
         order.status = 'filled';
         order.price = executedPrice; // Update with actual execution price
@@ -326,172 +310,6 @@ export class BacktestExchange implements Exchange {
         order.status = 'rejected';
       }
     }
-  }
-
-  private updatePosition(
-    symbol: string,
-    side: 'buy' | 'sell',
-    amount: number,
-    price: number,
-    leverage: number = 1
-  ): void {
-    const positionSide = side === 'buy' ? 'long' : 'short';
-    const oppositeSide = positionSide === 'long' ? 'short' : 'long';
-
-    symbol = normalizeSymbol(symbol);
-
-    const oppositePosition = this.positions.find(
-      p => p.symbol === symbol && p.side === oppositeSide
-    );
-
-    if (oppositePosition) {
-      // Closing or reducing opposite position
-      // Use tolerance from constants to handle floating point errors and price volatility
-      const tolerance = oppositePosition.size * POSITION_CLOSING.CLOSE_TOLERANCE_PERCENT;
-      const isFullClose = amount >= oppositePosition.size - tolerance;
-
-      if (isFullClose) {
-        const closedSize = oppositePosition.size;
-        const remainingAmount = Math.max(0, amount - closedSize);
-
-        const realizedPnl = calculateRealizedPnl(
-          oppositePosition.side,
-          price,
-          oppositePosition.entryPrice,
-          closedSize,
-          symbol
-        );
-
-        // Update account with realized P&L using precision-safe arithmetic
-        this.account.balance = roundToPrecision(
-          safeAdd(this.account.balance, realizedPnl).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        const marginReleasePlusPnl = safeAdd(oppositePosition.marginUsed, realizedPnl).toNumber();
-        this.account.availableMargin = roundToPrecision(
-          safeAdd(this.account.availableMargin, marginReleasePlusPnl).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        this.account.usedMargin = roundToPrecision(
-          safeSubtract(this.account.usedMargin, oppositePosition.marginUsed).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        const closeIndex = this.positions.findIndex(p => p === oppositePosition);
-        if (closeIndex >= 0) {
-          this.positions.splice(closeIndex, 1);
-        }
-
-        // Check if we should create a new position after closing
-        // This prevents CLOSE orders from accidentally creating new positions
-        const closeCheck = shouldCreatePositionAfterClose(
-          remainingAmount,
-          closedSize,
-          symbol,
-          positionSide
-        );
-
-        if (closeCheck.shouldCreatePosition) {
-          if (closeCheck.warningMessage) {
-            console.warn(closeCheck.warningMessage);
-          }
-          this.createNewPosition(symbol, positionSide, remainingAmount, price, leverage);
-        } else if (closeCheck.shouldLogRemainder) {
-          console.debug(
-            `Ignoring small remaining amount (${remainingAmount}) after closing ${symbol} position ` +
-              `(likely floating point precision). Closed size: ${closedSize}`
-          );
-        }
-      } else {
-        // Partial close calculations using precision-safe arithmetic
-        const ratio = safeDivide(amount, oppositePosition.size, 8).toNumber();
-        const marginToReturn = roundToPrecision(
-          safeMultiply(oppositePosition.marginUsed, ratio).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        const realizedPnl = calculateRealizedPnl(
-          oppositePosition.side,
-          price,
-          oppositePosition.entryPrice,
-          amount,
-          symbol
-        );
-
-        // Update position using precision
-        oppositePosition.size = roundToPrecision(
-          safeSubtract(oppositePosition.size, amount).toNumber(),
-          8
-        );
-        oppositePosition.marginUsed = roundToPrecision(
-          safeSubtract(oppositePosition.marginUsed, marginToReturn).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-
-        // Update account using precision-safe arithmetic
-        this.account.balance = roundToPrecision(
-          safeAdd(this.account.balance, realizedPnl).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-        this.account.usedMargin = roundToPrecision(
-          safeSubtract(this.account.usedMargin, marginToReturn).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-        const marginPlusPnl = safeAdd(marginToReturn, realizedPnl).toNumber();
-        this.account.availableMargin = roundToPrecision(
-          safeAdd(this.account.availableMargin, marginPlusPnl).toNumber(),
-          EXCHANGE_PRECISION.USDT
-        );
-      }
-    } else {
-      const existingPosition = this.positions.find(
-        p => p.symbol === symbol && p.side === positionSide
-      );
-
-      if (existingPosition) {
-        // Update existing position with average entry price
-        existingPosition.entryPrice = calculateAverageEntryPrice(
-          existingPosition.size,
-          existingPosition.entryPrice,
-          amount,
-          price
-        );
-        existingPosition.size += amount;
-
-        // Calculate margin with leverage for the additional position
-        const additionalMargin = calculateMargin(amount, price, leverage);
-        existingPosition.marginUsed += additionalMargin;
-
-        // Update notional with leverage (matches real exchanges: size * markPrice * leverage)
-        existingPosition.notional = calculateNotional(
-          existingPosition.size,
-          this.getCurrentPrice(symbol),
-          leverage
-        );
-        existingPosition.leverage = leverage;
-
-        this.account.availableMargin -= additionalMargin;
-        this.account.usedMargin += additionalMargin;
-      } else {
-        this.createNewPosition(symbol, positionSide, amount, price, leverage);
-      }
-    }
-  }
-
-  /**
-   * Create a new position using shared calculation utilities
-   */
-  private createNewPosition(
-    symbol: string,
-    side: 'long' | 'short',
-    amount: number,
-    price: number,
-    leverage: number = 1
-  ): void {
-    const position = createPosition(symbol, side, amount, price, leverage, this.currentTime);
-    this.positions.push(position);
   }
 
   private updateAllPositions(): void {
@@ -507,6 +325,6 @@ export class BacktestExchange implements Exchange {
   private updateAccountEquity(): void {
     this.updateAllPositions();
     this.account.timestamp = this.currentTime;
-    calculateAccountEquity(this.account, this.positions);
+    updateAccountEquity(this.account, this.positions);
   }
 }

@@ -2,11 +2,11 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import { getConfig } from '../../config/settings.js';
-import { SimulatorExchange } from '../../exchange/simulator.js';
-import { MarketDataProvider } from '../../data/market.js';
-import { OpenRouterClient } from '../../ai/agent.js';
-import { TradingWorkflow } from '../../core/workflow.js';
-import { handleAsync } from '../../utils/error-handler.js';
+import { SimulatorExchange } from '../../exchange/index.js';
+import { MarketDataProvider } from '../../data/index.js';
+import { OpenRouterClient } from '../../ai/index.js';
+import { TradingWorkflow } from '../../core/index.js';
+import { handleAsync } from '../../utils/index.js';
 
 export class TradeCommands {
   /**

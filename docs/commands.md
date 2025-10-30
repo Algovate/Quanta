@@ -372,3 +372,19 @@ quanta trade status
 # Stop trading
 quanta trade stop --graceful
 ```
+
+---
+
+## API Endpoints (for QuantaWeb)
+
+- `GET /health` — health check
+- `GET /api/status` — system status
+- `GET /api/klines/:symbol?timeframe=1h&limit=100` — candlesticks
+- `GET /api/market/summary?symbols=BTC%2FUSDT,ETH%2FUSDT&interval=1m` — current prices and latest kline per symbol
+
+Run the server:
+
+```bash
+npm run api:dev
+# API: http://localhost:3001
+```

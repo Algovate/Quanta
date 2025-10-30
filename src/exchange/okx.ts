@@ -1,11 +1,19 @@
 import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
+import { Logger } from '../utils/logger.js';
 
 export class OKXExchange implements Exchange {
   private exchange: ccxt.okx;
   private isTestnet: boolean;
+  private marketsLoaded: Promise<void> | null = null;
+  private logger = Logger.getInstance('OKXExchange');
 
-  constructor(apiKey?: string, apiSecret?: string, testnet: boolean = true) {
+  constructor(
+    apiKey?: string,
+    apiSecret?: string,
+    testnet: boolean = true,
+    okxCtor?: new (options: Record<string, unknown>) => ccxt.okx
+  ) {
     this.isTestnet = testnet;
 
     // Configure OKX exchange options
@@ -14,14 +22,40 @@ export class OKXExchange implements Exchange {
       secret: apiSecret,
       password: process.env.OKX_PASSPHRASE, // OKX requires passphrase
       options: {
-        defaultType: 'future',
+        defaultType: 'swap',
         adjustForTimeDifference: true,
       },
       enableRateLimit: true,
-      sandbox: testnet,
+      timeout: 30000, // 30 second timeout
     };
 
-    this.exchange = new ccxt.okx(exchangeOptions);
+    const OkxImpl = okxCtor ?? ccxt.okx;
+    this.exchange = new OkxImpl(exchangeOptions);
+    // Ensure sandbox/testnet mode is configured via ccxt API (more reliable than vendor options)
+    try {
+      // Some exchanges require explicit sandbox mode toggle
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this.exchange as any).setSandboxMode?.(testnet);
+    } catch (_e) {
+      void _e;
+      // Non-fatal: not all versions expose setSandboxMode
+    }
+  }
+
+  private async ensureMarketsLoaded(): Promise<void> {
+    if (!this.marketsLoaded) {
+      this.marketsLoaded = (async () => {
+        try {
+          await this.exchange.loadMarkets();
+        } catch (error) {
+          // Reset so future calls can retry
+          this.marketsLoaded = null;
+          this.logger.error('Failed to load markets', error as Error);
+          throw error;
+        }
+      })();
+    }
+    return this.marketsLoaded;
   }
 
   async getAccount(): Promise<Account> {
@@ -40,7 +74,7 @@ export class OKXExchange implements Exchange {
         timestamp: Date.now(),
       };
     } catch (error) {
-      console.error('Error fetching account from OKX:', error);
+      this.logger.error('Error fetching account from OKX', error as Error);
       throw error;
     }
   }
@@ -51,6 +85,7 @@ export class OKXExchange implements Exchange {
         return [];
       }
 
+      await this.ensureMarketsLoaded();
       const positions = await this.exchange.fetchPositions();
       return (positions as unknown[]).map((pos: Record<string, unknown>) => {
         const size = pos.contracts as number;
@@ -70,13 +105,14 @@ export class OKXExchange implements Exchange {
         };
       });
     } catch (error) {
-      console.error('Error fetching positions from OKX:', error);
+      this.logger.error('Error fetching positions from OKX', error as Error);
       return [];
     }
   }
 
   async getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]> {
     try {
+      await this.ensureMarketsLoaded();
       const ohlcv = await this.exchange.fetchOHLCV(symbol, timeframe, undefined, limit);
       return ohlcv.map((candle: number[]) => ({
         timestamp: candle[0],
@@ -103,6 +139,7 @@ export class OKXExchange implements Exchange {
         throw new Error('Trading operations require API credentials for OKX');
       }
 
+      await this.ensureMarketsLoaded();
       const order = await this.exchange.createOrder(
         symbol,
         'market',
@@ -121,7 +158,7 @@ export class OKXExchange implements Exchange {
         timestamp: Date.now(),
       };
     } catch (error) {
-      console.error('Error placing order on OKX:', error);
+      this.logger.error('Error placing order on OKX', error as Error);
       throw error;
     }
   }
@@ -131,24 +168,25 @@ export class OKXExchange implements Exchange {
       if (!this.exchange.apiKey || this.exchange.apiKey === 'test') {
         throw new Error('Trading operations require API credentials for OKX');
       }
-
+      await this.ensureMarketsLoaded();
       await this.exchange.cancelOrder(orderId, symbol);
       return true;
     } catch (error) {
-      console.error('Error canceling order on OKX:', error);
+      this.logger.error('Error canceling order on OKX', error as Error);
       return false;
     }
   }
 
   async getTicker(symbol: string): Promise<{ price: number; timestamp: number }> {
     try {
+      await this.ensureMarketsLoaded();
       const ticker = await this.exchange.fetchTicker(symbol);
       return {
         price: ticker.last || ticker.close || 0,
         timestamp: ticker.timestamp || Date.now(),
       };
     } catch (error) {
-      console.error('Error fetching ticker from OKX:', error);
+      this.logger.error('Error fetching ticker from OKX', error as Error);
       throw error;
     }
   }

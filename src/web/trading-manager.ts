@@ -34,6 +34,9 @@ export class TradingManager extends EventEmitter {
   private equityHistory: Array<{ timestamp: number; equity: number }> = [];
   private latestRisk: RiskSnapshot | null = null;
   private updateIntervalId?: NodeJS.Timeout;
+  // Caches attached by APIServer
+  _priceCache?: Map<string, { price: number; ts: number }>;
+  _klineCache?: Map<string, { candle: any; ts: number }>;
 
   private constructor() {
     super();
