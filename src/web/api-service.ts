@@ -1,5 +1,7 @@
 import { TradingManager } from './trading-manager.js';
 import { getConfig } from '../config/settings.js';
+import { createExchangeForMode, describeExchange } from './exchange-factory.js';
+import { createWorkflowDeps } from '../core/factories.js';
 import type { BacktestConfig } from '../types/index.js';
 
 export async function startTradingService(
@@ -7,33 +9,29 @@ export async function startTradingService(
   coins?: string | string[]
 ) {
   const config = getConfig();
-  const { SimulatorExchange } = await import('../exchange/simulator.js');
-  const { MarketDataProvider } = await import('../data/market.js');
-  const { OpenRouterClient } = await import('../ai/agent.js');
 
-  const exchange = new SimulatorExchange(10000);
-  const marketProvider = new MarketDataProvider(exchange);
-  const aiClient = new OpenRouterClient(config.ai.apiKey);
+  const exchange = await createExchangeForMode();
+
+  // Display effective configuration and exchange selection (parity with CLI output)
+  try {
+    console.log('📊 Configuration:');
+    console.log(`   Mode: ${config.mode || 'simulation'}`);
+    const friendly = describeExchange(exchange, config.exchange?.testnet ?? true);
+    if (friendly) console.log(`   Exchange: ${friendly}`);
+  } catch {
+    // best-effort display only
+  }
 
   const tradingCoins = coins || config.trading.coins;
   const coinsArray: string[] =
     typeof tradingCoins === 'string'
       ? (tradingCoins as string).split(',')
       : (tradingCoins as string[]);
-  const workflowConfig = {
-    coins: coinsArray,
-    cyclePeriod: config.trading.cyclePeriod,
-    maxPositions: config.trading.maxPositions,
-    riskParams: {
-      maxRiskPerTrade: config.trading.maxRisk,
-      maxTotalRisk: 0.3,
-      defaultStopLoss: config.trading.stopLoss,
-      maxLeverage: config.trading.leverageRange[1],
-      minLeverage: config.trading.leverageRange[0],
-      maxPositions: config.trading.maxPositions,
-    },
-  };
-
+  const { marketProvider, aiClient, workflowConfig } = createWorkflowDeps(
+    exchange,
+    config,
+    coinsArray
+  );
   await tradingManager.start(exchange, marketProvider, aiClient, workflowConfig);
 }
 

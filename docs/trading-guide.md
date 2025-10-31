@@ -108,6 +108,12 @@ The backtest report includes:
 🔍 Position Monitoring
 ```
 
+### Instruments and Pricing
+
+- OKX instruments: Quanta uses `BASE/USDT:USDT` (e.g., `ETH/USDT:USDT`) for perps.
+- Entry pricing: execution references real-time mid price (best bid/ask average), not candle close.
+- Exposure shown in summaries is the sum of absolute position values (size × mark price), without leverage multiplication.
+
 ## Risk Management
 
 Quanta automatically implements risk controls:

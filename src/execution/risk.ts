@@ -18,6 +18,7 @@ import {
   getSymbolPrecision,
   EXCHANGE_PRECISION,
 } from '../utils/precision.js';
+import { calculatePositionPnl } from '../utils/symbol-utils.js';
 
 export interface RiskParams {
   maxRiskPerTrade: number; // 0.05 = 5%
@@ -44,6 +45,83 @@ export class RiskManager {
   constructor(params: RiskParams) {
     this.params = params;
     this.logger = Logger.getInstance('RiskManager');
+  }
+
+  // --- Portfolio Exposure & Leverage Helpers ---
+  /** Sum of absolute position notionals. */
+  computeExposure(positions: Position[]): number {
+    if (!positions?.length) return 0;
+    const total = positions.reduce((sum, p) => sum + Math.abs(p.notional || 0), 0);
+    return roundToPrecision(total, EXCHANGE_PRECISION.USDT);
+  }
+
+  /** Portfolio leverage = exposure / equity (guarding against zero). */
+  computeLeverage(equity: number, exposure: number): number {
+    if (!isFinite(equity) || equity <= 0) return 0;
+    const lv = safeDivide(exposure, equity, EXCHANGE_PRECISION.USDT).toNumber();
+    return roundToPrecision(lv, 2);
+  }
+
+  /** Mark-based unrealized P&L helper. */
+  computeUnrealized(position: Position, markPrice: number): number {
+    return calculatePositionPnl(
+      position.side,
+      markPrice,
+      position.entryPrice,
+      position.size,
+      position.symbol
+    );
+  }
+
+  /** P&L percent based on chosen basis (default: margin). */
+  computePnlPercent(
+    position: Position,
+    markPrice: number,
+    basis: 'margin' | 'notional' = 'margin'
+  ): number {
+    const unreal = this.computeUnrealized(position, markPrice);
+    const notional = Math.abs(position.size * position.entryPrice);
+    const margin = position.marginUsed || (position.leverage ? notional / position.leverage : 0);
+    const denom = basis === 'margin' ? margin : notional;
+    if (!denom) return 0;
+    const pct = safeMultiply(safeDivide(unreal, denom, 6), 100).toNumber();
+    return roundToPrecision(pct, 2);
+  }
+
+  // --- Maintenance Margin and Liquidation Checks ---
+  /** Margins config; rates as decimals (e.g., 0.01 = 1%). */
+  checkMaintenance(
+    position: Position,
+    markPrice: number,
+    rates?: { initialMarginRate?: number; maintenanceMarginRate?: number; takerFeeRate?: number }
+  ): {
+    shouldLiquidate: boolean;
+    marginRatio: number;
+    equityOnPosition: number;
+    maintenanceMargin: number;
+  } {
+    const notional = Math.abs(position.size * markPrice);
+    const leverage = Math.max(1, position.leverage || 1);
+    const defaultIMR = 1 / leverage; // simple proxy when no table available
+    const imr = rates?.initialMarginRate ?? defaultIMR;
+    const mmr = rates?.maintenanceMarginRate ?? Math.min(imr * 0.5, 0.02); // conservative 50% of IMR or 2%
+    const takerFee = rates?.takerFeeRate ?? 0.0005; // 5 bps default
+
+    const entryNotional = Math.abs(position.size * position.entryPrice);
+    const initialMargin = position.marginUsed || entryNotional / leverage;
+    const unreal = this.computeUnrealized(position, markPrice);
+    const feesBuffer = notional * takerFee; // simple fees buffer
+    const equityOnPosition = initialMargin + unreal - feesBuffer;
+    const maintenanceMargin = notional * mmr;
+
+    const marginRatio = maintenanceMargin > 0 ? equityOnPosition / maintenanceMargin : Infinity;
+    const shouldLiquidate = equityOnPosition <= maintenanceMargin;
+    return {
+      shouldLiquidate,
+      marginRatio: roundToPrecision(marginRatio, 4),
+      equityOnPosition: roundToPrecision(equityOnPosition, EXCHANGE_PRECISION.USDT),
+      maintenanceMargin: roundToPrecision(maintenanceMargin, EXCHANGE_PRECISION.USDT),
+    };
   }
 
   calculatePositionSizing(

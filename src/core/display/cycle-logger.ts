@@ -91,6 +91,6 @@ export class CycleLogger {
   }
 
   debug(message: string, data?: Record<string, unknown>): void {
-    this.logger.debug(message, data as any);
+    this.logger.debug(message, data);
   }
 }

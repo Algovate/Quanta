@@ -3,10 +3,15 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { getConfig } from '../../config/settings.js';
 import { SimulatorExchange } from '../../exchange/index.js';
+import { PaperExchange } from '../../exchange/paper.js';
 import { MarketDataProvider } from '../../data/index.js';
 import { OpenRouterClient } from '../../ai/index.js';
 import { TradingWorkflow } from '../../core/index.js';
 import { handleAsync } from '../../utils/index.js';
+import { formatExchangeFriendlyName } from '../utils.js';
+import type { Config } from '../../config/settings.js';
+import type { WorkflowConfig } from '../../types/index.js';
+import type { Exchange } from '../../exchange/types.js';
 
 export class TradeCommands {
   /**
@@ -46,8 +51,46 @@ export class TradeCommands {
 
     // Dynamically import and create real exchange
     const module = await import(`../../exchange/${normalizedName}.js`);
-    const ExchangeClass = Object.values(module)[0] as any;
-    return new ExchangeClass(apiKey, apiSecret, testnet);
+    const ExchangeClass = Object.values(module)[0] as new (
+      apiKey?: string,
+      apiSecret?: string,
+      testnet?: boolean
+    ) => unknown;
+    return new ExchangeClass(apiKey, apiSecret, testnet) as unknown;
+  }
+
+  /**
+   * Build a workflow configuration from loaded settings and selected coins.
+   * Keeps the startTrading path concise and improves readability.
+   */
+  private static buildWorkflowConfig(config: Config, coins: string[]): WorkflowConfig {
+    return {
+      coins,
+      cyclePeriod: config.trading.cyclePeriod,
+      maxPositions: config.trading.maxPositions,
+      marketFetchParallel: (config as any)?.trading?.marketFetchParallel,
+      riskParams: {
+        maxRiskPerTrade: config.trading.maxRisk,
+        maxTotalRisk: 0.3,
+        defaultStopLoss: config.trading.stopLoss,
+        maxLeverage: config.trading.leverageRange[1],
+        minLeverage: config.trading.leverageRange[0],
+        maxPositions: config.trading.maxPositions,
+      },
+    };
+  }
+
+  /**
+   * Print a concise effective exchange name using runtime-reported identity.
+   */
+  private static printEffectiveExchange(exchange: unknown, testnet: boolean): void {
+    try {
+      const reported = (exchange as { getExchangeName?: () => string })?.getExchangeName?.();
+      const friendly = formatExchangeFriendlyName(reported, testnet) || 'unknown';
+      console.log(`   Exchange: ${friendly}`);
+    } catch {
+      // best-effort display only
+    }
   }
 
   /**
@@ -83,8 +126,7 @@ export class TradeCommands {
         chalk.gray(`   Note: Config exchange '${exchangeName}' ignored in simulation mode`)
       );
     } else if (mode === 'paper') {
-      console.log(`   Data Source: ${exchangeName} (real data, paper trading)`);
-      console.log(`   Network: ${exchangeTestnet ? 'testnet' : 'live'}`);
+      // Data Source and Network are summarized below as a single consolidated Exchange line
       if (!exchangeApiKey || !exchangeApiSecret) {
         console.log(
           chalk.yellow(`   Note: Running without API keys (public data only, rate limited)`)
@@ -109,7 +151,7 @@ export class TradeCommands {
     apiKey?: string,
     apiSecret?: string,
     testnet: boolean = true
-  ) {
+  ): Promise<Exchange> {
     if (mode === 'simulation') {
       // Pure mock data simulator
       console.log('📊 Simulation mode: Using pure mock data (no real exchange data)');
@@ -124,7 +166,8 @@ export class TradeCommands {
       }
       // Remove duplicate message - configuration already displayed above
       const dataExchange = await this.createExchange(exchangeName, apiKey, apiSecret, testnet);
-      return new SimulatorExchange(10000, dataExchange);
+      // Wrap the real exchange with PaperExchange to simulate execution while using real market data
+      return new PaperExchange(dataExchange as any, 10000);
     } else {
       // Live mode - real exchanges
       if (exchangeName === 'simulator') {
@@ -132,7 +175,13 @@ export class TradeCommands {
           'Cannot use simulator exchange in live mode. Please use a real exchange (okx, binance, coinbase, etc.)'
         );
       }
-      return await this.createExchange(exchangeName, apiKey, apiSecret, testnet, 'live');
+      return (await this.createExchange(
+        exchangeName,
+        apiKey,
+        apiSecret,
+        testnet,
+        'live'
+      )) as Exchange;
     }
   }
 
@@ -233,17 +282,12 @@ export class TradeCommands {
       exchangeApiSecret
     );
 
-    console.log(`   Coins: ${coins.join(', ')}`);
-    console.log('');
-
     // Validate prerequisites based on mode
     this.validateModeConfiguration(mode, exchangeName, exchangeApiKey, exchangeApiSecret);
     this.validateAIConfiguration(updatedConfig.ai?.apiKey);
 
-    // Initialize components
+    // Initialize components and construct exchange only once
     const spinner = ora('Initializing trading system...').start();
-
-    // Create exchange based on mode and config
     const exchange = await this.getExchangeForMode(
       mode as 'simulation' | 'paper' | 'live',
       exchangeName,
@@ -252,22 +296,16 @@ export class TradeCommands {
       updatedConfig.exchange?.testnet ?? true
     );
 
+    // Display effective exchange implementation using constructed instance
+    this.printEffectiveExchange(exchange, exchangeTestnet);
+
+    console.log(`   Coins: ${coins.join(', ')}`);
+    console.log('');
+
     const marketProvider = new MarketDataProvider(exchange);
     const aiClient = new OpenRouterClient(updatedConfig.ai.apiKey);
-
-    const workflow = new TradingWorkflow(exchange, marketProvider, aiClient, {
-      coins,
-      cyclePeriod: config.trading.cyclePeriod,
-      maxPositions: config.trading.maxPositions,
-      riskParams: {
-        maxRiskPerTrade: config.trading.maxRisk,
-        maxTotalRisk: 0.3, // Total margin usage limit (30% of account)
-        defaultStopLoss: config.trading.stopLoss,
-        maxLeverage: config.trading.leverageRange[1],
-        minLeverage: config.trading.leverageRange[0],
-        maxPositions: config.trading.maxPositions,
-      },
-    });
+    const workflowConfig = this.buildWorkflowConfig(config, coins);
+    const workflow = new TradingWorkflow(exchange, marketProvider, aiClient, workflowConfig);
 
     spinner.succeed('Trading system initialized');
 

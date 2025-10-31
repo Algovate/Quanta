@@ -324,6 +324,7 @@ export interface WorkflowConfig {
   coins: string[];
   cyclePeriod: number;
   maxPositions: number;
+  marketFetchParallel?: boolean;
   riskParams: {
     maxRiskPerTrade: number;
     maxTotalRisk: number;
@@ -338,6 +339,11 @@ export interface WorkflowConfig {
 export interface Exchange {
   getAccount(): Promise<Account>;
   getPositions(): Promise<Position[]>;
+  /**
+   * Return a consistent snapshot of account and positions computed from the same price refresh.
+   * Implementations should avoid double-refreshing marks between the two to prevent drift.
+   */
+  getSnapshot(): Promise<{ account: Account; positions: Position[] }>;
   getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]>;
   placeOrder(
     symbol: string,

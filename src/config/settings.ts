@@ -48,6 +48,13 @@ const ConfigSchema = z.object({
     leverageRange: z.tuple([z.number(), z.number()]).default([5, 40]),
     stopLoss: z.number().default(0.05), // 5%
     maxRisk: z.number().default(0.05), // 5%
+    marketFetchParallel: z.boolean().default(true),
+    priceSanity: z
+      .object({
+        enabled: z.boolean().default(true),
+        maxDeviation: z.number().min(0).max(1).default(0.05),
+      })
+      .default({ enabled: true, maxDeviation: 0.05 }),
   }),
   backtest: z
     .object({
@@ -105,6 +112,11 @@ const DEFAULT_CONFIG: Partial<Config> = {
     leverageRange: [5, 40],
     stopLoss: 0.05,
     maxRisk: 0.05,
+    marketFetchParallel: true,
+    priceSanity: {
+      enabled: true,
+      maxDeviation: 0.05,
+    },
   },
   backtest: {
     initialBalance: 10000,
@@ -175,6 +187,11 @@ function parseEnvConfig(): Partial<Config> {
       ],
       stopLoss: parseFloat(process.env.STOP_LOSS || '0.05'),
       maxRisk: parseFloat(process.env.MAX_RISK || '0.05'),
+      marketFetchParallel: process.env.TRADING_FETCH_PARALLEL !== 'false',
+      priceSanity: {
+        enabled: process.env.TRADING_PRICE_SANITY_ENABLED !== 'false',
+        maxDeviation: parseFloat(process.env.TRADING_PRICE_SANITY_MAX_DEVIATION || '0.05'),
+      },
     },
     backtest: {
       startDate: process.env.BACKTEST_START_DATE,

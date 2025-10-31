@@ -153,6 +153,16 @@ async function run() {
     ['positions without creds', testGetPositionsNoCreds],
     ['ticker basic', testTickerBasic],
     ['placeOrder requires creds', testPlaceOrderRequiresCreds],
+    [
+      'resolveInstrument mapping',
+      async () => {
+        const ex = new OKXExchange('key', 'secret', true, FakeOKX as unknown as new (o: Record<string, unknown>) => never);
+        assert.strictEqual(ex.resolveInstrument('BTC', 'perp'), 'BTC/USDT:USDT');
+        assert.strictEqual(ex.resolveInstrument('BTC/USDT', 'perp'), 'BTC/USDT:USDT');
+        assert.strictEqual(ex.resolveInstrument('BTC-USDT-SWAP', 'perp'), 'BTC/USDT:USDT');
+        assert.strictEqual(ex.resolveInstrument('BTC/USDT:USDT', 'spot'), 'BTC/USDT');
+      },
+    ],
   ] as const;
 
   try {

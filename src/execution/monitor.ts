@@ -104,9 +104,16 @@ export class PositionMonitorService implements PositionMonitor {
           throw new Error(`Invalid price received: ${currentPrice}`);
         }
 
-        // Check if position should be closed
-        const { shouldClose, reason } = this.shouldClosePosition(position, currentPrice);
+        // Maintenance margin/liquidation check (highest priority)
+        const maint = this.riskManager.checkMaintenance(position, currentPrice);
+        if (maint.shouldLiquidate) {
+          const reason = `Maintenance margin breached (ratio ${maint.marginRatio.toFixed(2)})`;
+          await this.executePositionClose(position, currentPrice, reason);
+          return; // done
+        }
 
+        // Check if position should be closed by stops/targets
+        const { shouldClose, reason } = this.shouldClosePosition(position, currentPrice);
         if (shouldClose) {
           await this.executePositionClose(position, currentPrice, reason);
         }

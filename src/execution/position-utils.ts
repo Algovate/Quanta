@@ -25,9 +25,11 @@ export function aggregatePositionMetrics(positions: Position[]): PositionAggrega
   const aggregates = positions.reduce(
     (acc, pos) => {
       // Use precision-safe addition for all financial values
+      // Exposure (totalNotional) is computed as sum(size * markPrice) without leverage
+      const positionExposure = safeMultiply(pos.size, pos.markPrice).toNumber();
       return {
         totalPnl: safeAdd(acc.totalPnl, pos.unrealizedPnl).toNumber(),
-        totalNotional: safeAdd(acc.totalNotional, pos.notional).toNumber(),
+        totalNotional: safeAdd(acc.totalNotional, positionExposure).toNumber(),
         totalMarginUsed: safeAdd(acc.totalMarginUsed, pos.marginUsed).toNumber(),
         positionCount: acc.positionCount + 1,
       };

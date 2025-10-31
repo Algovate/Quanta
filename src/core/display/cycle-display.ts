@@ -102,7 +102,7 @@ export class CycleDisplay {
     }
 
     output += `   Equity: ${equityDisplay} | Available: $${account.availableMargin.toFixed(2)} | Used: $${totalMarginUsed.toFixed(2)}\n`;
-    output += `   Exposure: $${totalNotional.toFixed(2)} | Leverage: ${(totalNotional / account.equity).toFixed(2)}x\n`;
+    output += `   Unlevered Exposure: $${totalNotional.toFixed(2)} | Leverage: ${(totalNotional / account.equity).toFixed(2)}x\n`;
 
     const totalPnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
     const unrealizedPnlColor = unrealizedPnl >= 0 ? chalk.green : chalk.red;
@@ -140,10 +140,11 @@ export class CycleDisplay {
         const marginText = `$${position.marginUsed.toFixed(2)}`;
         const entryText = `$${position.entryPrice.toFixed(2)}`;
         const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
-        const positionEntryValue = position.size * position.entryPrice;
-        const pnlPercent =
-          positionEntryValue !== 0 ? (position.unrealizedPnl / positionEntryValue) * 100 : 0;
-        const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}%)`;
+        const entryValue = position.size * position.entryPrice;
+        const impliedMargin = position.leverage ? entryValue / position.leverage : 0;
+        const marginBasis = position.marginUsed || impliedMargin;
+        const pnlPercent = marginBasis !== 0 ? (position.unrealizedPnl / marginBasis) * 100 : 0;
+        const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}% vs margin)`;
 
         output += `   │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.white(marginText.padEnd(13))} │ ${chalk.yellow(entryText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(13))} │\n`;
       });

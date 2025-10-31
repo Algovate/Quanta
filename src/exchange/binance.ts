@@ -100,6 +100,11 @@ export class BinanceExchange implements Exchange {
     }
   }
 
+  async getSnapshot(): Promise<{ account: Account; positions: Position[] }> {
+    const [account, positions] = await Promise.all([this.getAccount(), this.getPositions()]);
+    return { account, positions };
+  }
+
   async placeOrder(
     symbol: string,
     side: 'buy' | 'sell',

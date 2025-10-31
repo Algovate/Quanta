@@ -66,6 +66,14 @@ export class SimulatorExchange implements Exchange {
     return [...this.positions];
   }
 
+  async getSnapshot(): Promise<{ account: Account; positions: Position[] }> {
+    // Refresh prices once to maintain consistency between positions and equity
+    await this.updateAllPositions();
+    this.account.timestamp = Date.now();
+    updateAccountEquity(this.account, this.positions);
+    return { account: { ...this.account }, positions: this.positions.map(p => ({ ...p })) };
+  }
+
   async getPositionsBySymbol(symbol: string): Promise<Position[]> {
     await this.updateAllPositions();
     return this.positions.filter(p => p.symbol === symbol);

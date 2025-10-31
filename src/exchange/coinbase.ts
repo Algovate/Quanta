@@ -103,6 +103,11 @@ export class CoinbaseExchange implements Exchange {
     }
   }
 
+  async getSnapshot(): Promise<{ account: Account; positions: Position[] }> {
+    const [account, positions] = await Promise.all([this.getAccount(), this.getPositions()]);
+    return { account, positions };
+  }
+
   async getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]> {
     try {
       // Map timeframe to Coinbase-specific format

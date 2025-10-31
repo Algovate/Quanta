@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import type * as ccxt from 'ccxt';
 import { Logger } from '../../utils/logger.js';
 import { getConfig } from '../../config/settings.js';
 import { createDataSourceManager } from '../../core/data-source-manager.js';
@@ -30,6 +31,40 @@ function normalizeSymbolForExchange(exchangeName: string, symbol: string): strin
     }
   }
   return s;
+}
+
+/**
+ * Check if exchange has underlying CCXT instance and access it
+ */
+function getCCXTExchange(exchange: Exchange): {
+  fetchOrderBook: (symbol: string, limit?: number) => Promise<ccxt.OrderBook>;
+  fetchTrades: (symbol: string, since?: number, limit?: number) => Promise<ccxt.Trade[]>;
+  loadMarkets: () => Promise<void>;
+} | null {
+  // Check if exchange has a private 'exchange' property (CCXT instance)
+  // This works for OKXExchange, BinanceExchange, CoinbaseExchange, HyperliquidExchange
+  const exchangeAny = exchange as unknown as Record<string, unknown>;
+  const ccxtInstance = exchangeAny.exchange as
+    | {
+        fetchOrderBook?: (symbol: string, limit?: number) => Promise<ccxt.OrderBook>;
+        fetchTrades?: (symbol: string, since?: number, limit?: number) => Promise<ccxt.Trade[]>;
+        loadMarkets?: () => Promise<void>;
+      }
+    | undefined;
+
+  if (
+    ccxtInstance &&
+    typeof ccxtInstance.fetchOrderBook === 'function' &&
+    typeof ccxtInstance.fetchTrades === 'function'
+  ) {
+    return {
+      fetchOrderBook: ccxtInstance.fetchOrderBook.bind(ccxtInstance),
+      fetchTrades: ccxtInstance.fetchTrades.bind(ccxtInstance),
+      loadMarkets: ccxtInstance.loadMarkets?.bind(ccxtInstance) || (async () => {}),
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -132,30 +167,119 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
     }
   });
 
-  // Get order book depth (stub implementation for now)
-  router.get('/api/depth/:symbol', async (_req: Request, res: Response) => {
+  // Get order book depth
+  router.get('/api/depth/:symbol', async (req: Request, res: Response) => {
     try {
-      // TODO: Implement actual depth data from exchange
-      // For now, return mock data to prevent 404 errors
+      const { symbol } = req.params;
+      const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit || '20'), 10)));
+
+      // Resolve exchange from workflow or config
+      const exchange = await resolveExchange(tradingManager);
+      const exchangeName = exchange.getExchangeName();
+
+      // Check if exchange is simulator/paper/backtest (don't support order book)
+      if (
+        exchangeName === 'simulator' ||
+        exchangeName.startsWith('paper(') ||
+        exchangeName === 'backtest'
+      ) {
+        return res.json({
+          bids: [],
+          asks: [],
+          timestamp: Date.now(),
+        });
+      }
+
+      // Try to get CCXT instance for real exchanges
+      const ccxtExchange = getCCXTExchange(exchange);
+      if (!ccxtExchange) {
+        return res.json({
+          bids: [],
+          asks: [],
+          timestamp: Date.now(),
+        });
+      }
+
+      // Normalize symbol format
+      let normalizedSymbol = symbol.includes('/')
+        ? symbol
+        : symbol.replace(/([A-Z]+)(USDT)/, '$1/$2');
+      normalizedSymbol = normalizeSymbolForExchange(exchangeName, normalizedSymbol);
+
+      // Load markets if needed
+      await ccxtExchange.loadMarkets();
+
+      // Fetch order book from exchange
+      const orderBook = await ccxtExchange.fetchOrderBook(normalizedSymbol, limit);
+
+      // Format response
       res.json({
-        bids: [],
-        asks: [],
+        bids: (orderBook.bids || []).map(([price, amount]) => [price, amount]),
+        asks: (orderBook.asks || []).map(([price, amount]) => [price, amount]),
+        timestamp: orderBook.timestamp || Date.now(),
       });
     } catch (error) {
       logger.error('Error getting depth', error);
-      res.status(500).json({ error: 'Failed to get depth data' });
+      const errorMessage = error instanceof Error ? error.message : 'Failed to get depth data';
+      res.status(500).json({ error: errorMessage });
     }
   });
 
-  // Get recent trades (stub implementation for now)
-  router.get('/api/trades/:symbol', async (_req: Request, res: Response) => {
+  // Get recent trades
+  router.get('/api/trades/:symbol', async (req: Request, res: Response) => {
     try {
-      // TODO: Implement actual trades data from exchange
-      // For now, return mock data to prevent 404 errors
-      res.json([]);
+      const { symbol } = req.params;
+      const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit || '50'), 10)));
+      const since = req.query.since ? parseInt(String(req.query.since), 10) : undefined;
+
+      // Resolve exchange from workflow or config
+      const exchange = await resolveExchange(tradingManager);
+      const exchangeName = exchange.getExchangeName();
+
+      // Check if exchange is simulator/paper/backtest (don't support trades)
+      if (
+        exchangeName === 'simulator' ||
+        exchangeName.startsWith('paper(') ||
+        exchangeName === 'backtest'
+      ) {
+        return res.json([]);
+      }
+
+      // Try to get CCXT instance for real exchanges
+      const ccxtExchange = getCCXTExchange(exchange);
+      if (!ccxtExchange) {
+        return res.json([]);
+      }
+
+      // Normalize symbol format
+      let normalizedSymbol = symbol.includes('/')
+        ? symbol
+        : symbol.replace(/([A-Z]+)(USDT)/, '$1/$2');
+      normalizedSymbol = normalizeSymbolForExchange(exchangeName, normalizedSymbol);
+
+      // Load markets if needed
+      await ccxtExchange.loadMarkets();
+
+      // Fetch trades from exchange
+      const trades = await ccxtExchange.fetchTrades(normalizedSymbol, since, limit);
+
+      // Format response: convert CCXT Trade format to simple array
+      const formattedTrades = trades.map(trade => ({
+        id: trade.id || String(trade.timestamp),
+        symbol: trade.symbol,
+        side: trade.side === 'buy' ? 'buy' : 'sell',
+        amount: trade.amount,
+        price: trade.price,
+        timestamp: trade.timestamp || Date.now(),
+        cost: trade.cost,
+        fee: trade.fee,
+      }));
+
+      res.json(formattedTrades);
     } catch (error) {
       logger.error('Error getting trades', error);
-      res.status(500).json({ error: 'Failed to get trades data' });
+      const errorMessage = error instanceof Error ? error.message : 'Failed to get trades data';
+      res.status(500).json({ error: errorMessage });
     }
   });
 }

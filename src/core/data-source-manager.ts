@@ -1,5 +1,6 @@
 import { Exchange } from '../exchange/types.js';
 import { SimulatorExchange } from '../exchange/simulator.js';
+import { PaperExchange } from '../exchange/paper.js';
 import { OKXExchange } from '../exchange/okx.js';
 import { BinanceExchange } from '../exchange/binance.js';
 import { CoinbaseExchange } from '../exchange/coinbase.js';
@@ -32,10 +33,16 @@ export class SimpleDataSourceManager implements DataSourceManager {
   }): Exchange {
     const exchangeName = config.name.toLowerCase();
 
-    // In simulation mode with real exchange, wrap it in SimulatorExchange
+    // In simulation mode with real exchange: use SimulatorExchange (mock data generation)
     if (this.config.mode === 'simulation' && exchangeName !== 'simulator') {
       const dataExchange = this.createRealExchange(exchangeName, config);
       return new SimulatorExchange(10000, dataExchange);
+    }
+
+    // In paper mode with real exchange: wrap real exchange with PaperExchange (real data, simulated exec)
+    if (this.config.mode === 'paper' && exchangeName !== 'simulator') {
+      const real = this.createRealExchange(exchangeName, config);
+      return new PaperExchange(real, 10000);
     }
 
     // Pure simulation or live/backtest modes

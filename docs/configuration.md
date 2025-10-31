@@ -34,7 +34,11 @@ Used for live trading and general settings:
     "maxPositions": 6,
     "leverageRange": [5, 40],
     "stopLoss": 0.05,
-    "maxRisk": 0.05
+    "maxRisk": 0.05,
+    "priceSanity": {
+      "enabled": true,
+      "maxDeviation": 0.05
+    }
   }
 }
 ```
@@ -112,6 +116,9 @@ CYCLE_PERIOD=180000
 MAX_POSITIONS=6
 STOP_LOSS=0.05
 MAX_RISK=0.05
+# Price sanity guard (optional)
+TRADING_PRICE_SANITY_ENABLED=true
+TRADING_PRICE_SANITY_MAX_DEVIATION=0.05
 ```
 
 ## CLI Configuration
@@ -150,11 +157,23 @@ quanta config init
 - **maxPositions**: Maximum concurrent positions
 - **stopLoss**: Default stop-loss percentage (5%)
 - **maxRisk**: Maximum risk per trade (5%)
+- **priceSanity.enabled**: If true, stale `entry_price` (> maxDeviation from live ticker) is ignored and converted to a market order.
+- **priceSanity.maxDeviation**: Relative deviation threshold (default 0.05 = 5%).
 
 ### Exchange Settings
 
 - **name**: Exchange name (`simulator`, `okx`, `binance`, `coinbase`)
 - **testnet**: Use testnet environment (true for testing)
+
+### Instrument Selection (OKX)
+
+- In derivatives mode Quanta targets OKX USDT-margined perp contracts.
+- Symbols are normalized to `BASE/USDT:USDT` internally.
+- Examples that resolve to the same instrument:
+  - `ETH` → `ETH/USDT:USDT`
+  - `ETH/USDT` → `ETH/USDT:USDT`
+  - `ETH-USDT-SWAP` → `ETH/USDT:USDT`
+
 
 ## Examples
 
@@ -166,7 +185,8 @@ quanta config init
     "coins": ["BTC"],
     "maxPositions": 2,
     "stopLoss": 0.02,
-    "maxRisk": 0.02
+    "maxRisk": 0.02,
+    "priceSanity": { "enabled": true, "maxDeviation": 0.05 }
   }
 }
 ```
@@ -179,10 +199,16 @@ quanta config init
     "coins": ["BTC", "ETH", "SOL", "BNB"],
     "maxPositions": 10,
     "stopLoss": 0.05,
-    "maxRisk": 0.10
+    "maxRisk": 0.10,
+    "priceSanity": { "enabled": true, "maxDeviation": 0.05 }
   }
 }
 ```
+
+## Metrics Definitions
+
+- **Unlevered Exposure**: Sum of position sizes × mark prices (does not include leverage). Displayed in cycle summaries.
+- **Leverage (portfolio)**: Unlevered Exposure ÷ Equity.
 
 ## Troubleshooting
 

@@ -36,6 +36,10 @@ export interface AccountValidationResult {
  * @param positions - Current positions for calculating unrealized P&L
  * @returns Validation result
  */
+/**
+ * Validate that reported equity matches Balance + Σ(unrealized P&L) within tolerance.
+ * This is a consistency check; it does not mutate inputs.
+ */
 export function validateAccountEquity(
   account: Account,
   positions: Position[]
@@ -66,6 +70,10 @@ export function validateAccountEquity(
  * @param totalMarginUsed - Sum of margin used by all positions
  * @returns Validation result
  */
+/**
+ * Validate that Available Margin equals Equity - Used Margin within tolerance.
+ * Caller should pass totalMarginUsed aggregated from current positions for accuracy.
+ */
 export function validateAvailableMargin(
   account: Account,
   totalMarginUsed: number
@@ -94,6 +102,9 @@ export function validateAvailableMargin(
  * @param positions - Current positions for calculating unrealized P&L
  * @param totalMarginUsed - Sum of margin used by all positions
  * @returns Combined validation result
+ */
+/**
+ * Run all account validations and return a combined result.
  */
 export function validateAccount(
   account: Account,

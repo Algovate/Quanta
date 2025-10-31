@@ -5,6 +5,7 @@ import { ensureUsdtSuffix } from '../utils/symbol-utils.js';
 import { Logger } from '../utils/logger.js';
 import { TradingManager } from '../web/trading-manager.js';
 import type { OrderEvent } from '../web/types.js';
+import { getConfig } from '../config/settings.js';
 
 export interface OrderResult {
   success: boolean;
@@ -18,11 +19,22 @@ export class OrderExecutor {
   private exchange: Exchange;
   private riskManager: RiskManager;
   private logger: Logger;
+  private forceMarketOrders: boolean;
+  private priceSanityEnabled: boolean;
+  private priceSanityMaxDeviation: number;
 
-  constructor(exchange: Exchange, riskManager: RiskManager) {
+  constructor(
+    exchange: Exchange,
+    riskManager: RiskManager,
+    options?: { forceMarketOrders?: boolean }
+  ) {
     this.exchange = exchange;
     this.riskManager = riskManager;
     this.logger = Logger.getInstance('OrderExecutor');
+    this.forceMarketOrders = Boolean(options?.forceMarketOrders);
+    const cfg = getConfig();
+    this.priceSanityEnabled = Boolean(cfg.trading?.priceSanity?.enabled);
+    this.priceSanityMaxDeviation = Number(cfg.trading?.priceSanity?.maxDeviation ?? 0.05);
   }
 
   /**
@@ -148,7 +160,25 @@ export class OrderExecutor {
     try {
       const symbol = this.buildSymbol(signal.coin);
       const amount = sizing.suggestedSize;
-      const price = signal.entry_price || currentPrice;
+      // Determine intended price
+      let price = this.forceMarketOrders ? undefined : signal.entry_price || currentPrice;
+
+      // Stale price guard: if entry_price deviates too much from current ticker, convert to market
+      if (!this.forceMarketOrders && this.priceSanityEnabled && signal.entry_price !== undefined) {
+        const denom = currentPrice || 0;
+        const relDiff = denom > 0 ? Math.abs(signal.entry_price - denom) / denom : 0;
+        if (relDiff > this.priceSanityMaxDeviation) {
+          this.logger.warn('Overriding stale entry price with market due to deviation', {
+            coin: signal.coin,
+            side,
+            entryPrice: signal.entry_price,
+            currentPrice: denom,
+            relativeDiff: relDiff,
+            maxAllowed: this.priceSanityMaxDeviation,
+          });
+          price = undefined; // force market order
+        }
+      }
       const leverage = sizing.leverage;
 
       const order = await this.exchange.placeOrder(symbol, side, amount, price, leverage);

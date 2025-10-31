@@ -80,6 +80,14 @@ export class BacktestExchange implements Exchange {
     return [...this.positions];
   }
 
+  async getSnapshot(): Promise<{ account: Account; positions: Position[] }> {
+    // Ensure a single time-consistent update for both positions and account
+    this.updateAllPositions();
+    this.account.timestamp = this.currentTime;
+    updateAccountEquity(this.account, this.positions);
+    return { account: { ...this.account }, positions: this.positions.map(p => ({ ...p })) };
+  }
+
   async getPositionsBySymbol(symbol: string): Promise<Position[]> {
     this.updateAllPositions();
     return this.positions.filter(p => p.symbol === symbol);

@@ -143,7 +143,9 @@ export class BacktestEngine {
     };
 
     this.riskManager = new RiskManager(riskParams);
-    this.orderExecutor = new OrderExecutor(this.exchange, this.riskManager);
+    this.orderExecutor = new OrderExecutor(this.exchange, this.riskManager, {
+      forceMarketOrders: true,
+    });
     this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor);
   }
 

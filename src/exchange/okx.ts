@@ -42,6 +42,62 @@ export class OKXExchange implements Exchange {
     }
   }
 
+  /**
+   * Resolve an input symbol/coin to a ccxt OKX symbol for the desired market type.
+   * Examples:
+   *  - resolveInstrument('BTC', 'perp') => 'BTC/USDT:USDT'
+   *  - resolveInstrument('BTC/USDT', 'spot') => 'BTC/USDT'
+   *  - resolveInstrument('BTC-USDT-SWAP', 'perp') => 'BTC/USDT:USDT'
+   */
+  public resolveInstrument(input: string, marketType: 'perp' | 'spot' = 'perp'): string {
+    // Normalize common inputs
+    const trimmed = input.trim();
+    // If already a ccxt OKX perpetual symbol
+    if (/^[A-Z0-9]+\/USDT:USDT$/.test(trimmed)) {
+      return marketType === 'perp' ? trimmed : trimmed.replace(':USDT', '');
+    }
+    // If OKX id form 'BTC-USDT-SWAP'
+    if (/^[A-Z0-9]+-USDT-SWAP$/.test(trimmed)) {
+      return marketType === 'perp'
+        ? trimmed.replace('-USDT-SWAP', '/USDT:USDT')
+        : trimmed.replace('-USDT-SWAP', '/USDT');
+    }
+    // If standard spot symbol
+    if (/^[A-Z0-9]+\/USDT$/.test(trimmed)) {
+      return marketType === 'perp' ? `${trimmed}:USDT` : trimmed;
+    }
+    // If just the base coin symbol (e.g., 'BTC')
+    if (/^[A-Z0-9]+$/.test(trimmed)) {
+      return marketType === 'perp' ? `${trimmed}/USDT:USDT` : `${trimmed}/USDT`;
+    }
+    // Fallback: return as-is; caller must ensure correctness
+    return trimmed;
+  }
+
+  /**
+   * Fetch mark, bid, ask, mid prices for a given instrument using a unified source.
+   * Prefers mark price (ticker.info.markPx) when available; falls back to last/close.
+   */
+  public async getMarkAndBestPrices(
+    input: string,
+    marketType: 'perp' | 'spot' = 'perp'
+  ): Promise<{ symbol: string; mark: number; bid: number; ask: number; mid: number; ts: number }> {
+    await this.ensureMarketsLoaded();
+    const symbol = this.resolveInstrument(input, marketType);
+    const ticker = await this.exchange.fetchTicker(symbol);
+    // Extract mark price when exposed by OKX via ccxt .info.markPx
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const info = ticker.info as any;
+    const markFromInfo = info?.markPx ? Number(info.markPx) : undefined;
+    const bid = (ticker.bid as number) ?? 0;
+    const ask = (ticker.ask as number) ?? 0;
+    const lastLike = (ticker.last as number) ?? (ticker.close as number) ?? 0;
+    const mark = Number.isFinite(markFromInfo) ? (markFromInfo as number) : lastLike;
+    const mid = bid && ask ? (bid + ask) / 2 : mark || lastLike;
+    const ts = ticker.timestamp || Date.now();
+    return { symbol, mark, bid: bid || 0, ask: ask || 0, mid, ts };
+  }
+
   private async ensureMarketsLoaded(): Promise<void> {
     if (!this.marketsLoaded) {
       this.marketsLoaded = (async () => {
@@ -113,7 +169,8 @@ export class OKXExchange implements Exchange {
   async getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]> {
     try {
       await this.ensureMarketsLoaded();
-      const ohlcv = await this.exchange.fetchOHLCV(symbol, timeframe, undefined, limit);
+      const perpSymbol = this.resolveInstrument(symbol, 'perp');
+      const ohlcv = await this.exchange.fetchOHLCV(perpSymbol, timeframe, undefined, limit);
       return ohlcv.map((candle: number[]) => ({
         timestamp: candle[0],
         open: candle[1],
@@ -126,6 +183,12 @@ export class OKXExchange implements Exchange {
       console.error('Error fetching candlesticks from OKX:', error);
       throw error;
     }
+  }
+
+  async getSnapshot(): Promise<{ account: Account; positions: Position[] }> {
+    // For real exchanges, we cannot guarantee atomicity; fetch sequentially as best-effort
+    const [account, positions] = await Promise.all([this.getAccount(), this.getPositions()]);
+    return { account, positions };
   }
 
   async placeOrder(
@@ -180,11 +243,8 @@ export class OKXExchange implements Exchange {
   async getTicker(symbol: string): Promise<{ price: number; timestamp: number }> {
     try {
       await this.ensureMarketsLoaded();
-      const ticker = await this.exchange.fetchTicker(symbol);
-      return {
-        price: ticker.last || ticker.close || 0,
-        timestamp: ticker.timestamp || Date.now(),
-      };
+      const { mid, ts } = await this.getMarkAndBestPrices(symbol, 'perp');
+      return { price: mid, timestamp: ts };
     } catch (error) {
       this.logger.error('Error fetching ticker from OKX', error as Error);
       throw error;
