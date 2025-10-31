@@ -837,15 +837,18 @@ export class TradingWorkflow {
         } else {
           const leverage = sizing.leverage || 1;
           // Calculate estimates for display (actual values will be in position data)
-          const estimatedPositionSize = sizing.suggestedSize * actualPrice;
-          const estimatedMargin = estimatedPositionSize / leverage;
+          // Note: Notional and Position Value are both UNLEVERED (size * price) to match account status terminology
+          // Margin = notional / leverage, consistent with standard trading definitions
+          const estimatedPositionValue = sizing.suggestedSize * actualPrice;
+          const estimatedMargin = estimatedPositionValue / leverage;
+          const estimatedNotional = estimatedPositionValue; // Notional is unlevered (matches aggregates.totalNotional)
 
           const detailMsg = this.cycleDisplay.formatExecutionMessage({
             action: signal.action,
             coin: signal.coin,
             price: actualPrice,
             leverage,
-            notional: estimatedPositionSize,
+            notional: estimatedNotional,
             margin: estimatedMargin,
           });
           this.emitLog('success', detailMsg);
@@ -1044,8 +1047,11 @@ export class TradingWorkflow {
         equity: account.equity,
         availableMargin: account.availableMargin,
         usedMargin: aggregates.totalMarginUsed,
-        unleveredExposure: aggregates.totalNotional,
-        leverage: (aggregates.totalNotional / account.equity).toFixed(2),
+        unleveredExposure: aggregates.totalUnleveredExposure,
+        leverage:
+          account.equity > 0
+            ? (aggregates.totalUnleveredExposure / account.equity).toFixed(2)
+            : '0',
         totalPnl: pnlMetrics.totalPnl,
         totalPnlPercent: pnlMetrics.totalPnlPercent,
         unrealizedPnl: pnlMetrics.unrealizedPnl,
@@ -1218,9 +1224,9 @@ export class TradingWorkflow {
     );
 
     // Guard against division by zero
-    const leverage = account.equity > 0 ? aggregates.totalNotional / account.equity : 0;
+    const leverage = account.equity > 0 ? aggregates.totalUnleveredExposure / account.equity : 0;
     console.log(
-      `   Unlevered Exposure: $${aggregates.totalNotional.toFixed(2)} | Leverage: ${leverage.toFixed(2)}x`
+      `   Unlevered Exposure: $${aggregates.totalUnleveredExposure.toFixed(2)} | Leverage: ${leverage.toFixed(2)}x`
     );
     console.log(
       `   Total P&L: ${pnlMetrics.totalPnlColor(`$${pnlMetrics.totalPnl.toFixed(2)} (${pnlMetrics.totalPnlPercent.toFixed(2)}%)`)} | Unrealized: ${pnlMetrics.unrealizedPnlColor(`$${pnlMetrics.unrealizedPnl.toFixed(2)} (${pnlMetrics.unrealizedPnlPercent.toFixed(2)}%)`)} | Realized (cycle): $${pnlMetrics.realizedCyclePnl.toFixed(2)}`
@@ -1246,7 +1252,9 @@ export class TradingWorkflow {
 
     const maxMarginLimit = this.config.riskParams.maxTotalRisk * 100; // Convert to percentage
     const marginUsage =
-      positions.length > 0 ? (aggregates.totalMarginUsed / account.equity) * 100 : 0;
+      positions.length > 0 && account.equity > 0
+        ? (aggregates.totalMarginUsed / account.equity) * 100
+        : 0;
 
     // Get additional risk metrics from position monitor
     const positionSummary = this.positionMonitor.getPositionSummary(positions);
@@ -1291,11 +1299,10 @@ export class TradingWorkflow {
       return;
     }
 
-    // Display positions table
+    // Display positions table (single-line format to prevent column breaks)
     console.log(`\n📊 Positions:`);
-    console.log(`   ┌──────────┬──────┬──────────┬──────────────┬──────────────┬───────────────┐`);
-    console.log(`   │ SIDE     │ COIN │ LEVERAGE │ MARGIN USED  │ ENTRY        │ UNREAL P&L    │`);
-    console.log(`   ├──────────┼──────┼──────────┼──────────────┼──────────────┼───────────────┤`);
+    console.log(`   SIDE      COIN  LEVERAGE  MARGIN USED      ENTRY          UNREAL P&L`);
+    console.log(`   ${'─'.repeat(75)}`);
 
     positions.forEach(position => {
       const sideColor = position.side === 'long' ? chalk.green : chalk.red;
@@ -1312,10 +1319,9 @@ export class TradingWorkflow {
       const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}% vs margin)`;
 
       console.log(
-        `   │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.white(marginText.padEnd(13))} │ ${chalk.yellow(entryText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(13))} │`
+        `   ${sideColor(sideText.padEnd(8))}  ${position.symbol.replace('/USDT', '').padEnd(4)}  ${chalk.cyan(leverageText.padEnd(8))}  ${chalk.white(marginText.padEnd(13))}  ${chalk.yellow(entryText.padEnd(13))}  ${pnlColor(pnlText)}`
       );
     });
-    console.log(`   └──────────┴──────┴──────────┴──────────────┴──────────────┴───────────────┘`);
 
     // Display individual position metrics
     console.log(chalk.gray(`\n   📊 Position Details:`));

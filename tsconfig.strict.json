@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noImplicitReturns": true
+  },
+  "include": [
+    "src/core/**/*",
+    "src/execution/**/*",
+    "src/exchange/**/*"
+  ]
+}
+

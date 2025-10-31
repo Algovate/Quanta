@@ -48,10 +48,12 @@ export class RiskManager {
   }
 
   // --- Portfolio Exposure & Leverage Helpers ---
-  /** Sum of absolute position notionals. */
+  /** Sum of absolute unlevered position values (size * markPrice). */
+  /** Matches aggregates.totalNotional for portfolio leverage calculations. */
   computeExposure(positions: Position[]): number {
     if (!positions?.length) return 0;
-    const total = positions.reduce((sum, p) => sum + Math.abs(p.notional || 0), 0);
+    // Use unlevered exposure (size * markPrice) for portfolio metrics, matches aggregates.totalNotional
+    const total = positions.reduce((sum, p) => sum + Math.abs(p.size * p.markPrice || 0), 0);
     return roundToPrecision(total, EXCHANGE_PRECISION.USDT);
   }
 
@@ -381,8 +383,12 @@ export class RiskManager {
         return { valid: false, reason };
       }
 
-      // Check confidence threshold
-      if (signal.confidence < SIGNAL_VALIDATION.MIN_CONFIDENCE) {
+      // Check confidence threshold with epsilon tolerance for floating-point precision
+      // (e.g., 0.54999999 should be accepted when threshold is 0.55)
+      if (
+        signal.confidence <
+        SIGNAL_VALIDATION.MIN_CONFIDENCE - SIGNAL_VALIDATION.CONFIDENCE_EPSILON
+      ) {
         const reason = `Confidence too low: ${(signal.confidence * 100).toFixed(1)}% < ${(SIGNAL_VALIDATION.MIN_CONFIDENCE * 100).toFixed(1)}% required`;
         this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
         return { valid: false, reason };

@@ -37,6 +37,10 @@ export class TradingManager extends EventEmitter {
   // Caches attached by APIServer
   _priceCache?: Map<string, { price: number; ts: number }>;
   _klineCache?: Map<string, { candle: any; ts: number }>;
+  // Health check dependencies
+  private exchange?: Exchange;
+  private marketDataProvider?: MarketDataProvider;
+  private aiAgent?: OpenRouterClient;
 
   private constructor() {
     super();
@@ -127,6 +131,11 @@ export class TradingManager extends EventEmitter {
     }
 
     this.logger.info('Starting trading workflow...');
+
+    // Store references for health checks
+    this.exchange = exchange;
+    this.marketDataProvider = marketDataProvider;
+    this.aiAgent = aiAgent;
 
     this.workflow = new TradingWorkflow(exchange, marketDataProvider, aiAgent, config);
 
@@ -222,6 +231,18 @@ export class TradingManager extends EventEmitter {
 
   getState(): TradingState {
     return { ...this.state };
+  }
+
+  getExchange(): Exchange | undefined {
+    return this.exchange;
+  }
+
+  getMarketDataProvider(): MarketDataProvider | undefined {
+    return this.marketDataProvider;
+  }
+
+  getAIAgent(): OpenRouterClient | undefined {
+    return this.aiAgent;
   }
 
   getWorkflow(): TradingWorkflow | null {

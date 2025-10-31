@@ -1,4 +1,5 @@
 import { Exchange } from '../exchange/types.js';
+import { Logger } from '../utils/logger.js';
 
 export interface Candlestick {
   timestamp: number;
@@ -59,15 +60,28 @@ export interface MarketData {
   currentPrice: number;
   trend: 'bullish' | 'bearish' | 'sideways';
   volatility: 'low' | 'medium' | 'high';
+  isStale?: boolean; // Indicates data is from cache due to fetch failure
+  cacheAge?: number; // Age of cached data in milliseconds
+}
+
+interface CachedMarketData {
+  data: MarketData;
+  timestamp: number;
 }
 
 export class MarketDataProvider {
+  private cache: Map<string, CachedMarketData> = new Map();
+  private readonly MAX_CACHE_AGE = 5 * 60 * 1000; // 5 minutes - still useful for fallback
+  private readonly logger = Logger.getInstance('MarketDataProvider');
+
   constructor(private exchange: Exchange) {}
 
   async getMarketData(coin: string, timeframes: string[] = ['3m', '4h']): Promise<MarketData[]> {
     const marketData: MarketData[] = [];
 
     for (const timeframe of timeframes) {
+      const cacheKey = `${coin}:${timeframe}`;
+
       try {
         // Fetch candlestick data
         const candlesticks = (await this.exchange.getCandlesticks(
@@ -77,7 +91,19 @@ export class MarketDataProvider {
         )) as Candlestick[];
 
         if (candlesticks.length < 50) {
-          // Silent skip during backtesting
+          // Try to use cached data if available
+          const cached = this.getCachedData(cacheKey);
+          if (cached) {
+            this.logger.warn('Insufficient fresh candles, using cached data', {
+              coin,
+              timeframe,
+              candlesReceived: candlesticks.length,
+              cacheAge: cached.cacheAge,
+            });
+            marketData.push(cached);
+            continue;
+          }
+          // Silent skip during backtesting when no cache available
           continue;
         }
 
@@ -88,7 +114,11 @@ export class MarketDataProvider {
         const trend = this.determineTrend(candlesticks, indicators);
         const volatility = this.calculateVolatility(candlesticks);
 
-        marketData.push({
+        // Update simulator's internal market data map if supported
+        // This ensures getTicker() uses the same prices as signal generation
+        this.syncMarketDataToExchange(coin, timeframe, candlesticks);
+
+        const data: MarketData = {
           coin,
           timeframe,
           candlesticks,
@@ -96,13 +126,98 @@ export class MarketDataProvider {
           currentPrice: candlesticks[candlesticks.length - 1].close,
           trend,
           volatility,
+        };
+
+        // Cache the successful fetch
+        this.cache.set(cacheKey, {
+          data,
+          timestamp: Date.now(),
         });
+
+        marketData.push(data);
       } catch (error) {
-        console.error(`Error fetching market data for ${coin} ${timeframe}:`, error);
+        this.logger.error(`Error fetching market data for ${coin} ${timeframe}`, error);
+
+        // Try to use cached data as fallback
+        const cached = this.getCachedData(cacheKey);
+        if (cached) {
+          this.logger.warn('Using stale cached data due to fetch failure', {
+            coin,
+            timeframe,
+            cacheAge: cached.cacheAge,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          marketData.push(cached);
+        } else {
+          this.logger.warn('No cached data available for failed fetch', {
+            coin,
+            timeframe,
+          });
+        }
       }
     }
 
     return marketData;
+  }
+
+  /**
+   * Sync market data to exchange if it supports updateMarketData (e.g., SimulatorExchange)
+   * This ensures price consistency between signal generation and order execution
+   */
+  private syncMarketDataToExchange(
+    coin: string,
+    timeframe: string,
+    candlesticks: Candlestick[]
+  ): void {
+    const exchange = this.exchange as {
+      updateMarketData?: (symbol: string, timeframe: string, candles: Candlestick[]) => void;
+    };
+    if (exchange.updateMarketData) {
+      exchange.updateMarketData(coin, timeframe, candlesticks);
+    }
+  }
+
+  /**
+   * Get cached data if available and not too old
+   */
+  private getCachedData(cacheKey: string): MarketData | null {
+    const cached = this.cache.get(cacheKey);
+    if (!cached) {
+      return null;
+    }
+
+    const age = Date.now() - cached.timestamp;
+
+    // Don't use extremely stale data (older than MAX_CACHE_AGE)
+    if (age > this.MAX_CACHE_AGE) {
+      this.cache.delete(cacheKey);
+      return null;
+    }
+
+    // Return cached data with staleness indicators
+    return {
+      ...cached.data,
+      isStale: true,
+      cacheAge: age,
+    };
+  }
+
+  /**
+   * Clear the cache (useful for testing or manual refresh)
+   */
+  clearCache(): void {
+    this.cache.clear();
+    this.logger.info('Market data cache cleared');
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): { size: number; keys: string[] } {
+    return {
+      size: this.cache.size,
+      keys: Array.from(this.cache.keys()),
+    };
   }
 
   private calculateIndicators(candlesticks: Candlestick[]): TechnicalIndicators {

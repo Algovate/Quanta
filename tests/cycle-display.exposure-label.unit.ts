@@ -16,7 +16,7 @@ async function testUnleveredExposureLabel() {
     account: { equity: 10000, availableMargin: 10000 } as any,
     positions: [],
     totalMarginUsed: 0,
-    totalNotional: 123.45,
+    totalUnleveredExposure: 123.45,
     totalPnl: 0,
     totalPnlPercent: 0,
     unrealizedPnl: 0,

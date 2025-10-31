@@ -79,6 +79,50 @@ const ConfigSchema = z.object({
       backgroundMode: z.boolean().default(false), // auto-detect
     })
     .optional(),
+  resilience: z
+    .object({
+      retry: z
+        .object({
+          maxRetries: z.number().default(3),
+          baseDelay: z.number().default(1000), // milliseconds
+          maxDelay: z.number().default(10000), // milliseconds
+        })
+        .default({ maxRetries: 3, baseDelay: 1000, maxDelay: 10000 }),
+      circuitBreaker: z
+        .object({
+          failureThreshold: z.number().default(5),
+          resetTimeout: z.number().default(60000), // milliseconds
+          halfOpenMaxAttempts: z.number().default(3),
+        })
+        .default({ failureThreshold: 5, resetTimeout: 60000, halfOpenMaxAttempts: 3 }),
+      rateLimit: z
+        .object({
+          openRouterRpm: z.number().default(20),
+          exchangeRpm: z.number().default(60),
+        })
+        .default({ openRouterRpm: 20, exchangeRpm: 60 }),
+      timeout: z
+        .object({
+          aiRequest: z.number().default(30000), // milliseconds
+          exchangeRequest: z.number().default(10000), // milliseconds
+          cycleMaxDuration: z.number().default(120000), // milliseconds
+        })
+        .default({ aiRequest: 30000, exchangeRequest: 10000, cycleMaxDuration: 120000 }),
+      degradedMode: z
+        .object({
+          enabled: z.boolean().default(true),
+          useMockAIOnFailure: z.boolean().default(false),
+          maxConsecutiveErrors: z.number().default(5),
+          pauseOnPersistentErrors: z.boolean().default(true),
+        })
+        .default({
+          enabled: true,
+          useMockAIOnFailure: false,
+          maxConsecutiveErrors: 5,
+          pauseOnPersistentErrors: true,
+        }),
+    })
+    .optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

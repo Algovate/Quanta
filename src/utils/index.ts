@@ -4,3 +4,5 @@ export { aggregatePositionMetrics } from '../execution/position-utils.js';
 export { calculatePositionPnl, ensureUsdtSuffix } from './symbol-utils.js';
 export { validateAccount } from './account-validation.js';
 export * from './precision.js';
+export * from './retry.js';
+export * from './circuit-breaker.js';

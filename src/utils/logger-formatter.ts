@@ -16,7 +16,39 @@ export class LogFormatter {
       return `[${entry.timestamp}] [${entry.level.toUpperCase()}] [${this.context}] ${entry.message}`;
     } else {
       // Interactive mode: preserve chalk formatting
-      return entry.message;
+      let formatted = entry.message;
+
+      // Enhance warnings with metadata details (especially for price deviation warnings)
+      if (entry.level === 'warn' && entry.metadata) {
+        const meta = entry.metadata;
+
+        // Special formatting for price deviation warnings
+        if (entry.message.includes('stale entry price')) {
+          const coin = meta.coin as string;
+          const side = meta.side as string;
+          const entryPrice = meta.entryPrice as number;
+          const currentPrice = meta.currentPrice as number;
+          const relativeDiff = meta.relativeDiff as number;
+          const maxAllowed = meta.maxAllowed as number;
+
+          const deviationPercent = (relativeDiff * 100).toFixed(2);
+          const thresholdPercent = (maxAllowed * 100).toFixed(0);
+
+          formatted +=
+            `\n  📍 ${coin} ${side.toUpperCase()}: Entry=$${entryPrice.toFixed(2)}, ` +
+            `Market=$${currentPrice.toFixed(2)}, Deviation=${deviationPercent}% (threshold: ${thresholdPercent}%)`;
+        } else if (entry.metadata.coin || entry.metadata.side) {
+          // Format other warnings with coin/side if available
+          const parts: string[] = [];
+          if (meta.coin) parts.push(`Coin: ${meta.coin}`);
+          if (meta.side) parts.push(`Side: ${meta.side}`);
+          if (parts.length > 0) {
+            formatted += ` (${parts.join(', ')})`;
+          }
+        }
+      }
+
+      return formatted;
     }
   }
 

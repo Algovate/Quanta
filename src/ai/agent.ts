@@ -3,6 +3,8 @@ import { MarketData } from '../data/market.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
 import type { TechnicalIndicators, MarketData as TMarketData } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
+import { withRetry, createRetryConfig } from '../utils/retry.js';
+import { CircuitBreaker, createCircuitBreaker } from '../utils/circuit-breaker.js';
 
 export interface AIResponse {
   coin: string;
@@ -42,12 +44,18 @@ export class OpenRouterClient {
   private model: string;
   private temperature: number;
   private logger: Logger;
+  private circuitBreaker: CircuitBreaker;
 
   constructor(apiKey: string, model: string = 'deepseek/deepseek-chat', temperature: number = 0.7) {
     this.apiKey = apiKey;
     this.model = model;
     this.temperature = temperature;
     this.logger = Logger.getInstance('OpenRouter');
+    this.circuitBreaker = createCircuitBreaker('OpenRouter', {
+      failureThreshold: 5,
+      resetTimeout: 60000, // 1 minute
+      halfOpenMaxAttempts: 2,
+    });
   }
 
   async generateTradingSignal(
@@ -463,45 +471,90 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
   }
 
   private async callOpenRouterAPI(prompt: string): Promise<string> {
-    try {
-      // Extract system prompt and user prompt using explicit separator
-      const separator = '\n---USER---\n';
-      const sepIdx = prompt.indexOf(separator);
-      const systemPrompt = sepIdx >= 0 ? prompt.substring(0, sepIdx).trim() : prompt;
-      const userPrompt = sepIdx >= 0 ? prompt.substring(sepIdx + separator.length).trim() : '';
+    // Use circuit breaker with fallback to empty response
+    return await this.circuitBreaker.execute(
+      async () => {
+        // Use retry logic for the actual API call
+        return await withRetry(
+          async () => {
+            // Extract system prompt and user prompt using explicit separator
+            const separator = '\n---USER---\n';
+            const sepIdx = prompt.indexOf(separator);
+            const systemPrompt = sepIdx >= 0 ? prompt.substring(0, sepIdx).trim() : prompt;
+            const userPrompt =
+              sepIdx >= 0 ? prompt.substring(sepIdx + separator.length).trim() : '';
 
-      const response = await axios.post(
-        'https://openrouter.ai/api/v1/chat/completions',
-        {
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            {
-              role: 'user',
-              content: userPrompt,
-            },
-          ],
-          temperature: this.temperature,
-          max_tokens: 4000,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://quanta-cli.com',
-            'X-Title': 'Quanta CLI',
+            const response = await axios.post(
+              'https://openrouter.ai/api/v1/chat/completions',
+              {
+                model: this.model,
+                messages: [
+                  {
+                    role: 'system',
+                    content: systemPrompt,
+                  },
+                  {
+                    role: 'user',
+                    content: userPrompt,
+                  },
+                ],
+                temperature: this.temperature,
+                max_tokens: 4000,
+              },
+              {
+                headers: {
+                  Authorization: `Bearer ${this.apiKey}`,
+                  'Content-Type': 'application/json',
+                  'HTTP-Referer': 'https://quanta-cli.com',
+                  'X-Title': 'Quanta CLI',
+                },
+                timeout: 30000, // 30 second timeout
+              }
+            );
+
+            return response.data.choices[0].message.content;
           },
-        }
-      );
-
-      return response.data.choices[0].message.content;
-    } catch (error) {
-      this.logger.error('OpenRouter API Error', error);
-      throw error;
-    }
+          createRetryConfig({
+            maxRetries: 3,
+            baseDelay: 2000, // Start with 2 second delay
+            maxDelay: 15000, // Max 15 seconds between retries
+            timeout: 30000, // Overall timeout per attempt
+            shouldRetry: (error: any) => {
+              // Don't retry on 4xx errors (client errors, likely API key or quota issues)
+              if (
+                error.response?.status &&
+                error.response.status >= 400 &&
+                error.response.status < 500 &&
+                error.response.status !== 429
+              ) {
+                this.logger.warn('Not retrying OpenRouter API call due to client error', {
+                  status: error.response.status,
+                  message: error.message,
+                });
+                return false;
+              }
+              // Retry on network errors, timeouts, 5xx errors, and rate limits (429)
+              return true;
+            },
+            onRetry: (attempt: number, error: any) => {
+              this.logger.warn('Retrying OpenRouter API call', {
+                attempt,
+                error: error instanceof Error ? error.message : String(error),
+                status: error.response?.status,
+              });
+            },
+          })
+        );
+      },
+      async () => {
+        // Fallback when circuit is open - return empty response
+        this.logger.error(
+          'OpenRouter circuit breaker is OPEN, returning empty response',
+          new Error('Circuit breaker open')
+        );
+        return '{"signals": []}';
+      }
+    );
   }
 
   private parseResponse(response: string): TradingSignal[] {

@@ -11,6 +11,7 @@ import { RiskManager } from '../../execution/risk.js';
 import { OrderExecutor } from '../../execution/orders.js';
 import { PositionMonitorService } from '../../execution/monitor.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import { Logger } from '../../utils/logger.js';
 
 interface SimulateConfig {
   simulation: {
@@ -458,28 +459,113 @@ export class SimulateCommands {
         const ticker = await exchange.getTicker(symbol);
         const currentPrice = (ticker as { price: number }).price;
 
-        const result = await orderExecutor.executeSignal(signal, account, positions, currentPrice);
+        // Refresh positions and account before each execution to get latest state
+        const currentPositions = await exchange.getPositions();
+        const currentAccount = await exchange.getAccount();
+
+        const result = await orderExecutor.executeSignal(
+          signal,
+          currentAccount,
+          currentPositions,
+          currentPrice
+        );
 
         if (result.success && result.order) {
-          spinner3.succeed(`${signal.action} order executed for ${signal.coin}`);
-          executedOrders++;
+          // Only count as executed if order is actually filled
+          // Limit orders with status "open" should not be counted as executed
+          if (result.order.status === 'filled') {
+            spinner3.succeed(`${signal.action} order executed for ${signal.coin}`);
+            executedOrders++;
+          } else if (result.order.status === 'open') {
+            // Limit order placed but not yet filled
+            spinner3.warn(`${signal.action} order placed (pending) for ${signal.coin}`);
+            // Don't increment executedOrders - order is not yet filled
+          } else {
+            spinner3.info(`${signal.action} order ${result.order.status} for ${signal.coin}`);
+          }
 
+          // Debug: Log positions after each order execution
           if (verbose) {
+            const positionsAfterExecution = await exchange.getPositions();
             console.log(chalk.gray(`    - Order ID: ${result.order.id}`));
             console.log(chalk.gray(`    - Amount: ${result.order.amount} ${signal.coin}`));
             console.log(chalk.gray(`    - Price: $${result.order.price?.toFixed(2)}`));
             console.log(chalk.gray(`    - Status: ${result.order.status}`));
+            if (result.order.status === 'open') {
+              console.log(
+                chalk.yellow(
+                  `    - ⚠️  Order pending: limit order not yet filled (not counted as executed)`
+                )
+              );
+            }
+            console.log(
+              chalk.dim(`    - Positions after order: ${positionsAfterExecution.length} open`)
+            );
           }
         } else {
           spinner3.fail(`Failed to execute ${signal.action} signal for ${signal.coin}`);
           if (verbose && result.error) {
             console.log(chalk.red(`    - Error: ${result.error}`));
+            // Log additional debugging info for position sizing failures
+            if (result.error.includes('Position sizing calculation failed')) {
+              const currentPositionsAfterFailure = await exchange.getPositions();
+              const accountAfterFailure = await exchange.getAccount();
+              const marginUsageRatio =
+                accountAfterFailure.equity > 0
+                  ? (accountAfterFailure.usedMargin / accountAfterFailure.equity) * 100
+                  : 0;
+              const maxTotalRisk = 30; // Default from config
+              console.log(
+                chalk.yellow(
+                  `    - [DEBUG] Positions: ${currentPositionsAfterFailure.length}/${maxPositions}, ` +
+                    `Available Margin: $${accountAfterFailure.availableMargin.toFixed(2)}, ` +
+                    `Used Margin: $${accountAfterFailure.usedMargin.toFixed(2)} ` +
+                    `(${marginUsageRatio.toFixed(2)}%), ` +
+                    `Equity: $${accountAfterFailure.equity.toFixed(2)}`
+                )
+              );
+              if (marginUsageRatio >= maxTotalRisk) {
+                console.log(
+                  chalk.yellow(
+                    `    - [REASON] Margin limit reached: ${marginUsageRatio.toFixed(2)}% >= ${maxTotalRisk}%`
+                  )
+                );
+              } else if (currentPositionsAfterFailure.length >= maxPositions) {
+                console.log(
+                  chalk.yellow(
+                    `    - [REASON] Max positions reached: ${currentPositionsAfterFailure.length} >= ${maxPositions}`
+                  )
+                );
+              }
+            }
           }
         }
       } catch (error) {
         spinner3.fail(`Error executing signal for ${signal.coin}: ${error}`);
       }
     }
+
+    // Debug: Log all positions after execution phase
+    if (verbose) {
+      const positionsAfterExecution = await exchange.getPositions();
+      console.log(
+        chalk.dim(
+          `\n  [DEBUG] Positions after execution phase: ${positionsAfterExecution.length} open`
+        )
+      );
+      positionsAfterExecution.forEach(pos => {
+        console.log(
+          chalk.dim(
+            `    - ${pos.side.toUpperCase()} ${pos.symbol}: ${pos.size} @ $${pos.entryPrice.toFixed(2)}`
+          )
+        );
+      });
+    }
+
+    // Flush logger buffer to show any warnings from order execution inline
+    // This ensures warnings about stale entry prices appear immediately
+    // instead of at the end when process exits
+    Logger.getInstance().flushSync();
 
     // Phase 4: Monitoring - Position Management
     console.log(chalk.blue('\n🔍 PHASE 4: MONITORING (Position Management)'));
@@ -490,6 +576,20 @@ export class SimulateCommands {
     // Get updated positions
     const updatedPositions = await exchange.getPositions();
     await exchange.getAccount();
+
+    // Debug: Log positions before monitoring
+    if (verbose) {
+      console.log(
+        chalk.dim(`\n  [DEBUG] Positions before monitoring: ${updatedPositions.length} open`)
+      );
+      updatedPositions.forEach(pos => {
+        console.log(
+          chalk.dim(
+            `    - ${pos.side.toUpperCase()} ${pos.symbol}: ${pos.size} @ $${pos.entryPrice.toFixed(2)} (P&L: $${pos.unrealizedPnl.toFixed(2)})`
+          )
+        );
+      });
+    }
 
     if (updatedPositions.length > 0) {
       spinner4.succeed(
@@ -503,8 +603,25 @@ export class SimulateCommands {
         await SimulateCommands.simulatePriceMovement(exchange, symbol);
       }
 
-      // Check positions
+      // Check positions (may close positions if stop loss/take profit triggered)
       await positionMonitor.monitorPositions(updatedPositions, exchange);
+
+      // Debug: Log positions after monitoring
+      if (verbose) {
+        const positionsAfterMonitoring = await exchange.getPositions();
+        console.log(
+          chalk.dim(
+            `\n  [DEBUG] Positions after monitoring: ${positionsAfterMonitoring.length} open`
+          )
+        );
+        positionsAfterMonitoring.forEach(pos => {
+          console.log(
+            chalk.dim(
+              `    - ${pos.side.toUpperCase()} ${pos.symbol}: ${pos.size} @ $${pos.entryPrice.toFixed(2)} (P&L: $${pos.unrealizedPnl.toFixed(2)})`
+            )
+          );
+        });
+      }
     } else {
       spinner4.succeed('No positions to monitor');
     }
@@ -515,6 +632,23 @@ export class SimulateCommands {
     const portfolioMetrics = await exchange.getPortfolioMetrics();
 
     totalPnl = finalAccount.equity - initialBalance;
+
+    // Debug: Always show position details if verbose, or if there's a concern
+    // Note: positions count != executed orders is normal (orders can combine or close positions)
+    if (verbose && finalPositions.length > 0) {
+      console.log(
+        chalk.dim(`\n  [DEBUG] Final positions detail: ${finalPositions.length} position(s)`)
+      );
+      finalPositions.forEach(pos => {
+        const calcNotional = pos.size * pos.markPrice * pos.leverage;
+        const notionalMatch = Math.abs(calcNotional - pos.notional) < 0.01;
+        console.log(
+          chalk.dim(
+            `    - ${pos.side.toUpperCase()} ${pos.symbol}: size=${pos.size.toFixed(8)}, entry=$${pos.entryPrice.toFixed(2)}, mark=$${pos.markPrice.toFixed(2)}, notional=$${pos.notional.toFixed(2)} (calc: $${calcNotional.toFixed(2)}${notionalMatch ? '' : ' ⚠️ MISMATCH'})`
+          )
+        );
+      });
+    }
 
     if (finalPositions.length > 0 && verbose) {
       console.log(chalk.gray('\n  📊 Portfolio Overview:'));
@@ -627,6 +761,10 @@ export class SimulateCommands {
 
     console.log(chalk.gray('\n' + '='.repeat(60)));
     console.log(chalk.green('✅ Multi-coin multi-position simulation completed successfully!'));
+
+    // Final flush of logger buffer to ensure all warnings/logs are shown
+    // This catches any warnings that occurred during the simulation
+    Logger.getInstance().flushSync();
   }
 
   private static getRiskLevel(pnlPercent: number): string {

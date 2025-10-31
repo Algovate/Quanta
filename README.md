@@ -45,6 +45,7 @@ NEXT_PUBLIC_QUANTA_WS_URL=ws://localhost:3001
 - **🎯 Mock AI**: Built-in simulated AI for testing without API keys
 - **⚡ Real-time Monitoring**: Live trading updates and performance tracking (synchronous console output in interactive mode)
 - **📈 Enhanced Backtest Reports**: Visual formatting, progress bars, color-coded metrics, and comprehensive statistics
+- **🔧 Production-Grade Resilience**: Automatic retries, circuit breakers, stale data caching, and graceful degradation
 
 ## Commands
 
@@ -134,6 +135,7 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 - 💡 [Core Concepts](docs/concepts.md)
 - 🏦 [Supported Exchanges](docs/exchanges.md)
 - 📝 [Logging Guide](docs/logging-guide.md)
+- 🛡️ [Error Handling & Resilience](docs/error-handling.md)
 
 ## Important Concepts (Updated)
 

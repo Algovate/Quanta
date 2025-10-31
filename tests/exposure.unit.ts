@@ -20,7 +20,7 @@ async function testExposureIgnoresLeverage() {
 
   const agg = aggregatePositionMetrics(positions as any);
   // Exposure should be size * markPrice (no leverage)
-  assert.strictEqual(agg.totalNotional, 0.5 * 3500);
+  assert.strictEqual(agg.totalUnleveredExposure, 0.5 * 3500);
 }
 
 async function run() {

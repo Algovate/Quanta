@@ -4,6 +4,7 @@ import cors from 'cors';
 import http from 'http';
 import { Logger } from '../utils/logger.js';
 import { TradingManager } from './trading-manager.js';
+import { HealthCheckService } from './health-check.js';
 import type { OutboundMessage } from './types.js';
 import {
   registerTradeRoutes,
@@ -20,6 +21,7 @@ export class APIServer {
   private server: http.Server;
   private wss: WebSocketServer;
   private tradingManager: TradingManager;
+  private healthCheckService: HealthCheckService;
   private clients: Set<WebSocket> = new Set();
   private heartbeatInterval?: NodeJS.Timeout;
   // lightweight in-memory caches (stored on tradingManager for access by routes)
@@ -45,6 +47,10 @@ export class APIServer {
     this.wss = new WebSocketServer({ server: this.server });
     this.tradingManager = TradingManager.getInstance();
 
+    // Initialize health check service
+    // Dependencies will be available after trading starts
+    this.healthCheckService = new HealthCheckService();
+
     // Attach caches to tradingManager for route access
     this.tradingManager._priceCache = this.priceCache;
     this.tradingManager._klineCache = this.klineCache;
@@ -65,9 +71,37 @@ export class APIServer {
   }
 
   private setupRoutes(): void {
-    // Health check
+    // Quick health check (no async operations)
     this.app.get('/health', (_req, res) => {
-      res.json({ status: 'ok', timestamp: Date.now() });
+      const quickHealth = this.healthCheckService.quickCheck();
+      res.json(quickHealth);
+    });
+
+    // Comprehensive health check
+    this.app.get('/health/detailed', async (_req, res) => {
+      try {
+        // Update health check service with latest dependencies
+        const exchange = this.tradingManager.getExchange();
+        const marketDataProvider = this.tradingManager.getMarketDataProvider();
+        const aiAgent = this.tradingManager.getAIAgent();
+
+        // Create a new health check with current dependencies
+        const healthCheck = new HealthCheckService(exchange, aiAgent, marketDataProvider);
+        const status = await healthCheck.check();
+
+        // Set appropriate HTTP status code based on health
+        const httpStatus =
+          status.status === 'healthy' ? 200 : status.status === 'degraded' ? 200 : 503;
+
+        res.status(httpStatus).json(status);
+      } catch (error) {
+        logger.error('Health check failed', error as Error);
+        res.status(503).json({
+          status: 'unhealthy',
+          timestamp: Date.now(),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     });
 
     // Register route modules

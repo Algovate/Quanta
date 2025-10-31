@@ -1,6 +1,7 @@
 import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { Logger } from '../utils/logger.js';
+import { withRetry, createRetryConfig } from '../utils/retry.js';
 
 export class OKXExchange implements Exchange {
   private exchange: ccxt.okx;
@@ -119,70 +120,105 @@ export class OKXExchange implements Exchange {
       throw new Error('Account information requires API credentials for OKX');
     }
 
-    try {
-      const balance = await this.exchange.fetchBalance();
-      return {
-        balance: (balance.total as unknown as Record<string, number>)?.USDT || 0,
-        equity: (balance.total as unknown as Record<string, number>)?.USDT || 0,
-        availableMargin: (balance.free as unknown as Record<string, number>)?.USDT || 0,
-        usedMargin: (balance.used as unknown as Record<string, number>)?.USDT || 0,
-        marginRatio: 0,
-        timestamp: Date.now(),
-      };
-    } catch (error) {
-      this.logger.error('Error fetching account from OKX', error as Error);
-      throw error;
-    }
+    return withRetry(
+      async () => {
+        const balance = await this.exchange.fetchBalance();
+        return {
+          balance: (balance.total as unknown as Record<string, number>)?.USDT || 0,
+          equity: (balance.total as unknown as Record<string, number>)?.USDT || 0,
+          availableMargin: (balance.free as unknown as Record<string, number>)?.USDT || 0,
+          usedMargin: (balance.used as unknown as Record<string, number>)?.USDT || 0,
+          marginRatio: 0,
+          timestamp: Date.now(),
+        };
+      },
+      createRetryConfig({
+        maxRetries: 3,
+        baseDelay: 1000,
+        maxDelay: 5000,
+        onRetry: (attempt, error) => {
+          this.logger.warn('Retrying OKX getAccount', {
+            attempt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      })
+    );
   }
 
   async getPositions(): Promise<Position[]> {
-    try {
-      if (!this.exchange.apiKey || this.exchange.apiKey === 'test') {
-        return [];
-      }
-
-      await this.ensureMarketsLoaded();
-      const positions = await this.exchange.fetchPositions();
-      return (positions as unknown[]).map((pos: Record<string, unknown>) => {
-        const size = pos.contracts as number;
-        const markPrice = (pos.markPrice as number) || 0;
-        const leverage = (pos.leverage as number) || 1;
-        return {
-          symbol: pos.symbol as string,
-          side: pos.side as 'long' | 'short',
-          size,
-          entryPrice: (pos.entryPrice as number) || 0,
-          markPrice,
-          unrealizedPnl: (pos.unrealizedPnl as number) || 0,
-          marginUsed: (pos.marginUsed as number) || 0,
-          notional: size * markPrice * leverage,
-          leverage,
-          timestamp: Date.now(),
-        };
-      });
-    } catch (error) {
-      this.logger.error('Error fetching positions from OKX', error as Error);
+    if (!this.exchange.apiKey || this.exchange.apiKey === 'test') {
       return [];
     }
+
+    return withRetry(
+      async () => {
+        await this.ensureMarketsLoaded();
+        const positions = await this.exchange.fetchPositions();
+        return (positions as unknown[]).map((pos: Record<string, unknown>) => {
+          const size = pos.contracts as number;
+          const markPrice = (pos.markPrice as number) || 0;
+          const leverage = (pos.leverage as number) || 1;
+          return {
+            symbol: pos.symbol as string,
+            side: pos.side as 'long' | 'short',
+            size,
+            entryPrice: (pos.entryPrice as number) || 0,
+            markPrice,
+            unrealizedPnl: (pos.unrealizedPnl as number) || 0,
+            marginUsed: (pos.marginUsed as number) || 0,
+            notional: size * markPrice * leverage,
+            leverage,
+            timestamp: Date.now(),
+          };
+        });
+      },
+      createRetryConfig({
+        maxRetries: 3,
+        baseDelay: 1000,
+        maxDelay: 5000,
+        onRetry: (attempt, error) => {
+          this.logger.warn('Retrying OKX getPositions', {
+            attempt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      })
+    ).catch(error => {
+      this.logger.error('Error fetching positions from OKX after retries', error as Error);
+      return [];
+    });
   }
 
   async getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]> {
-    try {
-      await this.ensureMarketsLoaded();
-      const perpSymbol = this.resolveInstrument(symbol, 'perp');
-      const ohlcv = await this.exchange.fetchOHLCV(perpSymbol, timeframe, undefined, limit);
-      return ohlcv.map((candle: number[]) => ({
-        timestamp: candle[0],
-        open: candle[1],
-        high: candle[2],
-        low: candle[3],
-        close: candle[4],
-        volume: candle[5],
-      }));
-    } catch (error) {
-      console.error('Error fetching candlesticks from OKX:', error);
-      throw error;
-    }
+    return withRetry(
+      async () => {
+        await this.ensureMarketsLoaded();
+        const perpSymbol = this.resolveInstrument(symbol, 'perp');
+        const ohlcv = await this.exchange.fetchOHLCV(perpSymbol, timeframe, undefined, limit);
+        return ohlcv.map((candle: number[]) => ({
+          timestamp: candle[0],
+          open: candle[1],
+          high: candle[2],
+          low: candle[3],
+          close: candle[4],
+          volume: candle[5],
+        }));
+      },
+      createRetryConfig({
+        maxRetries: 3,
+        baseDelay: 1000,
+        maxDelay: 5000,
+        onRetry: (attempt, error) => {
+          this.logger.warn('Retrying OKX getCandlesticks', {
+            attempt,
+            symbol,
+            timeframe,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      })
+    );
   }
 
   async getSnapshot(): Promise<{ account: Account; positions: Position[] }> {
@@ -241,14 +277,25 @@ export class OKXExchange implements Exchange {
   }
 
   async getTicker(symbol: string): Promise<{ price: number; timestamp: number }> {
-    try {
-      await this.ensureMarketsLoaded();
-      const { mid, ts } = await this.getMarkAndBestPrices(symbol, 'perp');
-      return { price: mid, timestamp: ts };
-    } catch (error) {
-      this.logger.error('Error fetching ticker from OKX', error as Error);
-      throw error;
-    }
+    return withRetry(
+      async () => {
+        await this.ensureMarketsLoaded();
+        const { mid, ts } = await this.getMarkAndBestPrices(symbol, 'perp');
+        return { price: mid, timestamp: ts };
+      },
+      createRetryConfig({
+        maxRetries: 3,
+        baseDelay: 500, // Faster retry for ticker (less critical)
+        maxDelay: 2000,
+        onRetry: (attempt, error) => {
+          this.logger.warn('Retrying OKX getTicker', {
+            attempt,
+            symbol,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      })
+    );
   }
 
   getExchangeName(): string {

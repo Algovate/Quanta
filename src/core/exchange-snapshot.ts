@@ -1,5 +1,5 @@
 import { Exchange, Account, Position } from '../exchange/types.js';
-import { withRetry } from '../utils/retry.js';
+import { withRetry, createRetryConfig } from '../utils/retry.js';
 
 export class ExchangeSnapshotService {
   private exchange: Exchange;
@@ -23,6 +23,13 @@ export class ExchangeSnapshotService {
   }
 
   async getTicker(symbol: string): Promise<{ price: number; timestamp: number }> {
-    return withRetry(() => this.exchange.getTicker(symbol), { attempts: 2, delayMs: 80 });
+    return withRetry(
+      () => this.exchange.getTicker(symbol),
+      createRetryConfig({
+        maxRetries: 2,
+        baseDelay: 80,
+        maxDelay: 500,
+      })
+    );
   }
 }

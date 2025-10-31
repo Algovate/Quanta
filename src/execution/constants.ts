@@ -35,6 +35,8 @@ export const SIGNAL_VALIDATION = {
   MAX_STOP_LOSS: 0.1,
   /** Minimum risk/reward ratio required */
   MIN_RISK_REWARD_RATIO: 1.5,
+  /** Epsilon tolerance for floating-point precision in confidence comparisons */
+  CONFIDENCE_EPSILON: 0.0001,
 } as const;
 
 /**

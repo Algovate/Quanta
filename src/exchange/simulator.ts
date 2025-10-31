@@ -80,13 +80,13 @@ export class SimulatorExchange implements Exchange {
   }
 
   /**
-   * Get total exposure across all positions
+   * Get total exposure across all positions (unlevered)
    *
-   * Exposure represents the total notional value of all open positions.
-   * Formula: Total Exposure = sum of all position.notional
-   * where position.notional = size * markPrice * leverage
+   * Exposure represents the total unlevered notional value of all open positions.
+   * Formula: Total Exposure = sum of all (size * markPrice)
+   * This matches aggregates.totalNotional and workflow terminology for portfolio leverage.
    *
-   * @returns Total exposure value and breakdown by symbol
+   * @returns Total exposure value (unlevered) and breakdown by symbol
    */
   async getTotalExposure(): Promise<{ totalValue: number; bySymbol: Record<string, number> }> {
     await this.updateAllPositions();
@@ -94,8 +94,8 @@ export class SimulatorExchange implements Exchange {
     let totalValue = 0;
 
     this.positions.forEach(position => {
-      // Use position.notional which already includes leverage (size * markPrice * leverage)
-      const positionValue = position.notional;
+      // Use unlevered exposure (size * markPrice) for portfolio metrics, matches aggregates.totalNotional
+      const positionValue = position.size * position.markPrice;
       bySymbol[position.symbol] = (bySymbol[position.symbol] || 0) + positionValue;
       totalValue += positionValue;
     });
@@ -107,10 +107,10 @@ export class SimulatorExchange implements Exchange {
    * Get comprehensive portfolio metrics
    *
    * Calculation formulas:
-   * - Total Leverage = Total Exposure / Equity
-   *   (This is the portfolio-level leverage, not per-position leverage)
+   * - Total Leverage = Total Exposure / Equity (portfolio-level metric, not per-position)
+   *   Where Total Exposure is UNLEVERED (size * price)
    * - Average Leverage = mean of individual position leverages (calculated elsewhere)
-   * - Total Exposure = sum of all position notional values
+   * - Total Exposure = sum of all (size * markPrice) - unlevered, matches aggregates.totalNotional
    * - Total Unrealized P&L = sum of all position unrealized P&L
    *
    * @returns Portfolio metrics including exposure, P&L, and leverage
@@ -158,12 +158,13 @@ export class SimulatorExchange implements Exchange {
     timeframe: string,
     limit: number = 100
   ): Promise<Candlestick[]> {
-    // If we have a real data source exchange, delegate to it
+    // Try real data source first
     if (this.dataSourceExchange) {
       try {
-        return await this.dataSourceExchange.getCandlesticks(symbol, timeframe, limit);
+        const candles = await this.dataSourceExchange.getCandlesticks(symbol, timeframe, limit);
+        this.updateMarketData(symbol, timeframe, candles);
+        return candles.slice(-limit);
       } catch (error) {
-        // Fall back to mock data if real data fetch fails
         console.warn(
           `Failed to fetch real market data for ${symbol} ${timeframe}, falling back to mock data:`,
           error
@@ -171,7 +172,7 @@ export class SimulatorExchange implements Exchange {
       }
     }
 
-    // Fall back to mock data generation
+    // Use cached data or generate mock data
     const key = `${symbol}_${timeframe}`;
     let candles = this.marketData.get(key);
 
@@ -181,6 +182,16 @@ export class SimulatorExchange implements Exchange {
     }
 
     return candles.slice(-limit);
+  }
+
+  /**
+   * Update market data for a symbol/timeframe
+   * Allows MarketDataProvider to inject fetched market data into the simulator's internal map
+   * This ensures getTicker() uses the same prices as signal generation
+   */
+  updateMarketData(symbol: string, timeframe: string, candles: Candlestick[]): void {
+    const key = `${symbol}_${timeframe}`;
+    this.marketData.set(key, candles);
   }
 
   async placeOrder(
@@ -222,31 +233,53 @@ export class SimulatorExchange implements Exchange {
   }
 
   async getTicker(symbol: string): Promise<{ price: number; timestamp: number }> {
-    // If we have a real data source exchange, delegate to it
+    const normalizedSymbol = normalizeSymbol(symbol);
+
+    // Try real data source first
     if (this.dataSourceExchange) {
       try {
-        return await this.dataSourceExchange.getTicker(symbol);
+        return await this.dataSourceExchange.getTicker(normalizedSymbol);
       } catch (error) {
-        // Fall back to mock price if real data fetch fails
         console.warn(
-          `Failed to fetch real ticker data for ${symbol}, falling back to mock data:`,
+          `Failed to fetch real ticker data for ${normalizedSymbol}, falling back to mock data:`,
           error
         );
-        // Explicitly return mock data on error
-        const mockPrice = this.getBasePrice(symbol);
-        return {
-          price: mockPrice,
-          timestamp: Date.now(),
-        };
       }
     }
 
-    // Fall back to mock data
-    const mockPrice = this.getBasePrice(symbol);
+    // Try to get price from market data (prefer shorter timeframes for recency)
+    const price = this.getPriceFromMarketData(normalizedSymbol);
+    if (price !== null) {
+      return { price, timestamp: Date.now() };
+    }
+
+    // Fall back to base price
     return {
-      price: mockPrice,
+      price: this.getBasePrice(normalizedSymbol),
       timestamp: Date.now(),
     };
+  }
+
+  /**
+   * Get latest price from market data map
+   * Checks multiple timeframes, preferring shorter ones for more recent prices
+   */
+  private getPriceFromMarketData(symbol: string): number | null {
+    const timeframes = ['3m', '4h', '1m'];
+
+    for (const timeframe of timeframes) {
+      const key = `${symbol}_${timeframe}`;
+      const candles = this.marketData.get(key);
+
+      if (candles && candles.length > 0) {
+        const latestPrice = candles[candles.length - 1].close;
+        if (latestPrice > 0 && !isNaN(latestPrice)) {
+          return latestPrice;
+        }
+      }
+    }
+
+    return null;
   }
 
   getExchangeName(): string {

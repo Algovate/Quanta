@@ -99,8 +99,8 @@ export class BacktestExchange implements Exchange {
     let totalValue = 0;
 
     this.positions.forEach(position => {
-      // Use position.notional which already includes leverage (size * markPrice * leverage)
-      const positionValue = position.notional;
+      // Use unlevered exposure (size * markPrice) for portfolio metrics, matches aggregates.totalNotional
+      const positionValue = position.size * position.markPrice;
       bySymbol[position.symbol] = (bySymbol[position.symbol] || 0) + positionValue;
       totalValue += positionValue;
     });

@@ -36,7 +36,7 @@ export class CycleDisplay {
     account: Account;
     positions: Position[];
     totalMarginUsed: number;
-    totalNotional: number;
+    totalUnleveredExposure: number;
     totalPnl: number;
     totalPnlPercent: number;
     unrealizedPnl: number;
@@ -65,7 +65,7 @@ export class CycleDisplay {
       account,
       positions,
       totalMarginUsed,
-      totalNotional,
+      totalUnleveredExposure,
       totalPnl,
       totalPnlPercent,
       unrealizedPnl,
@@ -102,7 +102,7 @@ export class CycleDisplay {
     }
 
     output += `   Equity: ${equityDisplay} | Available: $${account.availableMargin.toFixed(2)} | Used: $${totalMarginUsed.toFixed(2)}\n`;
-    output += `   Unlevered Exposure: $${totalNotional.toFixed(2)} | Leverage: ${(totalNotional / account.equity).toFixed(2)}x\n`;
+    output += `   Unlevered Exposure: $${totalUnleveredExposure.toFixed(2)} | Leverage: ${(totalUnleveredExposure / account.equity).toFixed(2)}x\n`;
 
     const totalPnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
     const unrealizedPnlColor = unrealizedPnl >= 0 ? chalk.green : chalk.red;
@@ -129,9 +129,8 @@ export class CycleDisplay {
       }
 
       output += `\n📊 Positions:\n`;
-      output += `   ┌──────────┬──────┬──────────┬──────────────┬──────────────┬───────────────┐\n`;
-      output += `   │ SIDE     │ COIN │ LEVERAGE │ MARGIN USED  │ ENTRY        │ UNREAL P&L    │\n`;
-      output += `   ├──────────┼──────┼──────────┼──────────────┼──────────────┼───────────────┤\n`;
+      output += `   SIDE      COIN  LEVERAGE  MARGIN USED      ENTRY          UNREAL P&L\n`;
+      output += `   ${'─'.repeat(75)}\n`;
 
       positions.forEach(position => {
         const sideColor = position.side === 'long' ? chalk.green : chalk.red;
@@ -146,9 +145,8 @@ export class CycleDisplay {
         const pnlPercent = marginBasis !== 0 ? (position.unrealizedPnl / marginBasis) * 100 : 0;
         const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}% vs margin)`;
 
-        output += `   │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.white(marginText.padEnd(13))} │ ${chalk.yellow(entryText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(13))} │\n`;
+        output += `   ${sideColor(sideText.padEnd(8))}  ${position.symbol.replace('/USDT', '').padEnd(4)}  ${chalk.cyan(leverageText.padEnd(8))}  ${chalk.white(marginText.padEnd(13))}  ${chalk.yellow(entryText.padEnd(13))}  ${pnlColor(pnlText)}\n`;
       });
-      output += `   └──────────┴──────┴──────────┴──────────────┴──────────────┴───────────────┘\n`;
 
       output += chalk.gray(`\n   📊 Position Details:\n`);
       positions.forEach(position => {
@@ -226,7 +224,8 @@ export class CycleDisplay {
     }
 
     if (leverage && notional !== undefined && margin !== undefined) {
-      return `✅ Executed ${action} signal for ${coin} @ $${price.toFixed(2)} | ${leverage}x leverage | Est. Notional: $${notional.toFixed(2)} | Est. Margin: $${margin.toFixed(2)}`;
+      // Notional is unlevered (size * price), matches aggregates.totalNotional terminology
+      return `✅ Executed ${action} signal for ${coin} @ $${price.toFixed(2)} | ${leverage}x leverage | Notional: $${notional.toFixed(2)} | Margin: $${margin.toFixed(2)}`;
     }
 
     return `✅ Executed ${action} signal for ${coin} @ $${price.toFixed(2)}`;

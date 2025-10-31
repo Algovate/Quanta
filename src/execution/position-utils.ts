@@ -10,7 +10,7 @@ import {
 
 export interface PositionAggregates {
   totalPnl: number;
-  totalNotional: number;
+  totalUnleveredExposure: number;
   totalMarginUsed: number;
   positionCount: number;
 }
@@ -25,22 +25,25 @@ export function aggregatePositionMetrics(positions: Position[]): PositionAggrega
   const aggregates = positions.reduce(
     (acc, pos) => {
       // Use precision-safe addition for all financial values
-      // Exposure (totalNotional) is computed as sum(size * markPrice) without leverage
+      // Exposure (unlevered) is computed as sum(size * markPrice) without leverage
       const positionExposure = safeMultiply(pos.size, pos.markPrice).toNumber();
       return {
         totalPnl: safeAdd(acc.totalPnl, pos.unrealizedPnl).toNumber(),
-        totalNotional: safeAdd(acc.totalNotional, positionExposure).toNumber(),
+        totalUnleveredExposure: safeAdd(acc.totalUnleveredExposure, positionExposure).toNumber(),
         totalMarginUsed: safeAdd(acc.totalMarginUsed, pos.marginUsed).toNumber(),
         positionCount: acc.positionCount + 1,
       };
     },
-    { totalPnl: 0, totalNotional: 0, totalMarginUsed: 0, positionCount: 0 }
+    { totalPnl: 0, totalUnleveredExposure: 0, totalMarginUsed: 0, positionCount: 0 }
   );
 
   // Round aggregated values to USDT precision
   return {
     totalPnl: roundToPrecision(aggregates.totalPnl, EXCHANGE_PRECISION.USDT),
-    totalNotional: roundToPrecision(aggregates.totalNotional, EXCHANGE_PRECISION.USDT),
+    totalUnleveredExposure: roundToPrecision(
+      aggregates.totalUnleveredExposure,
+      EXCHANGE_PRECISION.USDT
+    ),
     totalMarginUsed: roundToPrecision(aggregates.totalMarginUsed, EXCHANGE_PRECISION.USDT),
     positionCount: aggregates.positionCount,
   };
