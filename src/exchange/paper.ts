@@ -1,4 +1,5 @@
 import { Exchange, Account, Position, Order } from './types.js';
+import { CompletedTrade } from '../types/index.js';
 import { PositionUpdateManager } from './position-manager.js';
 import { Logger } from '../utils/logger.js';
 import { roundToPrecision, EXCHANGE_PRECISION } from '../utils/precision.js';
@@ -14,16 +15,7 @@ export class PaperExchange implements Exchange {
   private readonly positionManager: PositionUpdateManager;
   private readonly account: Account;
   private readonly positions: Position[] = [];
-  private readonly completedTrades: Array<{
-    id: string;
-    symbol: string;
-    side: 'long' | 'short';
-    size: number;
-    entryPrice: number;
-    exitPrice: number;
-    pnl: number;
-    timestamp: number;
-  }> = [];
+  private readonly completedTrades: CompletedTrade[] = [];
 
   constructor(real: Exchange, initialBalance: number = 10000) {
     this.real = real;
@@ -38,7 +30,7 @@ export class PaperExchange implements Exchange {
     this.positionManager = new PositionUpdateManager({
       account: this.account,
       positions: this.positions,
-      completedTrades: this.completedTrades as any,
+      completedTrades: this.completedTrades,
       onAccountUpdate: () => {
         this.account.timestamp = Date.now();
       },

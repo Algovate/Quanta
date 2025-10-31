@@ -118,7 +118,7 @@ export function verifyLeverageConsistency(position: Position): {
     position.marginUsed > 0 ? position.notional / position.marginUsed : position.leverage;
 
   // Allow small numerical drift from precision and rounding
-  const tolerance = 0.05; // 5 bps
+  const tolerance = 0.0005; // 5 bps
   const isNotionalMatch = Math.abs(position.leverage - calculatedLeverageFromNotional) <= tolerance;
   const isMarginMatch = Math.abs(position.leverage - calculatedLeverageFromMargin) <= tolerance;
 
