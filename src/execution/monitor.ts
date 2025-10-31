@@ -1,7 +1,7 @@
 import { Exchange, Position } from '../exchange/types.js';
 import { RiskManager } from './risk.js';
 import { OrderExecutor } from './orders.js';
-import { POSITION_MONITORING } from './constants.js';
+import { POSITION_MONITORING, ORDER_EXECUTION } from './constants.js';
 import { Logger } from '../utils/logger.js';
 import { calculateUnrealizedPnl, aggregatePositionMetrics } from './position-utils.js';
 
@@ -18,6 +18,10 @@ export class PositionMonitorService implements PositionMonitor {
   private riskManager: RiskManager;
   private orderExecutor: OrderExecutor;
   private logger: Logger;
+  private stateBySymbol: Map<
+    string,
+    { tp1Done?: boolean; flatCycles?: number; breakevenApplied?: boolean }
+  > = new Map();
 
   constructor(riskManager: RiskManager, orderExecutor: OrderExecutor) {
     this.riskManager = riskManager;
@@ -112,10 +116,82 @@ export class PositionMonitorService implements PositionMonitor {
           return; // done
         }
 
+        const key = position.symbol;
+        const st = this.stateBySymbol.get(key) || {};
+        const rMultiple = this.riskManager.computeRMultiple(position, currentPrice);
+
+        // Partial take-profit at 1R: close 50% and move stop to breakeven (once)
+        try {
+          if (!st.tp1Done && rMultiple >= 1) {
+            this.logger.info(
+              `Partial TP1 for ${position.symbol}: 1R reached, closing 50% and moving stop to breakeven`
+            );
+            const result = await this.orderExecutor.executePartialClose(position, 0.5);
+            if (!result.success) {
+              this.logger.warn(`Partial close failed for ${position.symbol}: ${result.error}`);
+            }
+            this.riskManager.applyBreakevenStop(position);
+            st.tp1Done = true;
+            st.breakevenApplied = true;
+            st.flatCycles = 0; // Reset flat counter on profit
+            this.stateBySymbol.set(key, st);
+          }
+        } catch (e) {
+          this.logger.warn('Partial TP processing error', {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+
+        // Time-based exit: detect flat positions and auto-close after M cycles
+        try {
+          const absR = Math.abs(rMultiple);
+          const isFlat = absR <= ORDER_EXECUTION.FLAT_R_MULTIPLE_THRESHOLD;
+
+          if (isFlat) {
+            st.flatCycles = (st.flatCycles || 0) + 1;
+
+            // After N cycles flat, move stop to breakeven (if not already)
+            if (
+              !st.breakevenApplied &&
+              st.flatCycles >= ORDER_EXECUTION.FLAT_CYCLES_BEFORE_BREAKEVEN
+            ) {
+              this.logger.info(
+                `Time-based exit: ${position.symbol} flat for ${st.flatCycles} cycles, moving stop to breakeven`
+              );
+              this.riskManager.applyBreakevenStop(position);
+              st.breakevenApplied = true;
+            }
+
+            // After M cycles flat, auto-close
+            if (st.flatCycles >= ORDER_EXECUTION.FLAT_CYCLES_BEFORE_AUTO_CLOSE) {
+              this.logger.info(
+                `Time-based exit: ${position.symbol} flat for ${st.flatCycles} cycles, auto-closing`
+              );
+              await this.executePositionClose(
+                position,
+                currentPrice,
+                `Auto-close: flat for ${st.flatCycles} cycles (within ±${ORDER_EXECUTION.FLAT_R_MULTIPLE_THRESHOLD}R)`
+              );
+              this.stateBySymbol.delete(key); // Clean up state
+              return; // Position closed, exit
+            }
+          } else {
+            // Reset flat counter when position moves
+            st.flatCycles = 0;
+          }
+
+          this.stateBySymbol.set(key, st);
+        } catch (e) {
+          this.logger.warn('Time-based exit processing error', {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+
         // Check if position should be closed by stops/targets
         const { shouldClose, reason } = this.shouldClosePosition(position, currentPrice);
         if (shouldClose) {
           await this.executePositionClose(position, currentPrice, reason);
+          this.stateBySymbol.delete(key); // Clean up state on close
         }
 
         return; // Success - exit retry loop
@@ -160,6 +236,14 @@ export class PositionMonitorService implements PositionMonitor {
         // Default to stop loss for unknown reasons
         await this.orderExecutor.executeStopLoss(position, currentPrice);
       }
+      // Emit a consistent close log with context for traceability
+      this.logger.info('Position closed', {
+        symbol: position.symbol,
+        side: position.side,
+        size: position.size,
+        price: currentPrice,
+        reason,
+      });
     } catch (error) {
       this.logger.error(`Failed to execute close for ${position.symbol}`, error);
       throw error; // Re-throw to trigger retry

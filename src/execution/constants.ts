@@ -21,6 +21,20 @@ export const POSITION_SIZING = {
   MIN_UTILIZATION_FACTOR: 0.3,
   /** Maximum position size as percentage of equity (safety cap) */
   MAX_POSITION_SIZE_PERCENT: 0.25,
+  /** ATR multiplier for stop loss (e.g., 1.5x ATR) */
+  ATR_STOP_LOSS_MULTIPLIER: 1.5,
+  /** Maximum ATR percentage of price before scaling down position size */
+  MAX_ATR_PERCENT_OF_PRICE: 0.02, // 2%
+  /** Maximum same-side positions before rejecting correlated entries */
+  MAX_SAME_SIDE_POSITIONS: 3,
+  /** Maximum pairwise correlation threshold (0-1) */
+  MAX_PAIRWISE_CORRELATION: 0.8,
+  /** Maximum portfolio correlation threshold (0-1) */
+  MAX_PORTFOLIO_CORRELATION: 0.9,
+  /** ADX threshold for trend detection (we'll use EMA slope method instead) */
+  TREND_REGIME_THRESHOLD: 0.015, // 1.5% EMA slope change over 10 periods
+  /** Bollinger bandwidth threshold for ranging (narrow = ranging) */
+  RANGING_BANDWIDTH_THRESHOLD: 0.02, // 2% bandwidth
 } as const;
 
 /**
@@ -67,6 +81,12 @@ export const ORDER_EXECUTION = {
   TRAILING_STOP_DISTANCE: 0.02,
   /** Breakeven threshold (percentage profit) */
   BREAKEVEN_THRESHOLD: 0.02,
+  /** R-multiple threshold for flat detection (±0.25R) */
+  FLAT_R_MULTIPLE_THRESHOLD: 0.25,
+  /** Number of cycles position must be flat before tightening stop to breakeven */
+  FLAT_CYCLES_BEFORE_BREAKEVEN: 3,
+  /** Number of cycles position must be flat before auto-closing */
+  FLAT_CYCLES_BEFORE_AUTO_CLOSE: 8,
 } as const;
 
 /**

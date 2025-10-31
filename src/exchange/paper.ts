@@ -128,6 +128,17 @@ export class PaperExchange implements Exchange {
     // Update position state
     this.positionManager.updatePosition(symbol, side, amount, executedPrice, leverage);
 
+    // Immediately refresh marks so unrealized P&L reflects latest price within the same cycle
+    // This ensures CLI shows non-zero P&L right after execution when ticker differs from entry
+    try {
+      await this.refreshMarks();
+    } catch (e) {
+      const err = e as Error;
+      this.logger.warn(`Failed to refresh marks after order for ${symbol}`, {
+        error: err?.message || String(e),
+      });
+    }
+
     // Return filled order
     return {
       id: `${symbol}-${Date.now()}`,

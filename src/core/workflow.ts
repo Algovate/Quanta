@@ -640,12 +640,21 @@ export class TradingWorkflow {
           continue; // Skip this signal and continue with next
         }
 
+        // Extract indicators from market data for this coin
+        const coinMarketData = allMarketData.find(
+          md => md.coin === signal.coin && md.timeframe === '3m'
+        );
+        const atr14 = coinMarketData?.indicators.atr14;
+        const indicators = coinMarketData?.indicators;
+
         const result = await this.executeSignal(
           signal,
           currentAccount,
           currentPositions,
           tickerCache,
-          currentPrice
+          currentPrice,
+          atr14,
+          indicators
         );
 
         // Refresh positions and account after successful signal execution
@@ -757,7 +766,9 @@ export class TradingWorkflow {
     account: Account,
     positions: Position[],
     _tickerCache: Map<string, { price: number; timestamp: number }>,
-    currentPrice: number
+    currentPrice: number,
+    atr14?: number,
+    indicators?: import('../types/index.js').TechnicalIndicators
   ): Promise<{ success: boolean; order?: { id: string }; error?: string }> {
     try {
       const symbol = `${signal.coin}/USDT`;
@@ -767,7 +778,9 @@ export class TradingWorkflow {
         signal,
         account,
         positions,
-        currentPrice
+        currentPrice,
+        atr14,
+        indicators
       );
 
       // Handle HOLD signals
@@ -895,6 +908,14 @@ export class TradingWorkflow {
 
     // Calculate win rate from completed trades
     this.state.winRate = this.calculateWinRate();
+
+    // Update performance tracker with completed trades for adaptive parameters
+    if (this.exchange.getCompletedTrades) {
+      const completedTrades = this.exchange.getCompletedTrades();
+      if (completedTrades.length > 0) {
+        this.riskManager.updatePerformanceStats(completedTrades);
+      }
+    }
   }
 
   /**

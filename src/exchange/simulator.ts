@@ -394,7 +394,8 @@ export class SimulatorExchange implements Exchange {
   }
 
   private async executeOrder(order: Order, leverage: number = 1): Promise<void> {
-    const currentPrice = this.getBasePrice(order.symbol);
+    // Use current ticker-derived price (same source used for deviation checks)
+    const currentPrice = await this.getCurrentPrice(order.symbol);
 
     // Simulate realistic order execution behavior
     let executedPrice: number;
@@ -446,6 +447,17 @@ export class SimulatorExchange implements Exchange {
         executedPrice,
         leverage
       );
+
+      // Immediately refresh marks so unrealized P&L reflects latest price within the same cycle
+      try {
+        await this.updateAllPositions();
+        updateAccountEquity(this.account, this.positions);
+      } catch (e) {
+        const err = e as Error;
+        this.logger.warn(`Failed to refresh marks after order for ${order.symbol}`, {
+          error: err?.message || String(e),
+        });
+      }
 
       // Update order with execution details
       order.status = 'filled';

@@ -603,6 +603,10 @@ export class SimulateCommands {
         await SimulateCommands.simulatePriceMovement(exchange, symbol);
       }
 
+      // Refresh marks using latest simulated prices before monitoring
+      // Trigger a positions refresh to recompute markPrice/unrealizedPnl
+      await exchange.getPositions();
+
       // Check positions (may close positions if stop loss/take profit triggered)
       await positionMonitor.monitorPositions(updatedPositions, exchange);
 
@@ -627,6 +631,8 @@ export class SimulateCommands {
     }
 
     // Get final positions and portfolio metrics
+    // Ensure marks are fresh prior to final reporting
+    await exchange.getPositions();
     const finalPositions = await exchange.getPositions();
     const finalAccount = await exchange.getAccount();
     const portfolioMetrics = await exchange.getPortfolioMetrics();
@@ -723,6 +729,26 @@ export class SimulateCommands {
         `  ✓ Price movement: $${currentPrice.toFixed(2)} → $${newPrice.toFixed(2)} (${(movement * 100).toFixed(2)}%)`
       )
     );
+
+    // Persist the simulated move into the simulator's market data so subsequent
+    // mark/P&L refreshes use the updated price. We update the 3m timeframe.
+    try {
+      const timeframe = '3m';
+      const candles = await exchange.getCandlesticks(symbol, timeframe, 100);
+      const last = candles[candles.length - 1];
+      const nextTimestamp = last ? last.timestamp + 3 * 60 * 1000 : Date.now();
+      const open = last ? last.close : currentPrice;
+      const close = newPrice;
+      const high = Math.max(open, close) * (1 + Math.random() * 0.001);
+      const low = Math.min(open, close) * (1 - Math.random() * 0.001);
+      const volume = Math.random() * 1000;
+
+      const updated = candles.slice(-99); // keep last 99 and append new
+      updated.push({ timestamp: nextTimestamp, open, high, low, close, volume });
+      exchange.updateMarketData(symbol, timeframe, updated);
+    } catch {
+      // Non-critical: if market data update fails, continue without persisting
+    }
   }
 
   private static generateSummary(
@@ -754,9 +780,9 @@ export class SimulateCommands {
     console.log(`Open Positions:     ${openPositions}`);
     console.log(`Risk Level:         ${SimulateCommands.getRiskLevel(Math.abs(pnlPercent))}`);
 
-    // Portfolio diversification info
+    // Portfolio diversification info (clarified label)
     if (coinsAnalyzed > 1) {
-      console.log(`Diversification:    ${coinsAnalyzed} coins`);
+      console.log(`Coins analyzed:     ${coinsAnalyzed}`);
     }
 
     console.log(chalk.gray('\n' + '='.repeat(60)));

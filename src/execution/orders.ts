@@ -38,6 +38,34 @@ export class OrderExecutor {
   }
 
   /**
+   * Execute a partial close of a position by submitting an opposite side market order
+   * for the requested fraction of current size.
+   */
+  async executePartialClose(position: Position, fraction: number): Promise<OrderResult> {
+    try {
+      const symbol = position.symbol;
+      const side: 'buy' | 'sell' = position.side === 'long' ? 'sell' : 'buy';
+      const amount = Math.max(0, Math.min(1, fraction)) * position.size;
+      if (amount <= 0) return { success: false, error: 'Zero amount for partial close' };
+
+      // Market order for immediate reduction
+      const order = await this.exchange.placeOrder(
+        symbol,
+        side,
+        amount,
+        undefined,
+        position.leverage
+      );
+      this.pushOrderEvent(order, symbol, side, amount, undefined);
+      if (order.status === 'filled' || order.status === 'open') {
+        return { success: true, order };
+      }
+      return { success: false, error: `Order ${order.status || 'unknown'} on partial close` };
+    } catch (error) {
+      return this.handleError('Partial close', error);
+    }
+  }
+  /**
    * Build full symbol from coin name
    */
   private buildSymbol(coin: string): string {
@@ -112,7 +140,7 @@ export class OrderExecutor {
         return { success: false, error: validationResult.reason || 'Signal validation failed' };
       }
 
-      // Calculate position sizing
+      // Calculate position sizing (ATR not available at this level, will use default)
       const sizing = this.riskManager.calculatePositionSizing(
         signal,
         account,

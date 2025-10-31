@@ -1,4 +1,5 @@
 import { Account, Position, TradingSignal } from '../exchange/types.js';
+import { TechnicalIndicators } from '../types/index.js';
 import {
   POSITION_SIZING,
   SIGNAL_VALIDATION,
@@ -19,6 +20,7 @@ import {
   EXCHANGE_PRECISION,
 } from '../utils/precision.js';
 import { calculatePositionPnl } from '../utils/symbol-utils.js';
+import { SymbolPerformanceTracker } from './symbol-performance.js';
 
 export interface RiskParams {
   maxRiskPerTrade: number; // 0.05 = 5%
@@ -41,10 +43,20 @@ export interface PositionSizing {
 export class RiskManager {
   private params: RiskParams;
   private logger: Logger;
+  private performanceTracker: SymbolPerformanceTracker;
 
   constructor(params: RiskParams) {
     this.params = params;
     this.logger = Logger.getInstance('RiskManager');
+    this.performanceTracker = new SymbolPerformanceTracker(50); // Track last 50 trades per symbol
+  }
+
+  /**
+   * Update performance tracker with completed trades
+   * Call this periodically to keep stats current
+   */
+  updatePerformanceStats(completedTrades: import('../types/index.js').CompletedTrade[]): void {
+    this.performanceTracker.updateStats(completedTrades);
   }
 
   // --- Portfolio Exposure & Leverage Helpers ---
@@ -130,7 +142,9 @@ export class RiskManager {
     signal: TradingSignal,
     account: Account,
     currentPositions: Position[],
-    currentPrice: number
+    currentPrice: number,
+    atr14?: number,
+    indicators?: TechnicalIndicators
   ): PositionSizing | null {
     try {
       // Validate inputs
@@ -174,16 +188,59 @@ export class RiskManager {
       }
 
       // Calculate position size based on risk using precision-safe arithmetic
+      const entryPrice = signal.entry_price || currentPrice;
       const stopLoss = signal.stop_loss || this.params.defaultStopLoss;
       const riskAmount = safePercentage(account.equity, this.params.maxRiskPerTrade).toNumber(); // Maximum $ loss
 
+      // Detect market regime (trending vs ranging) for adaptive stop loss
+      const regime = this.detectRegime(indicators, entryPrice);
+      if (regime !== 'unknown') {
+        this.logger.debug('Market regime detected', {
+          coin: signal.coin,
+          regime,
+          ema20: indicators?.ema20,
+          ema50: indicators?.ema50,
+          bandwidth: indicators?.bollinger?.bandwidth,
+        });
+      }
+
+      // Calculate ATR-based stop loss if ATR is available
+      let atrBasedStopLoss: number | undefined;
+      if (atr14 && atr14 > 0 && entryPrice > 0) {
+        const atrStopDistance = safeMultiply(
+          atr14,
+          POSITION_SIZING.ATR_STOP_LOSS_MULTIPLIER
+        ).toNumber();
+        atrBasedStopLoss = safeDivide(atrStopDistance, entryPrice, 6).toNumber();
+
+        // In trending markets, use wider stops (allow 1.5x ATR); in ranging, use tighter (1.0x ATR)
+        const originalStop = atrBasedStopLoss;
+        if (regime === 'trending' && atrBasedStopLoss) {
+          atrBasedStopLoss = safeMultiply(atrBasedStopLoss, 1.33).toNumber(); // 33% wider
+          this.logger.debug('Trending regime: widening stop loss', {
+            coin: signal.coin,
+            original: (originalStop * 100).toFixed(2) + '%',
+            adjusted: (atrBasedStopLoss * 100).toFixed(2) + '%',
+          });
+        } else if (regime === 'ranging' && atrBasedStopLoss) {
+          atrBasedStopLoss = safeMultiply(atrBasedStopLoss, 0.75).toNumber(); // 25% tighter
+          this.logger.debug('Ranging regime: tightening stop loss', {
+            coin: signal.coin,
+            original: (originalStop * 100).toFixed(2) + '%',
+            adjusted: (atrBasedStopLoss * 100).toFixed(2) + '%',
+          });
+        }
+      }
+
       // Calculate price risk with precision
-      const entryPrice = signal.entry_price || currentPrice;
       const priceDiff = safeSubtract(currentPrice, entryPrice).toNumber();
       const priceRisk = safeDivide(Math.abs(priceDiff), currentPrice, 6).toNumber();
 
-      // Use the larger of signal stop loss or price risk
+      // Use the largest of: signal stop loss, price risk, or ATR-based stop loss
       let actualStopLoss = Math.max(stopLoss, priceRisk);
+      if (atrBasedStopLoss) {
+        actualStopLoss = Math.max(actualStopLoss, atrBasedStopLoss);
+      }
 
       // Enforce minimum stop loss to prevent division issues and unrealistic position sizes
       if (actualStopLoss < POSITION_SIZING.MIN_STOP_LOSS_THRESHOLD) {
@@ -195,15 +252,38 @@ export class RiskManager {
         actualStopLoss = POSITION_SIZING.MIN_STOP_LOSS_THRESHOLD;
       }
 
+      // Volatility scaling: reduce position size if ATR% exceeds threshold
+      let volatilityScale = 1.0;
+      if (atr14 && entryPrice > 0) {
+        const atrPercent = safeDivide(atr14, entryPrice, 6).toNumber();
+        if (atrPercent > POSITION_SIZING.MAX_ATR_PERCENT_OF_PRICE) {
+          // Scale down position size proportionally to excessive volatility
+          volatilityScale = safeDivide(
+            POSITION_SIZING.MAX_ATR_PERCENT_OF_PRICE,
+            atrPercent,
+            6
+          ).toNumber();
+          this.logger.info('Volatility scaling applied', {
+            coin: signal.coin,
+            atrPercent: (atrPercent * 100).toFixed(2) + '%',
+            maxAllowed: (POSITION_SIZING.MAX_ATR_PERCENT_OF_PRICE * 100).toFixed(2) + '%',
+            scale: (volatilityScale * 100).toFixed(1) + '%',
+          });
+        }
+      }
+
       // Step 1: Calculate position value based on risk using precision-safe division
       // We want: max $ loss = position value × stop loss %
       // Therefore: position value = max $ loss / stop loss %
       const pricePerUnit = signal.entry_price || currentPrice;
-      const riskBasedPositionValue = safeDivide(
+      let riskBasedPositionValue = safeDivide(
         riskAmount,
         actualStopLoss,
         EXCHANGE_PRECISION.USDT
       ).toNumber();
+
+      // Apply volatility scaling
+      riskBasedPositionValue = safeMultiply(riskBasedPositionValue, volatilityScale).toNumber();
 
       // Step 2: Limit position size to avoid over-leveraging using precision-safe arithmetic
       // Use max 30% of available capital per trade to ensure we can open multiple positions
@@ -357,6 +437,20 @@ export class RiskManager {
     ).toNumber();
     leverage = safeSubtract(leverage, positionAdjustment);
 
+    // Factor 4: Symbol performance adjustment (adaptive)
+    // Adjust leverage based on historical performance of this symbol
+    const symbol = signal.coin;
+    const perfAdjustment = this.performanceTracker.getLeverageAdjustment(symbol);
+    if (perfAdjustment !== 1.0) {
+      // Apply performance adjustment multiplicatively (final adjustment)
+      leverage = safeMultiply(leverage, perfAdjustment).toNumber();
+      this.logger.debug('Adaptive leverage adjustment applied', {
+        symbol,
+        adjustment: (perfAdjustment * 100).toFixed(1) + '%',
+        finalLeverage: leverage.toFixed(2) + 'x',
+      });
+    }
+
     // Ensure leverage stays within bounds
     let leverageNum = leverage.toNumber();
     leverageNum = Math.max(this.params.minLeverage, Math.min(this.params.maxLeverage, leverageNum));
@@ -383,13 +477,23 @@ export class RiskManager {
         return { valid: false, reason };
       }
 
-      // Check confidence threshold with epsilon tolerance for floating-point precision
+      // Check confidence threshold with adaptive adjustment based on symbol performance
+      const adaptiveThreshold = this.performanceTracker.getConfidenceThreshold(
+        signal.coin,
+        SIGNAL_VALIDATION.MIN_CONFIDENCE
+      );
+      if (adaptiveThreshold !== SIGNAL_VALIDATION.MIN_CONFIDENCE) {
+        this.logger.debug('Adaptive confidence threshold applied', {
+          coin: signal.coin,
+          default: (SIGNAL_VALIDATION.MIN_CONFIDENCE * 100).toFixed(1) + '%',
+          adjusted: (adaptiveThreshold * 100).toFixed(1) + '%',
+        });
+      }
+
+      // Check with epsilon tolerance for floating-point precision
       // (e.g., 0.54999999 should be accepted when threshold is 0.55)
-      if (
-        signal.confidence <
-        SIGNAL_VALIDATION.MIN_CONFIDENCE - SIGNAL_VALIDATION.CONFIDENCE_EPSILON
-      ) {
-        const reason = `Confidence too low: ${(signal.confidence * 100).toFixed(1)}% < ${(SIGNAL_VALIDATION.MIN_CONFIDENCE * 100).toFixed(1)}% required`;
+      if (signal.confidence < adaptiveThreshold - SIGNAL_VALIDATION.CONFIDENCE_EPSILON) {
+        const reason = `Confidence too low: ${(signal.confidence * 100).toFixed(1)}% < ${(adaptiveThreshold * 100).toFixed(1)}% required (adaptive threshold based on ${signal.coin} performance)`;
         this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
         return { valid: false, reason };
       }
@@ -424,6 +528,19 @@ export class RiskManager {
         const reason = `Invalid risk/reward ratio: ${(signal.profit_target / signal.stop_loss).toFixed(2)} < ${SIGNAL_VALIDATION.MIN_RISK_REWARD_RATIO} required`;
         this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
         return { valid: false, reason };
+      }
+
+      // Correlation check: prevent over-concentration of same-side positions
+      if (signal.action === 'LONG' || signal.action === 'SHORT') {
+        const targetSide = signal.action.toLowerCase() as 'long' | 'short';
+        const sameSidePositions = currentPositions.filter(p => p.side === targetSide);
+        if (sameSidePositions.length >= POSITION_SIZING.MAX_SAME_SIDE_POSITIONS) {
+          const reason = `Too many ${targetSide} positions (${sameSidePositions.length} >= ${POSITION_SIZING.MAX_SAME_SIDE_POSITIONS}), rejecting to reduce correlation`;
+          this.logger.warn(
+            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
+          );
+          return { valid: false, reason };
+        }
       }
 
       return { valid: true };
@@ -643,5 +760,69 @@ export class RiskManager {
 
     // Otherwise use regular stop loss
     return this.checkStopLoss(position, currentPrice);
+  }
+
+  /**
+   * Detect market regime (trending vs ranging) based on indicators
+   * Uses Bollinger bandwidth, EMA alignment, and price consolidation
+   */
+  private detectRegime(
+    indicators?: TechnicalIndicators,
+    currentPrice?: number
+  ): 'trending' | 'ranging' | 'unknown' {
+    if (!indicators || !currentPrice) return 'unknown';
+
+    let trendScore = 0;
+
+    // 1. Bollinger Bandwidth: narrow = ranging, wide = trending
+    if (indicators.bollinger?.bandwidth !== undefined) {
+      if (indicators.bollinger.bandwidth < POSITION_SIZING.RANGING_BANDWIDTH_THRESHOLD) {
+        trendScore -= 1; // Narrow bands suggest ranging
+      } else {
+        trendScore += 1; // Wide bands suggest trending
+      }
+    }
+
+    // 2. EMA alignment strength (distance between EMA20 and EMA50)
+    if (indicators.ema20 && indicators.ema50 && indicators.ema20 > 0 && indicators.ema50 > 0) {
+      const emaSpread = Math.abs(indicators.ema20 - indicators.ema50) / currentPrice;
+      if (emaSpread > POSITION_SIZING.TREND_REGIME_THRESHOLD) {
+        trendScore += 1; // Strong separation = trending
+      } else if (emaSpread < POSITION_SIZING.TREND_REGIME_THRESHOLD * 0.5) {
+        trendScore -= 1; // Tight = ranging
+      }
+    }
+
+    // 3. MACD momentum (histogram strength indicates trending)
+    if (indicators.macd?.histogram !== undefined) {
+      const macdStrength = Math.abs(indicators.macd.histogram) / currentPrice;
+      if (macdStrength > 0.001) {
+        trendScore += 1; // Strong MACD momentum
+      }
+    }
+
+    // Determine regime
+    if (trendScore >= 2) return 'trending';
+    if (trendScore <= -1) return 'ranging';
+    return 'unknown';
+  }
+
+  /** Compute R-multiple given entry, current and stop distance percent (defaultStopLoss) */
+  computeRMultiple(position: Position, currentPrice: number, stopLossPercent?: number): number {
+    const sl = stopLossPercent ?? this.params.defaultStopLoss;
+    if (position.entryPrice <= 0 || sl <= 0) return 0;
+    const move = (currentPrice - position.entryPrice) / position.entryPrice;
+    const signedMove = position.side === 'long' ? move : -move;
+    return signedMove / sl;
+  }
+
+  /** Return breakeven stop price for a position */
+  computeBreakevenStop(position: Position): number {
+    return position.entryPrice;
+  }
+
+  /** Apply breakeven: set trailingStopPrice to entryPrice */
+  applyBreakevenStop(position: Position): void {
+    position.trailingStopPrice = this.computeBreakevenStop(position);
   }
 }
