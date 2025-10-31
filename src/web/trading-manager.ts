@@ -263,10 +263,16 @@ export class TradingManager extends EventEmitter {
               const sides = positions.map(p => p.side);
               const allSameSide = sides.length > 0 && sides.every(side => side === sides[0]);
               let correlationScore = allSameSide ? 0.8 : 0.3;
-              correlationScore = Math.min(1, correlationScore * (positions.length > 0 ? 3 / positions.length : 1));
+              correlationScore = Math.min(
+                1,
+                correlationScore * (positions.length > 0 ? 3 / positions.length : 1)
+              );
               const uniqueSymbols = new Set(positions.map(p => p.symbol)).size;
-              const diversificationBase = positions.length > 1 ? uniqueSymbols / positions.length : 1;
-              const diversificationScore = allSameSide ? diversificationBase * 0.7 : diversificationBase;
+              const diversificationBase =
+                positions.length > 1 ? uniqueSymbols / positions.length : 1;
+              const diversificationScore = allSameSide
+                ? diversificationBase * 0.7
+                : diversificationBase;
 
               const risk: RiskSnapshot = {
                 timestamp: Date.now(),
