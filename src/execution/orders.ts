@@ -69,7 +69,7 @@ export class OrderExecutor {
    * Build full symbol from coin name
    */
   private buildSymbol(coin: string): string {
-    return `${coin}/USDT`;
+    return ensureUsdtSuffix(coin);
   }
 
   /**

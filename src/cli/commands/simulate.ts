@@ -91,6 +91,8 @@ export class SimulateCommands {
       .option('-b, --initial-balance <amount>', 'Initial balance in USD', '10000')
       .option('-v, --verbose', 'Show detailed logging', false)
       .option('-p, --max-positions <number>', 'Maximum number of concurrent positions', '3')
+      .option('--cycles <number>', 'Number of cycles to run', '1')
+      .option('--interval <ms>', 'Delay between cycles in ms', '3000')
       .option(
         '-a, --ai <type>',
         'AI type: mock or real (requires API key in config/simulate.json)',
@@ -119,6 +121,8 @@ export class SimulateCommands {
     verbose: boolean;
     maxPositions: string;
     ai: string;
+    cycles?: string;
+    interval?: string;
   }): Promise<void> {
     // Load simulation-specific configuration only
     const simulateConfig = SimulateCommands.loadSimulateConfig();
@@ -132,6 +136,10 @@ export class SimulateCommands {
     const verbose = options.verbose || simulateConfig.logging?.verbose || false;
     const maxPositions =
       parseInt(options.maxPositions) || simulateConfig.simulation?.defaultMaxPositions || 6;
+
+    // New: parse multi-cycle controls
+    const cycles = Math.max(1, parseInt(options.cycles ?? '1')) || 1;
+    const intervalMs = Math.max(0, parseInt(options.interval ?? '3000')) || 3000;
 
     // Validate options
     const aiType = options.ai.toLowerCase();
@@ -171,12 +179,13 @@ export class SimulateCommands {
     if (useRealAI && simulateConfig.ai?.real?.model) {
       console.log(`AI Model: ${simulateConfig.ai.real.model}`);
     }
+    console.log(`Cycles: ${cycles} | Interval: ${intervalMs} ms`);
     console.log('');
 
     const spinner = ora('Initializing simulation...').start();
 
     try {
-      // Initialize components
+      // Initialize components ONCE; state persists across cycles
       const exchange = new SimulatorExchange(initialBalance);
       const marketProvider = new MarketDataProvider(exchange);
 
@@ -221,19 +230,49 @@ export class SimulateCommands {
 
       spinner.succeed('Simulation initialized');
 
-      // Execute the complete trade cycle
-      await SimulateCommands.executeTradeCycle(
-        exchange,
-        marketProvider,
-        aiAgent,
-        orderExecutor,
-        positionMonitor,
-        coins,
-        verbose,
-        initialBalance,
-        useRealAI,
-        maxPositions
-      );
+      let aggregatedExecutedOrders = 0;
+      let finalAccountSnapshot: any = undefined;
+      let finalOpenPositions = 0;
+      let finalTotalPnl = 0;
+
+      for (let i = 1; i <= cycles; i++) {
+        console.log(chalk.cyan(`\n===== Cycle ${i}/${cycles} =====`));
+        const result = await SimulateCommands.executeTradeCycle(
+          exchange,
+          marketProvider,
+          aiAgent,
+          orderExecutor,
+          positionMonitor,
+          coins,
+          verbose,
+          initialBalance,
+          useRealAI,
+          maxPositions,
+          // Suppress per-cycle summaries; we will print a single aggregated one after all cycles
+          false
+        );
+
+        aggregatedExecutedOrders += result.executedOrders;
+        finalAccountSnapshot = result.finalAccount;
+        finalOpenPositions = result.openPositions;
+        finalTotalPnl = result.totalPnl;
+
+        if (i < cycles) {
+          await new Promise(resolve => setTimeout(resolve, intervalMs));
+        }
+      }
+
+      // After all cycles, output one final aggregated summary (final account state)
+      if (finalAccountSnapshot) {
+        SimulateCommands.generateSummary(
+          initialBalance,
+          finalAccountSnapshot,
+          aggregatedExecutedOrders,
+          finalOpenPositions,
+          finalTotalPnl,
+          coins.length
+        );
+      }
     } catch (error) {
       spinner.fail('Simulation failed');
 
@@ -266,8 +305,14 @@ export class SimulateCommands {
     verbose: boolean,
     initialBalance: number,
     useRealAI: boolean,
-    maxPositions: number
-  ): Promise<void> {
+    maxPositions: number,
+    showSummary: boolean = true
+  ): Promise<{
+    executedOrders: number;
+    finalAccount: any;
+    openPositions: number;
+    totalPnl: number;
+  }> {
     const cycleStartTime = Date.now();
 
     console.log(chalk.blue('\n📊 PHASE 1: PERCEPTION (Market Data Collection)'));
@@ -700,15 +745,24 @@ export class SimulateCommands {
       });
     }
 
-    // Generate Summary
-    SimulateCommands.generateSummary(
-      initialBalance,
-      finalAccount,
+    // Generate per-cycle summary only if requested
+    if (showSummary) {
+      SimulateCommands.generateSummary(
+        initialBalance,
+        finalAccount,
+        executedOrders,
+        finalPositions.length,
+        totalPnl,
+        coins.length
+      );
+    }
+
+    return {
       executedOrders,
-      finalPositions.length,
+      finalAccount,
+      openPositions: finalPositions.length,
       totalPnl,
-      coins.length
-    );
+    };
   }
 
   private static async simulatePriceMovement(
@@ -779,11 +833,6 @@ export class SimulateCommands {
     console.log(`Orders Executed:    ${executedOrders}`);
     console.log(`Open Positions:     ${openPositions}`);
     console.log(`Risk Level:         ${SimulateCommands.getRiskLevel(Math.abs(pnlPercent))}`);
-
-    // Portfolio diversification info (clarified label)
-    if (coinsAnalyzed > 1) {
-      console.log(`Coins analyzed:     ${coinsAnalyzed}`);
-    }
 
     console.log(chalk.gray('\n' + '='.repeat(60)));
     console.log(chalk.green('✅ Multi-coin multi-position simulation completed successfully!'));

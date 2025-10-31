@@ -12,6 +12,10 @@ quanta simulate cycle --coins BTC --verbose
 
 # Multi-coin portfolio
 quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
+
+# Multiple cycles with interval (state persists across cycles)
+quanta simulate cycle --coins BTC,ETH \
+  --cycles 3 --interval 5000 --verbose
 ```
 
 **Features:**

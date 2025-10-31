@@ -262,6 +262,8 @@ Options:
   -b, --initial-balance <amount>   Initial balance in USD (default: "10000")
   -v, --verbose                    Show detailed logging (default: false)
   -p, --max-positions <number>     Maximum number of concurrent positions (default: "3")
+  --cycles <number>                Number of cycles to run (default: "1")
+  --interval <ms>                  Delay between cycles in ms (default: "3000")
   -a, --ai <type>                  AI type: mock or real (default: "mock")
 ```
 
@@ -273,6 +275,10 @@ quanta simulate cycle --coins BTC --verbose
 
 # Multi-coin simulation
 quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
+
+# Multiple continuous cycles (state persists)
+quanta simulate cycle --coins BTC,ETH \
+  --cycles 5 --interval 3000 --verbose
 
 # Real AI simulation
 quanta simulate cycle --coins BTC --ai real --verbose
