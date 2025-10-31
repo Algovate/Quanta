@@ -55,7 +55,7 @@ NEXT_PUBLIC_QUANTA_WS_URL=ws://localhost:3001
 # Start trading in simulation mode (mock data)
 quanta trade start --mode simulation --coins BTC,ETH,SOL
 
-# Start paper trading (real data, simulated execution)  
+# Start paper trading (real data, simulated execution)
 quanta trade start --mode paper --coins BTC,ETH,SOL
 
 # Start live trading (real data, real execution - requires API keys)
@@ -69,7 +69,6 @@ quanta trade pause --reason "Maintenance"
 quanta trade stop --graceful
 quanta trade status
 ```
-
 
 ### Simulation
 
@@ -140,6 +139,7 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 ## Important Concepts (Updated)
 
 ### P&L Definitions
+
 - **Total P&L** = Current Equity − Initial Balance (includes realized + unrealized).
 - **Unrealized P&L** = Sum of open positions' unrealized P&L.
 - **Cycle P&L** = Equity change during the current cycle.
@@ -147,22 +147,28 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 Console output shows both Total P&L and Unrealized P&L explicitly.
 
 ### Logging Behavior
+
 - Foreground (interactive terminal): console output is synchronous to preserve event order; structured logs still persist to files.
 - Background (non-TTY): buffered logger outputs to both console and files for efficiency.
 
 ### Execution Messages
+
 - Use actual order fill price when available.
 - Notional/Margin in execution lines are estimates and labeled as "Est."; authoritative values are shown in the positions table.
 
 ### Event Bus (Timestamps)
+
 Cycle events include timestamps for reliable ordering:
+
 - `cycle:start` { cycleCount, timestamp, startTime }
 - `cycle:signals` { cycleCount, timestamp, signalCount, signals[] }
 - `cycle:execution` { cycleCount, timestamp, executedSignals, totalTrades }
 - `cycle:complete` { cycleCount, timestamp, duration, totalSignals, totalTrades, totalPnl }
 
 ### Close Order Safeguards (Simulation/Backtest)
+
 To prevent accidental reverse positions when closing:
+
 - Full-close tolerance: within 1% size difference is treated as a full close.
 - New reverse position opens only if remaining amount > 5% of the original size.
 

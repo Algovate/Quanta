@@ -2,8 +2,12 @@ import assert from 'node:assert';
 
 class FakeRealExchange {
   name = 'okx';
-  getExchangeName() { return 'okx'; }
-  isTestnetMode() { return true; }
+  getExchangeName() {
+    return 'okx';
+  }
+  isTestnetMode() {
+    return true;
+  }
   async getTicker(symbol: string) {
     // Deterministic mid
     return { price: symbol.startsWith('ETH') ? 3800 : 1000, timestamp: Date.now() };
@@ -50,5 +54,3 @@ async function run() {
 }
 
 void run();
-
-

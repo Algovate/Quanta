@@ -66,7 +66,22 @@ export class APIServer {
   }
 
   private setupMiddleware(): void {
-    this.app.use(cors());
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction) {
+      const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000')
+        .split(',')
+        .map(o => o.trim())
+        .filter(Boolean);
+      this.app.use(
+        cors({
+          origin: allowedOrigins,
+          credentials: true,
+        })
+      );
+    } else {
+      // Default to permissive CORS in development for ease of local testing
+      this.app.use(cors());
+    }
     this.app.use(express.json());
   }
 

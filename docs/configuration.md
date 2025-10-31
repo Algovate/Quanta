@@ -16,6 +16,8 @@ Used for live trading and general settings:
     "name": "okx",
     "_comment_name": "Exchange: 'simulator' (mock data), 'okx', 'binance', 'coinbase' (real data)",
     "testnet": true,
+    "marketType": "spot",
+    "_comment_marketType": "Market type: 'spot' or 'swap' (aliases: 'perp', 'perpetual' → 'swap')",
     "apiKey": "your_api_key",
     "apiSecret": "your_api_secret"
   },
@@ -38,7 +40,8 @@ Used for live trading and general settings:
     "priceSanity": {
       "enabled": true,
       "maxDeviation": 0.05
-    }
+    },
+    "funding": { "warnings": true }
   }
 }
 ```
@@ -56,7 +59,7 @@ Independent configuration for simulation:
   },
   "risk": {
     "maxRiskPerTrade": 0.05,
-    "maxTotalRisk": 0.30,
+    "maxTotalRisk": 0.3,
     "stopLoss": 0.05,
     "takeProfit": 0.06
   },
@@ -97,6 +100,7 @@ EXCHANGE_MODE=paper
 EXCHANGE_NAME=okx
 EXCHANGE_API_KEY=your_key
 EXCHANGE_API_SECRET=your_secret
+EXCHANGE_MARKET_TYPE=swap    # or spot; aliases 'perp'/'perpetual' → swap
 
 # AI
 OPENROUTER_API_KEY=your_key
@@ -119,6 +123,8 @@ MAX_RISK=0.05
 # Price sanity guard (optional)
 TRADING_PRICE_SANITY_ENABLED=true
 TRADING_PRICE_SANITY_MAX_DEVIATION=0.05
+# Funding warnings (perpetuals)
+TRADING_FUNDING_WARNINGS=true
 ```
 
 ## CLI Configuration
@@ -162,8 +168,19 @@ quanta config init
 
 ### Exchange Settings
 
-- **name**: Exchange name (`simulator`, `okx`, `binance`, `coinbase`)
+- **name**: Exchange name (`simulator`, `okx`, `binance`, `coinbase`, `hyperliquid`)
 - **testnet**: Use testnet environment (true for testing)
+- **marketType**: `spot` or `swap` (aliases: `perp`, `perpetual` map to `swap`). Affects leverage support, funding, and symbol routing.
+
+### MarketType-Aware Defaults and Guards
+
+- When `exchange.marketType = spot`:
+  - Effective leverage range clamped to [1, 1]
+  - Recommended: stopLoss 3–7%, maxRisk 3–5%, maxPositions 6–10
+- When `exchange.marketType = swap|perp|perpetual`:
+  - Effective leverage range clamped to [3, 10]
+  - Recommended: stopLoss 1–2%, maxRisk 1–2%, maxPositions 1–4
+- Startup logs display the market type and effective risk parameters; out-of-band values are clamped with a warning.
 
 ### Instrument Selection (OKX)
 
@@ -173,7 +190,6 @@ quanta config init
   - `ETH` → `ETH/USDT:USDT`
   - `ETH/USDT` → `ETH/USDT:USDT`
   - `ETH-USDT-SWAP` → `ETH/USDT:USDT`
-
 
 ## Examples
 
@@ -199,7 +215,7 @@ quanta config init
     "coins": ["BTC", "ETH", "SOL", "BNB"],
     "maxPositions": 10,
     "stopLoss": 0.05,
-    "maxRisk": 0.10,
+    "maxRisk": 0.1,
     "priceSanity": { "enabled": true, "maxDeviation": 0.05 }
   }
 }
@@ -238,4 +254,3 @@ quanta config show
 quanta config reset
 quanta config init
 ```
-

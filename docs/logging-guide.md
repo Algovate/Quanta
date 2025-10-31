@@ -20,6 +20,7 @@ logger.debug('调试信息', { userId: 123 });
 ## 日志级别
 
 ### 1. ERROR - 错误
+
 用于记录程序错误和异常情况。
 
 ```typescript
@@ -29,12 +30,13 @@ try {
   logger.error('关键操作失败', error, {
     operationId: '123',
     userId: 456,
-    details: '数据库连接超时'
+    details: '数据库连接超时',
   });
 }
 ```
 
 **文件输出**:
+
 ```json
 {
   "timestamp": "2025-10-28T10:30:00.000Z",
@@ -49,36 +51,39 @@ try {
 ```
 
 ### 2. WARN - 警告
+
 用于记录潜在问题和不推荐的操作。
 
 ```typescript
 if (apiUsage > 90) {
-  logger.warn('API 使用率过高', { 
+  logger.warn('API 使用率过高', {
     usage: 92,
-    limit: 100 
+    limit: 100,
   });
 }
 ```
 
 ### 3. INFO - 信息
+
 用于记录重要业务流程和状态变更。
 
 ```typescript
 logger.info('用户登录成功', {
   userId: 123,
   ip: '192.168.1.1',
-  userAgent: 'Mozilla/5.0'
+  userAgent: 'Mozilla/5.0',
 });
 ```
 
 ### 4. DEBUG - 调试
+
 用于记录详细的调试信息（开发环境）。
 
 ```typescript
 logger.debug('缓存命中', {
   key: 'user:123',
   cacheSize: 42,
-  hitRate: 0.85
+  hitRate: 0.85,
 });
 ```
 
@@ -92,8 +97,8 @@ logger.info('AI Signal Generation', {
   signalCount: 3,
   signals: [
     { coin: 'BTC', action: 'LONG', confidence: 0.85 },
-    { coin: 'ETH', action: 'HOLD', confidence: 0.65 }
-  ]
+    { coin: 'ETH', action: 'HOLD', confidence: 0.65 },
+  ],
 });
 
 // 周期总结
@@ -102,9 +107,9 @@ logger.info('Cycle Summary', {
   runtime: '15m 30s',
   account: {
     equity: 10000,
-    totalPnl: 250.50,
-    leverage: 2.5
-  }
+    totalPnl: 250.5,
+    leverage: 2.5,
+  },
 });
 ```
 
@@ -138,12 +143,14 @@ quanta trade start
 ### 行为差异
 
 **交互模式**:
+
 ```
 🚀 Starting Quanta trading workflow...
 💰 Account: $10000.00 | Positions: 2
 ```
 
 **后台模式**:
+
 ```
 [2025-10-28T10:30:00.000Z] [INFO] [Workflow] Starting Quanta trading workflow
 [2025-10-28T10:30:00.000Z] [INFO] [Workflow] Account: $10000.00 | Positions: 2
@@ -196,7 +203,7 @@ BACKGROUND_MODE=true
 const logger = Logger.getInstance();
 logger.updateConfig({
   level: LogLevel.DEBUG,
-  backgroundMode: true
+  backgroundMode: true,
 });
 ```
 
@@ -215,6 +222,7 @@ logs/
 ### 文件内容示例
 
 **combined.log**:
+
 ```json
 {"timestamp":"2025-10-28T10:30:00.000Z","level":"info","context":"Workflow","message":"交易循环开始","cycle":42}
 {"timestamp":"2025-10-28T10:30:01.000Z","level":"info","context":"Workflow","message":"AI Signal Generation","signalCount":2}
@@ -222,8 +230,16 @@ logs/
 ```
 
 **error.log**:
+
 ```json
-{"timestamp":"2025-10-28T10:30:02.000Z","level":"error","context":"OpenRouter","message":"API 请求失败","error":"超时","stack":"..."}
+{
+  "timestamp": "2025-10-28T10:30:02.000Z",
+  "level": "error",
+  "context": "OpenRouter",
+  "message": "API 请求失败",
+  "error": "超时",
+  "stack": "..."
+}
 ```
 
 ## 日志轮转
@@ -276,7 +292,7 @@ logger.info('Order placed', {
   symbol: 'BTC/USDT',
   side: 'buy',
   amount: 0.1,
-  price: 45000
+  price: 45000,
 });
 ```
 
@@ -290,7 +306,7 @@ console.error(error);
 logger.error('Database connection failed', error, {
   host: 'db.example.com',
   port: 5432,
-  timeout: 5000
+  timeout: 5000,
 });
 ```
 
@@ -371,7 +387,7 @@ try {
 } catch (error) {
   this.logger.error('Error generating trading signal', error, {
     model: this.model,
-    requestId: crypto.randomUUID()
+    requestId: crypto.randomUUID(),
   });
   return [];
 }
@@ -407,6 +423,7 @@ Logger 会自动处理进程关闭信号：
 ```
 
 **手动测试**:
+
 ```bash
 # 启动应用
 quanta trade start &
@@ -500,4 +517,3 @@ LOG_LEVEL=debug \
 LOG_MAX_FILES=30 \
 quanta trade start
 ```
-

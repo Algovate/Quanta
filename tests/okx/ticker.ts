@@ -52,5 +52,3 @@ main().catch(error => {
   console.error('Failed to fetch OKX ticker:', error);
   process.exit(1);
 });
-
-

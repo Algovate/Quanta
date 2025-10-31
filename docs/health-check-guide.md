@@ -11,12 +11,14 @@ Quanta provides comprehensive health check endpoints for monitoring system statu
 Fast, synchronous check that returns basic system status.
 
 **Best for:**
+
 - Load balancer health checks
 - Kubernetes liveness probes
 - High-frequency monitoring (every few seconds)
 - Quick availability checks
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
@@ -26,6 +28,7 @@ Fast, synchronous check that returns basic system status.
 ```
 
 **Status Values:**
+
 - `healthy`: System is operating normally
 - `unhealthy`: System has persistent errors
 
@@ -34,6 +37,7 @@ Fast, synchronous check that returns basic system status.
 Comprehensive check that inspects all system components.
 
 **Best for:**
+
 - Monitoring dashboards
 - Debugging issues
 - Component-level visibility
@@ -41,6 +45,7 @@ Comprehensive check that inspects all system components.
 - Periodic health checks (every 30-60 seconds)
 
 **Response Example:**
+
 ```json
 {
   "status": "healthy",
@@ -76,11 +81,7 @@ Comprehensive check that inspects all system components.
       "message": "Market data provider is operational",
       "details": {
         "cacheSize": 6,
-        "cachedSymbols": [
-          "BTC:3m", "BTC:4h",
-          "ETH:3m", "ETH:4h",
-          "SOL:3m", "SOL:4h"
-        ]
+        "cachedSymbols": ["BTC:3m", "BTC:4h", "ETH:3m", "ETH:4h", "SOL:3m", "SOL:4h"]
       },
       "lastCheck": 1699564800000,
       "responseTime": 1
@@ -111,20 +112,23 @@ Comprehensive check that inspects all system components.
 
 ## HTTP Status Codes
 
-| Code | Meaning | Action Required |
-|------|---------|----------------|
-| 200 | Healthy or degraded | No action (system operational) |
-| 503 | Unhealthy | Investigation required |
+| Code | Meaning             | Action Required                |
+| ---- | ------------------- | ------------------------------ |
+| 200  | Healthy or degraded | No action (system operational) |
+| 503  | Unhealthy           | Investigation required         |
 
 ## Component Statuses
 
 Each component can have one of three statuses:
 
 ### `healthy` ✅
+
 Component is functioning normally. No action required.
 
 ### `degraded` ⚠️
+
 Component has issues but is still operational. Examples:
+
 - AI circuit breaker in HALF_OPEN state (testing recovery)
 - High memory usage but still within limits
 - Using cached data due to transient API issues
@@ -132,7 +136,9 @@ Component has issues but is still operational. Examples:
 **Action:** Monitor the situation. May resolve automatically.
 
 ### `unhealthy` ❌
+
 Component is not functioning. Examples:
+
 - AI circuit breaker OPEN (persistent failures)
 - Exchange not configured or unreachable
 - Critical system error
@@ -142,22 +148,26 @@ Component is not functioning. Examples:
 ## Components Monitored
 
 ### 1. Exchange
+
 - **Checks:** Configuration, connectivity
 - **Details:** Exchange name, testnet mode
 - **Unhealthy if:** Exchange not configured
 
 ### 2. AI Client
+
 - **Checks:** Circuit breaker state
 - **Details:** Circuit state, failure/success counts
 - **Unhealthy if:** Circuit breaker OPEN (5+ consecutive failures)
 - **Degraded if:** Circuit breaker HALF_OPEN (testing recovery)
 
 ### 3. Market Data
+
 - **Checks:** Provider status, cache availability
 - **Details:** Cache size, cached symbols
 - **Unhealthy if:** Provider initialization failed
 
 ### 4. Cache / Memory
+
 - **Checks:** Memory usage, uptime
 - **Details:** Memory usage (RSS, heap), process uptime
 - **Degraded if:** Heap usage > 1GB
@@ -193,7 +203,7 @@ check_health() {
   response=$(curl -s -w "\n%{http_code}" "$API_URL/health/detailed")
   body=$(echo "$response" | head -n -1)
   status_code=$(echo "$response" | tail -n 1)
-  
+
   if [ "$status_code" != "200" ]; then
     echo "ALERT: System unhealthy (HTTP $status_code)"
     echo "$body" | jq
@@ -201,14 +211,14 @@ check_health() {
     echo "$body" | mail -s "Quanta Health Alert" "$ALERT_EMAIL"
     return 1
   fi
-  
+
   # Check individual components
   ai_status=$(echo "$body" | jq -r '.components.aiClient.status')
   if [ "$ai_status" == "unhealthy" ]; then
     echo "WARNING: AI client is unhealthy"
     echo "$body" | jq '.components.aiClient'
   fi
-  
+
   return 0
 }
 
@@ -226,31 +236,31 @@ metadata:
   name: quanta-trading
 spec:
   containers:
-  - name: quanta
-    image: quanta:latest
-    ports:
-    - containerPort: 3001
-    
-    # Liveness probe - restarts pod if unhealthy
-    livenessProbe:
-      httpGet:
-        path: /health
-        port: 3001
-      initialDelaySeconds: 30
-      periodSeconds: 10
-      timeoutSeconds: 5
-      failureThreshold: 3
-    
-    # Readiness probe - removes from service if unhealthy
-    readinessProbe:
-      httpGet:
-        path: /health/detailed
-        port: 3001
-      initialDelaySeconds: 10
-      periodSeconds: 30
-      timeoutSeconds: 10
-      failureThreshold: 2
-      successThreshold: 1
+    - name: quanta
+      image: quanta:latest
+      ports:
+        - containerPort: 3001
+
+      # Liveness probe - restarts pod if unhealthy
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 3001
+        initialDelaySeconds: 30
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 3
+
+      # Readiness probe - removes from service if unhealthy
+      readinessProbe:
+        httpGet:
+          path: /health/detailed
+          port: 3001
+        initialDelaySeconds: 10
+        periodSeconds: 30
+        timeoutSeconds: 10
+        failureThreshold: 2
+        successThreshold: 1
 ```
 
 ### Docker Compose with Health Check
@@ -261,9 +271,9 @@ services:
   quanta:
     image: quanta:latest
     ports:
-      - "3001:3001"
+      - '3001:3001'
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:3001/health']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -307,24 +317,24 @@ def check_health():
     try:
         response = requests.get(f"{API_URL}/health/detailed", timeout=10)
         data = response.json()
-        
+
         status = data.get('status')
         components = data.get('components', {})
-        
+
         logger.info(f"Overall status: {status}")
-        
+
         # Check each component
         for name, component in components.items():
             comp_status = component.get('status')
             message = component.get('message')
-            
+
             if comp_status == 'unhealthy':
                 logger.error(f"Component {name}: {comp_status} - {message}")
             elif comp_status == 'degraded':
                 logger.warning(f"Component {name}: {comp_status} - {message}")
             else:
                 logger.info(f"Component {name}: {comp_status}")
-        
+
         # Check AI circuit breaker specifically
         if 'aiClient' in components:
             circuit_state = components['aiClient'].get('details', {}).get('circuitState')
@@ -332,9 +342,9 @@ def check_health():
                 logger.error("AI circuit breaker is OPEN - trading may be paused")
             elif circuit_state == 'HALF_OPEN':
                 logger.warning("AI circuit breaker is HALF_OPEN - testing recovery")
-        
+
         return status == 'healthy'
-        
+
     except requests.exceptions.RequestException as e:
         logger.error(f"Health check failed: {e}")
         return False
@@ -350,6 +360,7 @@ if __name__ == '__main__':
 ### Circuit Breaker OPEN
 
 **Symptoms:**
+
 ```json
 {
   "aiClient": {
@@ -364,12 +375,14 @@ if __name__ == '__main__':
 ```
 
 **Causes:**
+
 - OpenRouter API key invalid or expired
 - OpenRouter API rate limit exceeded
 - OpenRouter service outage
 - Network connectivity issues
 
 **Resolution:**
+
 1. Check API key in configuration
 2. Check `logs/error.log` for detailed errors
 3. Verify OpenRouter API status
@@ -378,6 +391,7 @@ if __name__ == '__main__':
 ### High Memory Usage
 
 **Symptoms:**
+
 ```json
 {
   "cache": {
@@ -393,11 +407,13 @@ if __name__ == '__main__':
 ```
 
 **Causes:**
+
 - Memory leak
 - Too many cached symbols
 - Long running process without restart
 
 **Resolution:**
+
 1. Restart the application
 2. Reduce number of tracked coins
 3. Clear market data cache
@@ -406,6 +422,7 @@ if __name__ == '__main__':
 ### Exchange Not Configured
 
 **Symptoms:**
+
 ```json
 {
   "exchange": {
@@ -416,10 +433,12 @@ if __name__ == '__main__':
 ```
 
 **Causes:**
+
 - Trading workflow not started
 - Exchange initialization failed
 
 **Resolution:**
+
 1. Start trading workflow
 2. Check exchange configuration in `config.json`
 3. Verify API credentials
@@ -434,6 +453,7 @@ if __name__ == '__main__':
 ### Alerting
 
 Set up alerts for:
+
 - HTTP 503 status (unhealthy) persisting > 5 minutes
 - AI circuit breaker OPEN > 2 minutes
 - Memory usage > 80% of limit
@@ -442,6 +462,7 @@ Set up alerts for:
 ### Dashboard Metrics
 
 Display on monitoring dashboard:
+
 - Overall system status
 - Circuit breaker state
 - Memory usage trend
@@ -451,6 +472,7 @@ Display on monitoring dashboard:
 ## Integration with QuantaWeb
 
 The QuantaWeb dashboard automatically polls health endpoints and displays:
+
 - System status indicator
 - Component health cards
 - Circuit breaker state
@@ -464,4 +486,3 @@ No additional configuration required - health checks work out of the box once th
 - [Error Handling & Resilience](./error-handling.md) - Comprehensive resilience documentation
 - [Configuration](./configuration.md) - Resilience configuration options
 - [Logging Guide](./logging-guide.md) - Log analysis for health issues
-

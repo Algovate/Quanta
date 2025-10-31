@@ -15,18 +15,9 @@
   },
 
   "scenarios": {
-    "defaultCoins": [
-      "BTC",
-      "ETH",
-      "SOL"
-    ],
+    "defaultCoins": ["BTC", "ETH", "SOL"],
     "_comment_defaultCoins": "Default cryptocurrency pairs to simulate",
-    "testScenarios": [
-      "bullish",
-      "bearish",
-      "sideways",
-      "volatile"
-    ],
+    "testScenarios": ["bullish", "bearish", "sideways", "volatile"],
     "_comment_testScenarios": "Available market scenarios for testing strategies"
   },
 
@@ -35,7 +26,7 @@
     "_comment_minConfidence": "Minimum AI signal confidence required to execute (0.0-1.0)",
     "maxRiskPerTrade": 0.05,
     "_comment_maxRiskPerTrade": "Maximum risk per individual trade (0.05 = 5% of account)",
-    "maxTotalRisk": 0.30,
+    "maxTotalRisk": 0.3,
     "_comment_maxTotalRisk": "Maximum total portfolio risk (0.30 = 30% margin used)",
     "stopLoss": 0.03,
     "_comment_stopLoss": "Default stop loss percentage (0.03 = 3%)",

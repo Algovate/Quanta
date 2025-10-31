@@ -82,7 +82,12 @@ class FakeOKX {
 const { OKXExchange } = await import('../../src/exchange/okx.js');
 
 async function testSandboxMode() {
-  const ex = new OKXExchange('key', 'secret', true, FakeOKX as unknown as new (o: Record<string, unknown>) => never);
+  const ex = new OKXExchange(
+    'key',
+    'secret',
+    true,
+    FakeOKX as unknown as new (o: Record<string, unknown>) => never
+  );
   // @ts-expect-error accessing private for test
   const fake: FakeOKX = (ex as unknown as { exchange: FakeOKX }).exchange;
   assert.strictEqual(fake.getSandboxMode(), true, 'Sandbox mode should be enabled');
@@ -90,7 +95,12 @@ async function testSandboxMode() {
 }
 
 async function testEnsureMarketsRetry() {
-  const ex = new OKXExchange('key', 'secret', true, FakeOKX as unknown as new (o: Record<string, unknown>) => never);
+  const ex = new OKXExchange(
+    'key',
+    'secret',
+    true,
+    FakeOKX as unknown as new (o: Record<string, unknown>) => never
+  );
   // @ts-expect-error accessing private for test
   const fake: FakeOKX = (ex as unknown as { exchange: FakeOKX }).exchange;
   fake.setLoadMarketsFailOnce();
@@ -112,14 +122,24 @@ async function testEnsureMarketsRetry() {
 }
 
 async function testGetPositionsNoCreds() {
-  const ex = new OKXExchange(undefined, undefined, true, FakeOKX as unknown as new (o: Record<string, unknown>) => never);
+  const ex = new OKXExchange(
+    undefined,
+    undefined,
+    true,
+    FakeOKX as unknown as new (o: Record<string, unknown>) => never
+  );
   const positions = await ex.getPositions();
   assert.ok(Array.isArray(positions));
   assert.strictEqual(positions.length, 0);
 }
 
 async function testTickerBasic() {
-  const ex = new OKXExchange('key', 'secret', false, FakeOKX as unknown as new (o: Record<string, unknown>) => never);
+  const ex = new OKXExchange(
+    'key',
+    'secret',
+    false,
+    FakeOKX as unknown as new (o: Record<string, unknown>) => never
+  );
   // @ts-expect-error accessing private for test
   const fake: FakeOKX = (ex as unknown as { exchange: FakeOKX }).exchange;
   fake.setTicker({ close: 321, timestamp: 333 });
@@ -129,7 +149,12 @@ async function testTickerBasic() {
 }
 
 async function testPlaceOrderRequiresCreds() {
-  const ex = new OKXExchange(undefined, undefined, false, FakeOKX as unknown as new (o: Record<string, unknown>) => never);
+  const ex = new OKXExchange(
+    undefined,
+    undefined,
+    false,
+    FakeOKX as unknown as new (o: Record<string, unknown>) => never
+  );
   let threw = false;
   try {
     await ex.placeOrder('BTC/USDT', 'buy', 1);
@@ -156,7 +181,12 @@ async function run() {
     [
       'resolveInstrument mapping',
       async () => {
-        const ex = new OKXExchange('key', 'secret', true, FakeOKX as unknown as new (o: Record<string, unknown>) => never);
+        const ex = new OKXExchange(
+          'key',
+          'secret',
+          true,
+          FakeOKX as unknown as new (o: Record<string, unknown>) => never
+        );
         assert.strictEqual(ex.resolveInstrument('BTC', 'perp'), 'BTC/USDT:USDT');
         assert.strictEqual(ex.resolveInstrument('BTC/USDT', 'perp'), 'BTC/USDT:USDT');
         assert.strictEqual(ex.resolveInstrument('BTC-USDT-SWAP', 'perp'), 'BTC/USDT:USDT');
@@ -187,5 +217,3 @@ async function run() {
 }
 
 void run();
-
-

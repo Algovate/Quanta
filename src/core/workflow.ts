@@ -12,6 +12,7 @@ import { Logger } from '../utils/logger.js';
 import { CycleLogger, CycleDisplay } from './display/index.js';
 import chalk from 'chalk';
 import { ExchangeSnapshotService } from './exchange-snapshot.js';
+import { getConfig } from '../config/settings.js';
 
 export interface SystemState {
   isRunning: boolean;
@@ -1273,6 +1274,23 @@ export class TradingWorkflow {
     console.log(
       `   Margin Usage: ${marginUsage.toFixed(2)}% | Limit: ${maxMarginLimit.toFixed(0)}% | Positions: ${positions.length}/${this.config.maxPositions}`
     );
+
+    // Funding drag warning for swap/perp markets (phase 1: warn-only)
+    try {
+      const cfg = getConfig();
+      const mt = (cfg.exchange?.marketType || '').toLowerCase();
+      const fundingWarnings = (cfg as any)?.trading?.funding?.warnings !== false;
+      if ((mt === 'swap' || mt === 'perp' || mt === 'perpetual') && fundingWarnings) {
+        const estDailyFunding = 0.0003; // 0.03% daily conservative baseline
+        console.log(
+          chalk.gray(
+            `   Note: Perp funding can impact P&L. Est. daily funding drag baseline: ${(estDailyFunding * 100).toFixed(2)}% of notional (varies by market/direction)`
+          )
+        );
+      }
+    } catch {
+      // ignore config read errors
+    }
 
     if (positions.length > 0) {
       console.log(

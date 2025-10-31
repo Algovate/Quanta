@@ -300,6 +300,12 @@ export class TradeCommands {
     this.printEffectiveExchange(exchange, exchangeTestnet);
 
     console.log(`   Coins: ${coins.join(', ')}`);
+    const mt = (config.exchange?.marketType || 'spot').toLowerCase();
+    console.log(
+      chalk.gray(
+        `   MarketType: ${mt || 'spot'} | Effective risk → lev: ${config.trading.leverageRange[0]}-${config.trading.leverageRange[1]}x, SL: ${(config.trading.stopLoss * 100).toFixed(1)}%, risk/trade: ${(config.trading.maxRisk * 100).toFixed(1)}%, maxPos: ${config.trading.maxPositions}`
+      )
+    );
     console.log('');
 
     const marketProvider = new MarketDataProvider(exchange);

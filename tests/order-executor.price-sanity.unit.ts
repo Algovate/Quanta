@@ -1,12 +1,32 @@
 import assert from 'node:assert';
 
 // Minimal types to satisfy imports
-type Order = { id: string; symbol: string; side: 'buy' | 'sell'; amount: number; price?: number; status: 'open' | 'filled' | 'rejected'; timestamp: number };
+type Order = {
+  id: string;
+  symbol: string;
+  side: 'buy' | 'sell';
+  amount: number;
+  price?: number;
+  status: 'open' | 'filled' | 'rejected';
+  timestamp: number;
+};
 
 // Fake Exchange capturing the price used
 class FakeExchange {
-  lastPlaced?: { symbol: string; side: 'buy' | 'sell'; amount: number; price?: number; leverage?: number };
-  async placeOrder(symbol: string, side: 'buy' | 'sell', amount: number, price?: number, leverage?: number): Promise<Order> {
+  lastPlaced?: {
+    symbol: string;
+    side: 'buy' | 'sell';
+    amount: number;
+    price?: number;
+    leverage?: number;
+  };
+  async placeOrder(
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    price?: number,
+    leverage?: number
+  ): Promise<Order> {
     this.lastPlaced = { symbol, side, amount, price, leverage };
     return {
       id: `${symbol}-${Date.now()}`,
@@ -18,13 +38,19 @@ class FakeExchange {
       timestamp: Date.now(),
     };
   }
-  async cancelOrder(): Promise<boolean> { return true; }
-  async getTicker(_symbol: string) { return { price: 100, timestamp: Date.now() }; }
+  async cancelOrder(): Promise<boolean> {
+    return true;
+  }
+  async getTicker(_symbol: string) {
+    return { price: 100, timestamp: Date.now() };
+  }
 }
 
 // Fake RiskManager with permissive sizing
 class FakeRiskManager {
-  validateSignal() { return { valid: true } as any; }
+  validateSignal() {
+    return { valid: true } as any;
+  }
   calculatePositionSizing(_signal: any, _account: any, _positions: any[], _currentPrice: number) {
     return { suggestedSize: 1, leverage: 10 };
   }
@@ -91,5 +117,3 @@ async function run() {
 }
 
 void run();
-
-

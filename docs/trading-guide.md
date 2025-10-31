@@ -11,6 +11,7 @@ quanta trade start --mode simulation --coins BTC,ETH,SOL
 ```
 
 **Features:**
+
 - No real money involved
 - Uses mock market data
 - Mock AI agent by default
@@ -24,6 +25,7 @@ quanta trade start --mode paper --coins BTC,ETH,SOL
 ```
 
 **Features:**
+
 - Real market data from exchanges (OKX, Binance, Coinbase)
 - Simulated execution (no real money)
 - Realistic market conditions
@@ -37,6 +39,7 @@ quanta trade start --mode live --coins BTC
 ```
 
 **Requirements:**
+
 - Real API keys configured
 - Proper risk management
 - Test in simulation or paper trading first!
@@ -85,6 +88,7 @@ quanta trade backtest --start 2024-01-01 --end 2024-12-31 --coins BTC,ETH --init
 ```
 
 The backtest report includes:
+
 - **📊 Data Source Information**: Total candles, timeframes, per-coin breakdown
 - **🤖 Signal Statistics**: Generated, accepted, rejected signals with visual indicators (✓/✗)
 - **📊 Performance Summary**: Returns, Sharpe ratio, drawdown with color coding
@@ -113,6 +117,21 @@ The backtest report includes:
 - OKX instruments: Quanta uses `BASE/USDT:USDT` (e.g., `ETH/USDT:USDT`) for perps.
 - Entry pricing: execution references real-time mid price (best bid/ask average), not candle close.
 - Exposure shown in summaries is the sum of absolute position values (size × mark price), without leverage multiplication.
+
+### Market Types and Effects
+
+- Spot: no leverage, no funding; uses spot endpoints. Good for accumulation and lower risk.
+- Swap/Perpetual: leverage supported; periodic funding applies; enables shorting. Higher risk; liquidation possible.
+
+Recommended profiles:
+
+- Spot: leverage [1,1], stopLoss 3–7%, maxRisk 3–5%, maxPositions 6–10
+- Swap/Perp: leverage [3,10], stopLoss 1–2%, maxRisk 1–2%, maxPositions 1–4
+
+Notes:
+
+- Startup shows marketType and effective risk parameters; values outside safe bands are clamped.
+- Funding warnings are displayed during cycles when enabled via `trading.funding.warnings`.
 
 ## Risk Management
 
@@ -147,6 +166,7 @@ Quanta automatically implements risk controls:
 ### Common Issues
 
 **Issue**: Trading not executing
+
 ```bash
 # Check configuration
 quanta config show
@@ -156,6 +176,7 @@ quanta config validate
 ```
 
 **Issue**: API errors
+
 ```bash
 # Check API keys
 quanta test kline --exchange simulator --coin BTC
@@ -171,15 +192,17 @@ quanta test ai --type mock --coin BTC
 Quanta tracks both **realized** and **unrealized** profit & loss:
 
 **Unrealized PnL**: Open position profit/loss (not yet closed)
+
 ```typescript
 // Long position
 Unrealized PnL = (Current Price - Entry Price) × Position Size
 
-// Short position  
+// Short position
 Unrealized PnL = (Entry Price - Current Price) × Position Size
 ```
 
 **Realized PnL**: Closed position profit/loss (actual cash gained/lost)
+
 ```typescript
 Realized PnL = calculated when position closes
 Account Balance += Realized PnL
@@ -196,6 +219,7 @@ Available Margin = Equity - Used Margin
 ### Leverage Impact on PnL
 
 With 10x leverage:
+
 - Position value: $10,000 (10 BTC @ $1,000)
 - Required margin: $1,000 (10% of position)
 - 1% price move → $100 PnL (10% ROI on margin)
@@ -203,6 +227,7 @@ With 10x leverage:
 ### Trade Tracking
 
 All completed trades are recorded with:
+
 - Entry/exit times and prices
 - Position size and side (long/short)
 - Realized PnL (absolute and percentage)
@@ -214,7 +239,7 @@ See [Core Concepts](concepts.md#pnl-calculation) for detailed formulas.
 ## Advanced Topics
 
 For more advanced topics, refer to:
+
 - [Core Concepts](concepts.md) - Complete trading concepts and algorithms
 - [Configuration Guide](configuration.md) - Advanced configuration options
 - [Testing & Simulation](testing-simulation.md) - Strategy testing and validation
-

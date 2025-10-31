@@ -10,7 +10,9 @@
     "apiSecret": "",
     "_comment_apiSecret": "API secret for authentication (optional for public data in simulation mode)",
     "testnet": true,
-    "_comment_testnet": "Use testnet environment (recommended for testing)"
+    "_comment_testnet": "Use testnet environment (recommended for testing)",
+    "marketType": "spot",
+    "_comment_marketType": "Market type for exchanges that support it: 'spot' or 'swap' ('perp'/'perpetual' treated as 'swap')"
   },
 
   "ai": {
@@ -40,13 +42,17 @@
     "cyclePeriod": 180000,
     "_comment_cyclePeriod": "Time between trading cycles in milliseconds (180000 = 3 minutes)",
     "maxPositions": 6,
-    "_comment_maxPositions": "Maximum number of simultaneous open positions",
+    "_comment_maxPositions": "Maximum number of simultaneous open positions. Recommended: spot 6-10, swap 1-4",
     "leverageRange": [5, 40],
-    "_comment_leverageRange": "Leverage range [min, max] - e.g., [5, 40] means 5x to 40x leverage",
+    "_comment_leverageRange": "Leverage range [min, max]. Recommended: spot [1,1], swap [3,10]",
     "stopLoss": 0.05,
-    "_comment_stopLoss": "Default stop loss percentage (0.05 = 5%)",
+    "_comment_stopLoss": "Default stop loss percentage (0.05 = 5%). Recommended: spot 3-7%, swap 1-2%",
     "maxRisk": 0.05,
-    "_comment_maxRisk": "Maximum risk per trade as fraction of account (0.05 = 5%)"
+    "_comment_maxRisk": "Maximum risk per trade as fraction of account (0.05 = 5%). Recommended: spot 3-5%, swap 1-2%",
+    "funding": {
+      "warnings": true
+    },
+    "_comment_funding": "Enable warnings about estimated funding drag for perpetual swaps"
   },
 
   "backtest": {

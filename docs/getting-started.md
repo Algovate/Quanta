@@ -100,6 +100,7 @@ quanta trade start --mode live --coins BTC,ETH
 ```
 
 **The system will:**
+
 - Run trading cycles every 3 minutes
 - Monitor positions and execute trades
 - Display real-time updates

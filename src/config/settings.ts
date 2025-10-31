@@ -2,6 +2,7 @@ import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import { deepMerge } from '../utils/object.js';
 
 // Load environment variables
 dotenv.config();
@@ -11,6 +12,7 @@ const ExchangeConfigSchema = z.object({
   apiKey: z.string().optional(),
   apiSecret: z.string().optional(),
   testnet: z.boolean().default(true),
+  marketType: z.enum(['spot', 'swap', 'perp', 'perpetual']).optional(),
 });
 
 const ConfigSchema = z.object({
@@ -55,6 +57,11 @@ const ConfigSchema = z.object({
         maxDeviation: z.number().min(0).max(1).default(0.05),
       })
       .default({ enabled: true, maxDeviation: 0.05 }),
+    funding: z
+      .object({
+        warnings: z.boolean().default(true),
+      })
+      .default({ warnings: true }),
   }),
   backtest: z
     .object({
@@ -133,6 +140,27 @@ const CONFIG_DIR = path.join(process.cwd(), 'config');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const CONFIG_EXAMPLE_FILE = path.join(CONFIG_DIR, 'config.example.json');
 
+// Helpers for parsing environment variables safely
+function parseNumberEnv(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseIntegerEnv(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseBooleanEnv(value: string | undefined, defaultTrue: boolean = true): boolean {
+  if (value === undefined) return defaultTrue;
+  const v = value.toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(v)) return true;
+  if (['false', '0', 'no', 'off'].includes(v)) return false;
+  return defaultTrue;
+}
+
 // Default configuration
 const DEFAULT_CONFIG: Partial<Config> = {
   mode: 'simulation',
@@ -160,6 +188,9 @@ const DEFAULT_CONFIG: Partial<Config> = {
     priceSanity: {
       enabled: true,
       maxDeviation: 0.05,
+    },
+    funding: {
+      warnings: true,
     },
   },
   backtest: {
@@ -203,53 +234,125 @@ function parseEnvConfig(): Partial<Config> {
       name: process.env.EXCHANGE_NAME || 'simulator',
       apiKey: process.env.EXCHANGE_API_KEY,
       apiSecret: process.env.EXCHANGE_API_SECRET,
-      testnet: process.env.EXCHANGE_TESTNET !== 'false',
+      testnet: parseBooleanEnv(process.env.EXCHANGE_TESTNET, true),
+      marketType: (process.env.EXCHANGE_MARKET_TYPE || undefined) as
+        | 'spot'
+        | 'swap'
+        | 'perp'
+        | 'perpetual'
+        | undefined,
     },
     ai: {
       apiKey: process.env.OPENROUTER_API_KEY || '',
       model: process.env.AI_MODEL || 'deepseek/deepseek-chat',
-      temperature: parseFloat(process.env.AI_TEMPERATURE || '0.7'),
+      temperature: parseNumberEnv(process.env.AI_TEMPERATURE, 0.7),
       prompt: {
         candles: {
-          m3: parseInt(process.env.PROMPT_CANDLES_3M || '10'),
-          h4: parseInt(process.env.PROMPT_CANDLES_4H || '5'),
+          m3: parseIntegerEnv(process.env.PROMPT_CANDLES_3M, 10),
+          h4: parseIntegerEnv(process.env.PROMPT_CANDLES_4H, 5),
         },
         sections: {
-          candlesTA: process.env.PROMPT_SECTIONS_CANDLES_TA !== 'false',
-          sentiment: process.env.PROMPT_SECTIONS_SENTIMENT !== 'false',
-          technicalState: process.env.PROMPT_SECTIONS_TECH_STATE !== 'false',
+          candlesTA: parseBooleanEnv(process.env.PROMPT_SECTIONS_CANDLES_TA, true),
+          sentiment: parseBooleanEnv(process.env.PROMPT_SECTIONS_SENTIMENT, true),
+          technicalState: parseBooleanEnv(process.env.PROMPT_SECTIONS_TECH_STATE, true),
         },
       },
     },
     trading: {
       coins,
-      cyclePeriod: parseInt(process.env.CYCLE_PERIOD || '180000'),
-      maxPositions: parseInt(process.env.MAX_POSITIONS || '6'),
+      cyclePeriod: parseIntegerEnv(process.env.CYCLE_PERIOD, 180000),
+      maxPositions: parseIntegerEnv(process.env.MAX_POSITIONS, 6),
       leverageRange: [
-        parseInt(process.env.LEVERAGE_MIN || '5'),
-        parseInt(process.env.LEVERAGE_MAX || '40'),
+        parseIntegerEnv(process.env.LEVERAGE_MIN, 5),
+        parseIntegerEnv(process.env.LEVERAGE_MAX, 40),
       ],
-      stopLoss: parseFloat(process.env.STOP_LOSS || '0.05'),
-      maxRisk: parseFloat(process.env.MAX_RISK || '0.05'),
-      marketFetchParallel: process.env.TRADING_FETCH_PARALLEL !== 'false',
+      stopLoss: parseNumberEnv(process.env.STOP_LOSS, 0.05),
+      maxRisk: parseNumberEnv(process.env.MAX_RISK, 0.05),
+      marketFetchParallel: parseBooleanEnv(process.env.TRADING_FETCH_PARALLEL, true),
       priceSanity: {
-        enabled: process.env.TRADING_PRICE_SANITY_ENABLED !== 'false',
-        maxDeviation: parseFloat(process.env.TRADING_PRICE_SANITY_MAX_DEVIATION || '0.05'),
+        enabled: parseBooleanEnv(process.env.TRADING_PRICE_SANITY_ENABLED, true),
+        maxDeviation: parseNumberEnv(process.env.TRADING_PRICE_SANITY_MAX_DEVIATION, 0.05),
+      },
+      funding: {
+        warnings: parseBooleanEnv(process.env.TRADING_FUNDING_WARNINGS, true),
       },
     },
     backtest: {
       startDate: process.env.BACKTEST_START_DATE,
       endDate: process.env.BACKTEST_END_DATE,
-      initialBalance: parseFloat(process.env.BACKTEST_INITIAL_BALANCE || '10000'),
+      initialBalance: parseNumberEnv(process.env.BACKTEST_INITIAL_BALANCE, 10000),
     },
     notifications: {
-      enabled: process.env.NOTIFICATIONS_ENABLED === 'true',
+      enabled: parseBooleanEnv(process.env.NOTIFICATIONS_ENABLED, false),
       webhook: process.env.NOTIFICATION_WEBHOOK,
     },
   };
 }
 
 let globalConfig: Config | null = null;
+
+type RiskProfile = {
+  leverageRange: [number, number];
+  stopLoss: [number, number];
+  maxRisk: [number, number];
+  maxPositions: [number, number];
+};
+
+function deriveRiskProfile(marketType?: string | null): RiskProfile | null {
+  const mt = (marketType || '').toLowerCase();
+  if (mt === 'swap' || mt === 'perp' || mt === 'perpetual') {
+    return {
+      leverageRange: [3, 10],
+      stopLoss: [0.01, 0.02],
+      maxRisk: [0.01, 0.02],
+      maxPositions: [1, 4],
+    };
+  }
+  if (mt === 'spot') {
+    return {
+      leverageRange: [1, 1],
+      stopLoss: [0.03, 0.07],
+      maxRisk: [0.03, 0.05],
+      maxPositions: [6, 10],
+    };
+  }
+  return null;
+}
+
+function applyRiskProfileToConfig(cfg: Partial<Config>): Partial<Config> {
+  const profile = deriveRiskProfile(cfg.exchange?.marketType);
+  if (!profile) return cfg;
+
+  const trading = cfg.trading ?? {};
+
+  const [levMin, levMax] = profile.leverageRange;
+  const [slMin, slMax] = profile.stopLoss;
+  const [riskMin, riskMax] = profile.maxRisk;
+  const [posMin, posMax] = profile.maxPositions;
+
+  const result: Partial<Config> = deepMerge(
+    cfg as Record<string, unknown>,
+    {
+      trading: {
+        leverageRange: trading.leverageRange ?? [levMin, levMax],
+        stopLoss:
+          typeof trading.stopLoss === 'number'
+            ? trading.stopLoss
+            : Math.min(Math.max(DEFAULT_CONFIG.trading?.stopLoss ?? slMin, slMin), slMax),
+        maxRisk:
+          typeof trading.maxRisk === 'number'
+            ? trading.maxRisk
+            : Math.min(Math.max(DEFAULT_CONFIG.trading?.maxRisk ?? riskMin, riskMin), riskMax),
+        maxPositions:
+          typeof trading.maxPositions === 'number'
+            ? trading.maxPositions
+            : Math.min(Math.max(DEFAULT_CONFIG.trading?.maxPositions ?? posMin, posMin), posMax),
+      },
+    } as unknown as Record<string, unknown>
+  ) as Partial<Config>;
+
+  return result;
+}
 
 export function getConfig(): Config {
   if (!globalConfig) {
@@ -262,37 +365,14 @@ export function getConfig(): Config {
     const envConfig = parseEnvConfig();
 
     // Merge configurations (file config takes precedence over env config)
-    const mergedConfig = {
-      ...DEFAULT_CONFIG,
-      ...envConfig,
-      ...fileConfig,
-      // Deep merge for nested objects
-      exchange: {
-        ...DEFAULT_CONFIG.exchange,
-        ...envConfig.exchange,
-        ...fileConfig.exchange,
-      },
-      ai: {
-        ...DEFAULT_CONFIG.ai,
-        ...envConfig.ai,
-        ...fileConfig.ai,
-      },
-      trading: {
-        ...DEFAULT_CONFIG.trading,
-        ...envConfig.trading,
-        ...fileConfig.trading,
-      },
-      backtest: {
-        ...DEFAULT_CONFIG.backtest,
-        ...envConfig.backtest,
-        ...fileConfig.backtest,
-      },
-      notifications: {
-        ...DEFAULT_CONFIG.notifications,
-        ...envConfig.notifications,
-        ...fileConfig.notifications,
-      },
-    };
+    // Deep merge precedence: defaults < env < file
+    let mergedConfig = deepMerge(
+      deepMerge(DEFAULT_CONFIG as Record<string, unknown>, envConfig as Record<string, unknown>),
+      fileConfig as Record<string, unknown>
+    ) as Partial<Config>;
+
+    // Apply marketType-aware risk profile to fill in safe defaults where not explicitly set
+    mergedConfig = applyRiskProfileToConfig(mergedConfig);
 
     globalConfig = ConfigSchema.parse(mergedConfig);
   }

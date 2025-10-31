@@ -1,5 +1,6 @@
 import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
+import { getConfig } from '../config/settings.js';
 
 export class HyperliquidExchange implements Exchange {
   private exchange: ccxt.hyperliquid;
@@ -33,6 +34,39 @@ export class HyperliquidExchange implements Exchange {
     return total?.USDC || total?.USDT || 0;
   }
 
+  /**
+   * Safely extract a currency value from a balance field preferring USDC then USDT
+   */
+  private getCurrencyValue(field: unknown): number {
+    const map = field as Record<string, number> | undefined;
+    if (!map) return 0;
+    return map.USDC ?? map.USDT ?? 0;
+  }
+
+  /**
+   * Resolve market type for Hyperliquid defaultType option.
+   * Supports env overrides: HYPERLIQUID_DEFAULT_TYPE or EXCHANGE_MARKET_TYPE.
+   */
+  private resolveDefaultType(): 'spot' | 'swap' {
+    // 1) Config value takes precedence if provided
+    try {
+      const cfg = getConfig();
+      const mt = cfg.exchange?.marketType?.toLowerCase();
+      if (mt === 'spot') return 'spot';
+      if (mt === 'swap' || mt === 'perp' || mt === 'perpetual') return 'swap';
+    } catch (_e) {
+      void _e;
+    }
+
+    // 2) Environment variable fallback
+    const envValue = process.env.HYPERLIQUID_DEFAULT_TYPE || process.env.EXCHANGE_MARKET_TYPE || '';
+    const normalized = envValue.toLowerCase();
+    if (normalized === 'spot') return 'spot';
+    if (normalized === 'swap' || normalized === 'perp' || normalized === 'perpetual') return 'swap';
+    // fallback to current behavior: spot
+    return 'spot';
+  }
+
   constructor(apiKey?: string, apiSecret?: string, testnet: boolean = true) {
     this.isTestnet = testnet;
 
@@ -41,7 +75,7 @@ export class HyperliquidExchange implements Exchange {
       apiKey,
       secret: apiSecret,
       options: {
-        defaultType: 'spot', // Hyperliquid supports both spot and perpetual
+        defaultType: this.resolveDefaultType(), // configurable via env
         adjustForTimeDifference: true,
       },
       enableRateLimit: true,
@@ -64,14 +98,8 @@ export class HyperliquidExchange implements Exchange {
     try {
       const balance = await this.exchange.fetchBalance();
       const totalValue = this.extractBalanceValue(balance);
-      const freeValue =
-        (balance.free as unknown as Record<string, number>)?.USDC ||
-        (balance.free as unknown as Record<string, number>)?.USDT ||
-        0;
-      const usedValue =
-        (balance.used as unknown as Record<string, number>)?.USDC ||
-        (balance.used as unknown as Record<string, number>)?.USDT ||
-        0;
+      const freeValue = this.getCurrencyValue(balance.free);
+      const usedValue = this.getCurrencyValue(balance.used);
 
       return {
         balance: totalValue,

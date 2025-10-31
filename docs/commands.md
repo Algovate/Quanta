@@ -42,6 +42,11 @@ quanta trade start --mode live --coins BTC
 # quanta trade backtest --start 2024-01-01 --end 2024-12-31
 ```
 
+**Startup Output:**
+
+- Logs show `MarketType` and effective risk parameters (leverage min/max, stopLoss, maxRisk, maxPositions).
+- If provided values exceed safe bands for the detected market type, they are clamped and a warning is printed.
+
 ---
 
 ### `trade pause` - Pause Trading System
@@ -145,6 +150,7 @@ quanta trade backtest --start 2024-11-01 --end 2024-12-01
 **Report Sections:**
 
 The backtest output includes:
+
 - **Signal Statistics**: Generated, accepted, rejected signals with acceptance rate
 - **Performance Summary**: Total return, P&L, annualized return, Sharpe ratio, max drawdown
 - **Trade Statistics**: Win/loss breakdown with visual progress bar, average profit/loss, best/worst trades

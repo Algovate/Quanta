@@ -5,12 +5,14 @@ Complete documentation index for the Quanta AI trading system.
 ## 📚 Documentation Index
 
 ### 🚀 Getting Started
+
 - **[Getting Started](getting-started.md)** (2.8KB)
   - Installation steps
   - Quick start guide
   - First simulation
 
 ### 📈 Trading
+
 - **[Trading Guide](trading-guide.md)** (4.9KB)
   - Trading modes (simulation/paper/live)
   - Trading lifecycle
@@ -18,6 +20,7 @@ Complete documentation index for the Quanta AI trading system.
   - Best practices
 
 ### ⚙️ Configuration
+
 - **[Configuration Guide](configuration.md)** (3.7KB)
   - Configuration files
   - Environment variables
@@ -25,6 +28,7 @@ Complete documentation index for the Quanta AI trading system.
   - Settings examples
 
 ### 🧪 Testing & Simulation
+
 - **[Testing & Simulation](testing-simulation.md)** (5.0KB)
   - Simulation modes
   - Testing commands
@@ -32,11 +36,11 @@ Complete documentation index for the Quanta AI trading system.
   - Troubleshooting
 
 ### 📚 Reference
+
 - **[Command Reference](commands.md)** (7.5KB)
   - Complete command documentation
   - All sub-commands
   - Options and examples
-  
 - **[Supported Exchanges](exchanges.md)** (4.2KB)
   - Exchange list and features
   - API configuration
@@ -48,6 +52,7 @@ Complete documentation index for the Quanta AI trading system.
   - Background mode
 
 ### 💡 Concepts & Terminology
+
 - **[Core Concepts](concepts.md)** (23KB) ⭐ COMPREHENSIVE
   - Complete architecture
   - Trading modes (detailed)
@@ -61,33 +66,36 @@ Complete documentation index for the Quanta AI trading system.
 ## 🎯 Quick Navigation
 
 ### For New Users
+
 1. Start with [Getting Started](getting-started.md)
 2. Run a [simulation](testing-simulation.md)
 3. Understand [core concepts](concepts.md)
 
 ### For Traders
+
 1. Read [Trading Guide](trading-guide.md)
 2. Configure [system settings](configuration.md)
 3. Learn [risk management](concepts.md#risk-management)
 
 ### For Developers
+
 1. Check [Command Reference](commands.md)
 2. Understand [architecture](concepts.md#architecture)
 3. Review [algorithms](concepts.md#algorithms)
 
 ## 📊 Documentation Statistics
 
-| Document | Size | Lines | Purpose |
-|----------|------|-------|---------|
-| getting-started.md | 2.8KB | ~114 | Quick setup |
-| trading-guide.md | 4.9KB | ~215 | Trading operations |
-| configuration.md | 3.7KB | ~205 | System setup |
-| testing-simulation.md | 5.0KB | ~302 | Testing guide |
-| commands.md | 7.5KB | ~374 | Command reference |
-| concepts.md | 23KB | ~1097 | Concepts & algorithms |
-| exchanges.md | 4.2KB | ~161 | Exchange support |
-| logging-guide.md | 9.1KB | ~504 | Logging system |
-| **Total** | **~60KB** | **~2,773** | Complete docs |
+| Document              | Size      | Lines      | Purpose               |
+| --------------------- | --------- | ---------- | --------------------- |
+| getting-started.md    | 2.8KB     | ~114       | Quick setup           |
+| trading-guide.md      | 4.9KB     | ~215       | Trading operations    |
+| configuration.md      | 3.7KB     | ~205       | System setup          |
+| testing-simulation.md | 5.0KB     | ~302       | Testing guide         |
+| commands.md           | 7.5KB     | ~374       | Command reference     |
+| concepts.md           | 23KB      | ~1097      | Concepts & algorithms |
+| exchanges.md          | 4.2KB     | ~161       | Exchange support      |
+| logging-guide.md      | 9.1KB     | ~504       | Logging system        |
+| **Total**             | **~60KB** | **~2,773** | Complete docs         |
 
 ## 🔍 Key Topics
 
@@ -105,23 +113,27 @@ Complete documentation index for the Quanta AI trading system.
 ### Quick Links by Topic
 
 **Technical Indicators**
+
 - [EMA (Exponential Moving Average)](concepts.md#moving-averages)
 - [MACD](concepts.md#macd-moving-average-convergence-divergence)
 - [RSI (Relative Strength Index)](concepts.md#rsi-relative-strength-index)
 - [ATR (Average True Range)](concepts.md#atr-average-true-range)
 
 **Risk Management**
+
 - [Position Sizing](concepts.md#position-sizing)
 - [Stop Loss](concepts.md#stop-loss)
 - [Take Profit](concepts.md#take-profit)
 - [Leverage](concepts.md#leverage)
 
 **AI & Signals**
+
 - [Signal Generation](concepts.md#signal-generation-process)
 - [Confidence Levels](concepts.md#confidence-levels)
 - [Mock vs Real AI](concepts.md#mock-ai-vs-real-ai)
 
 **Algorithms**
+
 - [Position Sizing Algorithm](concepts.md#position-sizing-algorithm-optimized)
 - [Risk Validation Algorithm](concepts.md#risk-validation-algorithm)
 - [Stop-Loss Calculation](concepts.md#stop-loss-calculation-algorithm)
@@ -129,6 +141,7 @@ Complete documentation index for the Quanta AI trading system.
 ## 📖 Learning Path
 
 ### Beginner Path
+
 ```
 1. Getting Started
    ↓
@@ -140,6 +153,7 @@ Complete documentation index for the Quanta AI trading system.
 ```
 
 ### Advanced Path
+
 ```
 1. Core Concepts (deep dive)
    ↓

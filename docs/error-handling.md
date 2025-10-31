@@ -412,12 +412,14 @@ All resilience settings can be configured in `config/config.json`:
 ### 1. When to Use Retries
 
 ✅ **Use retries for:**
+
 - Network failures
 - Temporary service outages
 - Rate limit errors (with backoff)
 - Timeout errors
 
 ❌ **Don't retry:**
+
 - Authentication failures
 - Validation errors
 - Business logic errors
@@ -426,12 +428,14 @@ All resilience settings can be configured in `config/config.json`:
 ### 2. When to Use Circuit Breakers
 
 ✅ **Use circuit breakers for:**
+
 - External API calls
 - Database connections
 - Third-party services
 - Any remote dependency
 
 ❌ **Don't use circuit breakers for:**
+
 - Local operations
 - Pure functions
 - In-process services
@@ -439,11 +443,13 @@ All resilience settings can be configured in `config/config.json`:
 ### 3. Cache Strategy
 
 ✅ **Good use cases:**
+
 - Market data (changes slowly)
 - Configuration data
 - Reference data (symbols, contracts)
 
 ❌ **Bad use cases:**
+
 - Account balances (must be fresh)
 - Order status (real-time critical)
 - Authentication tokens (security risk)
@@ -464,6 +470,7 @@ When the primary operation fails:
 **Symptoms**: Slow response times, excessive API calls
 
 **Solutions**:
+
 - Reduce `maxRetries` in config
 - Increase `baseDelay` to spread out retries
 - Check if errors are retryable (auth errors shouldn't retry)
@@ -473,6 +480,7 @@ When the primary operation fails:
 **Symptoms**: Circuit opens after few failures, service unavailable errors
 
 **Solutions**:
+
 - Increase `failureThreshold` in config
 - Check if underlying service has issues
 - Review error logs for root cause
@@ -482,6 +490,7 @@ When the primary operation fails:
 **Symptoms**: `isStale: true` appears often in market data
 
 **Solutions**:
+
 - Check exchange API connectivity
 - Verify API rate limits aren't exceeded
 - Increase `maxRetries` for candle fetches
@@ -492,6 +501,7 @@ When the primary operation fails:
 **Symptoms**: Slow trading cycles, timeout errors
 
 **Solutions**:
+
 - Reduce retry attempts for non-critical operations
 - Optimize parallel market data fetching
 - Check network connectivity
@@ -506,6 +516,7 @@ The system provides two health check endpoints for monitoring:
 Fast, synchronous health check that returns basic system status without performing any async operations.
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
@@ -515,6 +526,7 @@ Fast, synchronous health check that returns basic system status without performi
 ```
 
 **Use cases:**
+
 - Load balancer health checks
 - Quick service availability checks
 - High-frequency monitoring (every few seconds)
@@ -524,6 +536,7 @@ Fast, synchronous health check that returns basic system status without performi
 Comprehensive health check that inspects all system components.
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
@@ -589,15 +602,18 @@ Comprehensive health check that inspects all system components.
 ```
 
 **HTTP Status Codes:**
+
 - `200`: System is healthy or degraded (still operational)
 - `503`: System is unhealthy (not operational)
 
 **Component Statuses:**
+
 - `healthy`: Component is functioning normally
 - `degraded`: Component has issues but is still operational
 - `unhealthy`: Component is not functioning
 
 **Use cases:**
+
 - Dashboard health visualization
 - Debugging system issues
 - Detailed monitoring (every 30-60 seconds)
@@ -606,6 +622,7 @@ Comprehensive health check that inspects all system components.
 ### Integration Examples
 
 #### cURL
+
 ```bash
 # Quick check
 curl http://localhost:3001/health
@@ -615,6 +632,7 @@ curl http://localhost:3001/health/detailed
 ```
 
 #### Monitoring Script
+
 ```bash
 #!/bin/bash
 # Check health and alert if unhealthy
@@ -627,6 +645,7 @@ fi
 ```
 
 #### Kubernetes Liveness Probe
+
 ```yaml
 livenessProbe:
   httpGet:
@@ -639,6 +658,7 @@ livenessProbe:
 ```
 
 #### Kubernetes Readiness Probe
+
 ```yaml
 readinessProbe:
   httpGet:
@@ -664,4 +684,3 @@ readinessProbe:
 - [Retry Pattern - Microsoft Azure](https://docs.microsoft.com/en-us/azure/architecture/patterns/retry)
 - [Circuit Breaker Pattern - Martin Fowler](https://martinfowler.com/bliki/CircuitBreaker.html)
 - [Exponential Backoff And Jitter - AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)
-

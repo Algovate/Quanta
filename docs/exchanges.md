@@ -4,23 +4,25 @@ Quanta supports multiple cryptocurrency exchanges with unified API.
 
 ## Available Exchanges
 
-| Exchange | Full Name | Abbreviation | Status |
-|----------|-----------|-------------|--------|
-| Simulator | Simulator | - | ✅ Built-in |
-| Binance | Binance | `bin` | ✅ Supported |
-| OKX | OKX | - | ✅ Supported |
-| Coinbase | Coinbase | `cb` | ✅ Supported |
-| Hyperliquid | Hyperliquid | `hliq` | ✅ Supported |
+| Exchange    | Full Name   | Abbreviation | Status       |
+| ----------- | ----------- | ------------ | ------------ |
+| Simulator   | Simulator   | -            | ✅ Built-in  |
+| Binance     | Binance     | `bin`        | ✅ Supported |
+| OKX         | OKX         | -            | ✅ Supported |
+| Coinbase    | Coinbase    | `cb`         | ✅ Supported |
+| Hyperliquid | Hyperliquid | `hliq`       | ✅ Supported |
 
 ## Exchange Details
 
 ### Simulator
+
 - **Type**: Built-in simulation
 - **API Key Required**: No
 - **Use Case**: Testing, development, learning
 - **Features**: Mock market data, automatic price movements
 
 ### Binance
+
 - **Type**: Centralized Exchange (CEX)
 - **API Key Required**: Yes (for trading)
 - **Use Case**: Spot and futures trading
@@ -28,12 +30,14 @@ Quanta supports multiple cryptocurrency exchanges with unified API.
 - **Abbreviation**: `bin`
 
 ### OKX
+
 - **Type**: Centralized Exchange (CEX)
 - **API Key Required**: Yes (for trading)
 - **Use Case**: Spot, futures, and options trading
 - **API Keys**: `OKX_API_KEY`, `OKX_API_SECRET`
 
 ### Coinbase
+
 - **Type**: Centralized Exchange (CEX)
 - **API Key Required**: Yes (for trading)
 - **Use Case**: Spot trading, institutional
@@ -41,6 +45,7 @@ Quanta supports multiple cryptocurrency exchanges with unified API.
 - **Abbreviation**: `cb`
 
 ### Hyperliquid
+
 - **Type**: Decentralized Exchange (DEX)
 - **API Key Required**: Yes (for trading)
 - **Use Case**: Perpetual futures trading on-chain
@@ -51,6 +56,7 @@ Quanta supports multiple cryptocurrency exchanges with unified API.
 ## Usage Examples
 
 ### Using Full Names
+
 ```bash
 quanta test kline --exchange binance --coin BTC
 quanta test kline --exchange coinbase --coin ETH
@@ -58,6 +64,7 @@ quanta test kline --exchange hyperliquid --coin SOL
 ```
 
 ### Using Abbreviations
+
 ```bash
 quanta test kline --exchange bin --coin BTC
 quanta test kline --exchange cb --coin ETH
@@ -65,6 +72,7 @@ quanta test kline --exchange hliq --coin SOL
 ```
 
 ### Test All Exchanges
+
 ```bash
 quanta test exchanges --coin BTC --timeframe 1h
 ```
@@ -99,6 +107,7 @@ Quanta uses standard `/USDT` symbol format for all exchanges. Special handling:
 - **Other exchanges**: Use symbols as provided
 
 Example:
+
 ```bash
 # Works with all exchanges automatically
 quanta test kline --exchange binance --coin BTC
@@ -108,6 +117,7 @@ quanta test kline --exchange hliq --coin BTC  # auto-converts symbol
 ## Features Supported
 
 All exchanges support:
+
 - ✅ Market data fetching (candlesticks, ticker)
 - ✅ Account balance query
 - ✅ Position management
@@ -124,16 +134,19 @@ All exchanges support:
 ## Trading Features
 
 ### Position Sizing
+
 - Maximum position size: 20% of available capital per trade
 - Risk-based sizing: Based on stop-loss percentage
 - Leverage: Configurable (default: 1x for simulation)
 
 ### Risk Management
+
 - Stop Loss: Automatic calculation based on volatility (default: 3%)
 - Take Profit: Set based on risk-reward ratio
 - Position Limits: Configurable max positions per cycle
 
 ### Order Execution
+
 - Market orders: Immediate execution
 - Order validation: Balance and risk checks before execution
 - Auto retry: On network errors (configurable)
@@ -141,6 +154,7 @@ All exchanges support:
 ## Troubleshooting
 
 ### API Errors
+
 ```bash
 # Check API credentials
 quanta config show
@@ -150,11 +164,13 @@ quanta test kline --exchange <exchange> --coin BTC
 ```
 
 ### Symbol Errors
+
 - Ensure coin symbol is valid (BTC, ETH, SOL, etc.)
 - Hyperliquid requires perpetual format, auto-handled
 - Check exchange-specific symbol requirements
 
 ### Network Errors
+
 - Check internet connection
 - Verify API endpoint accessibility
 - Review rate limits
