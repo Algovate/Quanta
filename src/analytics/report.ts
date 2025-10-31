@@ -1,15 +1,39 @@
 import { BacktestResult, PerformanceMetrics } from '../types/index.js';
+import {
+  fmtMoney,
+  formatDuration,
+  fmtSharpeColor,
+  fmtProfitFactor,
+  fmtVolatilityColor,
+  fmtPercentage,
+  winRateBar,
+} from '../utils/format.js';
 import chalk from 'chalk';
 import fs from 'fs';
 import type { EquitySnapshot } from '../types/index.js';
 
+export interface ReportOptions {
+  summaryOnly?: boolean;
+  showRisks?: boolean;
+  showSignals?: boolean;
+  showEquity?: boolean;
+}
+
 export class BacktestReport {
   private result: BacktestResult;
   private metrics: PerformanceMetrics;
+  private opts: Required<ReportOptions>;
 
-  constructor(result: BacktestResult) {
+  constructor(result: BacktestResult, opts?: ReportOptions) {
     this.result = result;
     this.metrics = result.metrics;
+    this.opts = {
+      summaryOnly: false,
+      showRisks: true,
+      showSignals: true,
+      showEquity: true,
+      ...(opts || {}),
+    };
   }
 
   /**
@@ -17,11 +41,13 @@ export class BacktestReport {
    */
   displayReport(): void {
     this.displayHeader();
-    this.displaySignalStatistics();
+    this.displayExecutiveSummary();
+    if (this.opts.summaryOnly) return;
     this.displayPerformanceSummary();
+    if (this.opts.showRisks) this.displayRiskMetrics();
     this.displayTradeStatistics();
-    this.displayRiskMetrics();
-    this.displayEquityCurve();
+    if (this.opts.showSignals) this.displaySignalStatistics();
+    if (this.opts.showEquity) this.displayEquityCurve();
   }
 
   /**
@@ -42,11 +68,34 @@ export class BacktestReport {
     console.log(
       `  Period:         ${chalk.white.bold(this.result.config.startDate)} ${chalk.gray('→')} ${chalk.white.bold(this.result.config.endDate)}`
     );
-    console.log(`  Duration:       ${chalk.white.bold(this.formatDuration(this.result.duration))}`);
+    console.log(`  Duration:       ${chalk.white.bold(formatDuration(this.result.duration))}`);
     console.log(`  Coins:          ${chalk.white.bold(this.result.config.coins.join(', '))}`);
     console.log(
-      `  Initial:        ${chalk.white.bold('$' + this.result.config.initialBalance.toLocaleString())}`
+      `  Initial:        ${chalk.white.bold(fmtMoney(this.result.config.initialBalance))}`
     );
+    console.log('');
+  }
+
+  /** Executive one-liner */
+  private displayExecutiveSummary(): void {
+    const pnl = this.metrics.totalPnL;
+    const pnlColor = pnl >= 0 ? chalk.green : chalk.red;
+    const pnlStr = pnlColor(`${pnl >= 0 ? '+' : '-'}${fmtMoney(Math.abs(pnl))}`);
+    const retStr = pnlColor(
+      `${pnl >= 0 ? '+' : '-'}${Math.abs(this.metrics.totalReturn).toFixed(2)}%`
+    );
+    const line = [
+      `P&L: ${pnlStr} (${retStr})`,
+      `Sharpe ${this.metrics.sharpeRatio.toFixed(2)}`,
+      `MDD ${Math.abs(this.metrics.maxDrawdown).toFixed(2)}%`,
+      `Trades ${this.metrics.totalTrades} (${this.metrics.winRate.toFixed(1)}%, PF ${this.metrics.profitFactor.toFixed(2)})`,
+      formatDuration(this.result.duration),
+    ].join(' | ');
+    console.log('  ' + line);
+    const notes = this.buildNotables();
+    if (notes.length) {
+      console.log('  ' + chalk.yellow('Notable: ') + notes.join('; '));
+    }
     console.log('');
   }
 
@@ -87,16 +136,14 @@ export class BacktestReport {
       `  Total Return:     ${totalReturnColor.bold(`${pnlSign}${this.metrics.totalReturn.toFixed(2)}%`)}`
     );
     console.log(
-      `  Total P&L:        ${totalReturnColor.bold(`${pnlSign}$${Math.abs(this.metrics.totalPnL).toFixed(2)}`)}`
+      `  Total P&L:        ${totalReturnColor.bold(`${pnlSign}${fmtMoney(Math.abs(this.metrics.totalPnL))}`)}`
     );
-    console.log(
-      `  Final Balance:    ${chalk.white.bold('$' + this.result.finalEquity.toFixed(2))}`
-    );
+    console.log(`  Final Balance:    ${chalk.white.bold(fmtMoney(this.result.finalEquity))}`);
     console.log(chalk.gray('  ' + '─'.repeat(68)));
     console.log(
       `  Annual Return:    ${totalReturnColor(`${pnlSign}${this.metrics.annualizedReturn.toFixed(2)}%`)}`
     );
-    console.log(`  Sharpe Ratio:     ${this.formatSharpe(this.metrics.sharpeRatio)}`);
+    console.log(`  Sharpe Ratio:     ${fmtSharpeColor(this.metrics.sharpeRatio)}`);
     console.log(`  Max Drawdown:     ${chalk.red.bold(this.metrics.maxDrawdown.toFixed(2) + '%')}`);
 
     console.log('');
@@ -113,8 +160,8 @@ export class BacktestReport {
     console.log(
       `  ${chalk.green('Wins:')} ${chalk.green(this.metrics.winningTrades)} ${chalk.gray('|')} ${chalk.red('Losses:')} ${chalk.red(this.metrics.losingTrades)}`
     );
-    console.log(`  Win Rate:         ${this.formatWinRateWithBar(this.metrics.winRate)}`);
-    console.log(`  Profit Factor:    ${this.formatProfitFactor(this.metrics.profitFactor)}`);
+    console.log(`  Win Rate:         ${winRateBar(this.metrics.winRate)}`);
+    console.log(`  Profit Factor:    ${fmtProfitFactor(this.metrics.profitFactor)}`);
 
     console.log(chalk.gray('  ' + '─'.repeat(68)));
 
@@ -144,10 +191,10 @@ export class BacktestReport {
     console.log(chalk.blue.bold('⚠️  Risk Metrics'));
     console.log(chalk.gray('━'.repeat(70)));
 
-    console.log(`  Volatility:       ${this.formatVolatility(this.metrics.volatility)}`);
-    console.log(`  VaR (95%):        ${chalk.red('$' + Math.abs(this.metrics.var95).toFixed(2))}`);
+    console.log(`  Volatility:       ${fmtVolatilityColor(this.metrics.volatility)}`);
+    console.log(`  VaR (95%):        ${chalk.red(fmtMoney(Math.abs(this.metrics.var95)))}`);
     console.log(
-      `  Max Drawdown:     ${chalk.red.bold('$' + Math.abs(this.metrics.maxDrawdownValue).toFixed(2))}`
+      `  Max Drawdown:     ${chalk.red.bold(fmtMoney(Math.abs(this.metrics.maxDrawdownValue)))}`
     );
     console.log(chalk.gray('  ' + '─'.repeat(68)));
     console.log(
@@ -177,10 +224,10 @@ export class BacktestReport {
     const lows = this.findLows(snapshots);
 
     if (peaks.length > 0) {
-      console.log(`  Peak Equity:      ${chalk.green.bold('$' + Math.max(...peaks).toFixed(2))}`);
+      console.log(`  Peak Equity:      ${chalk.green.bold(fmtMoney(Math.max(...peaks)))}`);
     }
     if (lows.length > 0) {
-      console.log(`  Lowest Equity:    ${chalk.red('$' + Math.min(...lows).toFixed(2))}`);
+      console.log(`  Lowest Equity:    ${chalk.red(fmtMoney(Math.min(...lows)))}`);
     }
 
     const returns = [];
@@ -192,7 +239,7 @@ export class BacktestReport {
     const positiveReturns = returns.filter(r => r > 0).length;
     const positiveDays = ((positiveReturns / returns.length) * 100).toFixed(1);
 
-    console.log(`  Positive Periods: ${this.formatPercentage(parseFloat(positiveDays))}`);
+    console.log(`  Positive Periods: ${fmtPercentage(parseFloat(positiveDays))}`);
 
     console.log('');
   }
@@ -205,7 +252,7 @@ export class BacktestReport {
       config: this.result.config,
       summary: {
         period: `${this.result.config.startDate} to ${this.result.config.endDate}`,
-        duration: this.formatDuration(this.result.duration),
+        duration: formatDuration(this.result.duration),
         initialBalance: this.result.config.initialBalance,
         finalBalance: this.result.finalEquity,
         totalReturn: this.metrics.totalReturn,
@@ -234,50 +281,20 @@ export class BacktestReport {
     console.log(chalk.green(`✓ Equity curve exported to ${filePath}`));
   }
 
-  /**
-   * Format duration in a readable format
-   */
-  private formatDuration(seconds: number): string {
-    if (!seconds || seconds <= 0) return 'N/A';
+  // Keep acceptance rate color thresholds specific to signals
 
-    const days = Math.floor(seconds / (24 * 60 * 60));
-    const hours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
-    const minutes = Math.floor((seconds % (60 * 60)) / 60);
-
-    if (days > 0) {
-      return `${days}d ${hours}h ${minutes}m`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    } else if (minutes > 0) {
-      return `${minutes}m`;
-    } else {
-      return `${Math.floor(seconds)}s`;
-    }
-  }
-
-  /**
-   * Format Sharpe ratio with color
-   */
-  private formatSharpe(ratio: number): string {
-    if (ratio > 1) return chalk.green(ratio.toFixed(2));
-    if (ratio > 0) return chalk.yellow(ratio.toFixed(2));
-    return chalk.red(ratio.toFixed(2));
-  }
-
-  /**
-   * Format win rate with color
-   */
-  private formatWinRate(rate: number): string {
-    if (rate >= 50) return chalk.green(`${rate.toFixed(1)}%`);
-    return chalk.red(`${rate.toFixed(1)}%`);
-  }
-
-  /**
-   * Format profit factor with color
-   */
-  private formatProfitFactor(factor: number): string {
-    if (factor > 1) return chalk.green(factor.toFixed(2));
-    return chalk.red(factor.toFixed(2));
+  // Build notable alerts
+  private buildNotables(): string[] {
+    const notes: string[] = [];
+    const acceptance = this.result.signalStats?.generated
+      ? (this.result.signalStats.accepted / this.result.signalStats.generated) * 100
+      : 0;
+    if (acceptance > 0 && acceptance < 5) notes.push(`Low acceptance ${acceptance.toFixed(1)}%`);
+    if (this.metrics.sharpeRatio < 0)
+      notes.push(`Negative Sharpe ${this.metrics.sharpeRatio.toFixed(2)}`);
+    if (this.metrics.maxDrawdown > 20)
+      notes.push(`High MDD ${this.metrics.maxDrawdown.toFixed(1)}%`);
+    return notes;
   }
 
   /**
@@ -320,30 +337,10 @@ export class BacktestReport {
     return chalk.red(rate.toFixed(1) + '%');
   }
 
-  private formatWinRateWithBar(rate: number): string {
-    const barLength = 20;
-    const filled = Math.round((rate / 100) * barLength);
-    const bar = '█'.repeat(filled) + '░'.repeat(barLength - filled);
-    const coloredBar = rate >= 50 ? chalk.green(bar) : chalk.red(bar);
-    return `${coloredBar} ${this.formatWinRate(rate)}`;
-  }
-
   private formatHoldingPeriod(hours: number): string {
     if (hours < 1) return chalk.white(`${(hours * 60).toFixed(0)} minutes`);
     if (hours < 24) return chalk.white(`${hours.toFixed(1)} hours`);
     const days = (hours / 24).toFixed(1);
     return chalk.white(`${days} days`);
-  }
-
-  private formatVolatility(vol: number): string {
-    if (vol > 5) return chalk.red.bold(vol.toFixed(2) + '%');
-    if (vol > 2) return chalk.yellow(vol.toFixed(2) + '%');
-    return chalk.green(vol.toFixed(2) + '%');
-  }
-
-  private formatPercentage(pct: number): string {
-    if (pct >= 50) return chalk.green(pct.toFixed(1) + '%');
-    if (pct >= 30) return chalk.yellow(pct.toFixed(1) + '%');
-    return chalk.red(pct.toFixed(1) + '%');
   }
 }

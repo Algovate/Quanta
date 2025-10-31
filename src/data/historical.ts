@@ -2,9 +2,11 @@ import { Candlestick } from '../types/index.js';
 
 export class HistoricalDataProvider {
   private cache: Map<string, Candlestick[]> = new Map();
+  private rng: () => number;
 
-  constructor() {
-    // Constructor simplified - no longer needs SimulatorExchange
+  constructor(rng?: () => number) {
+    // Allow deterministic randomness via injected RNG; default to Math.random
+    this.rng = rng || Math.random;
   }
 
   /**
@@ -63,12 +65,12 @@ export class HistoricalDataProvider {
       const cycleEffect =
         Math.sin((timestamp - startDate.getTime()) / (30 * 24 * 60 * 60 * 1000)) * 0.005;
 
-      const change = trend + (Math.random() - 0.5) * volatility + cycleEffect;
+      const change = trend + (this.rng() - 0.5) * volatility + cycleEffect;
       const open = currentPrice;
       const close = open * (1 + change);
-      const high = Math.max(open, close) * (1 + Math.random() * 0.01);
-      const low = Math.min(open, close) * (1 - Math.random() * 0.01);
-      const volume = 1000 + Math.random() * 2000;
+      const high = Math.max(open, close) * (1 + this.rng() * 0.01);
+      const low = Math.min(open, close) * (1 - this.rng() * 0.01);
+      const volume = 1000 + this.rng() * 2000;
 
       candlesticks.push({
         timestamp,

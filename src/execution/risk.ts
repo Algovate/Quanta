@@ -9,6 +9,7 @@ import {
 } from './constants.js';
 import { aggregatePositionMetrics } from './position-utils.js';
 import { Logger } from '../utils/logger.js';
+import { LogLevel } from '../utils/logger-types.js';
 import {
   safeMultiply,
   safeDivide,
@@ -358,13 +359,18 @@ export class RiskManager {
       );
 
       // Final validation
-      if (!isFinite(cappedSize) || cappedSize <= 0) {
-        this.logger.error('Invalid position size calculated', {
+      if (!isFinite(cappedSize)) {
+        // Only treat non有限/NaN为异常，输出error并带上下文
+        this.logger.error('Invalid position size calculated (non-finite)', {
           cappedSize,
           adjustedPositionValue,
           pricePerUnit,
           signal: signal.coin,
         });
+        return null;
+      }
+      if (cappedSize <= 0) {
+        // 正常风控拒绝或多重约束压缩为0，静默返回即可（由上层做聚合统计）
         return null;
       }
 
@@ -494,7 +500,16 @@ export class RiskManager {
       // (e.g., 0.54999999 should be accepted when threshold is 0.55)
       if (signal.confidence < adaptiveThreshold - SIGNAL_VALIDATION.CONFIDENCE_EPSILON) {
         const reason = `Confidence too low: ${(signal.confidence * 100).toFixed(1)}% < ${(adaptiveThreshold * 100).toFixed(1)}% required (adaptive threshold based on ${signal.coin} performance)`;
-        this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
+        // Reduce console noise: downgrade to debug unless in verbose (info) mode
+        if (this.logger.getConfig().level <= LogLevel.INFO) {
+          this.logger.warn(
+            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
+          );
+        } else {
+          this.logger.debug(
+            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
+          );
+        }
         return { valid: false, reason };
       }
 
@@ -504,7 +519,15 @@ export class RiskManager {
       const existingPosition = currentPositions.find(p => p.symbol === positionSymbol);
       if (existingPosition && (signal.action === 'LONG' || signal.action === 'SHORT')) {
         const reason = `Position already exists for ${signal.coin} (${existingPosition.side} ${existingPosition.size} ${signal.coin})`;
-        this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
+        if (this.logger.getConfig().level <= LogLevel.INFO) {
+          this.logger.warn(
+            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
+          );
+        } else {
+          this.logger.debug(
+            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
+          );
+        }
         return { valid: false, reason };
       }
 
@@ -515,7 +538,15 @@ export class RiskManager {
           signal.stop_loss > SIGNAL_VALIDATION.MAX_STOP_LOSS)
       ) {
         const reason = `Invalid stop loss: ${(signal.stop_loss * 100).toFixed(1)}% not in range ${(SIGNAL_VALIDATION.MIN_STOP_LOSS * 100).toFixed(1)}%-${(SIGNAL_VALIDATION.MAX_STOP_LOSS * 100).toFixed(1)}%`;
-        this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
+        if (this.logger.getConfig().level <= LogLevel.INFO) {
+          this.logger.warn(
+            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
+          );
+        } else {
+          this.logger.debug(
+            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
+          );
+        }
         return { valid: false, reason };
       }
 
@@ -526,7 +557,15 @@ export class RiskManager {
         signal.profit_target < signal.stop_loss * SIGNAL_VALIDATION.MIN_RISK_REWARD_RATIO
       ) {
         const reason = `Invalid risk/reward ratio: ${(signal.profit_target / signal.stop_loss).toFixed(2)} < ${SIGNAL_VALIDATION.MIN_RISK_REWARD_RATIO} required`;
-        this.logger.warn(`Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`);
+        if (this.logger.getConfig().level <= LogLevel.INFO) {
+          this.logger.warn(
+            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
+          );
+        } else {
+          this.logger.debug(
+            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
+          );
+        }
         return { valid: false, reason };
       }
 
@@ -536,9 +575,15 @@ export class RiskManager {
         const sameSidePositions = currentPositions.filter(p => p.side === targetSide);
         if (sameSidePositions.length >= POSITION_SIZING.MAX_SAME_SIDE_POSITIONS) {
           const reason = `Too many ${targetSide} positions (${sameSidePositions.length} >= ${POSITION_SIZING.MAX_SAME_SIDE_POSITIONS}), rejecting to reduce correlation`;
-          this.logger.warn(
-            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
-          );
+          if (this.logger.getConfig().level <= LogLevel.INFO) {
+            this.logger.warn(
+              `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
+            );
+          } else {
+            this.logger.debug(
+              `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
+            );
+          }
           return { valid: false, reason };
         }
       }

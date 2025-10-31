@@ -16,8 +16,10 @@ export class BacktestExchange implements Exchange {
   private historicalData: Map<string, Candlestick[]>;
   private completedTrades: CompletedTrade[] = [];
   private positionManager: PositionUpdateManager;
+  private rng: () => number;
+  private candleIndex: Map<string, number> = new Map();
 
-  constructor(initialBalance: number, initialTime: number) {
+  constructor(initialBalance: number, initialTime: number, rng?: () => number) {
     this.account = {
       balance: initialBalance,
       equity: initialBalance,
@@ -31,6 +33,7 @@ export class BacktestExchange implements Exchange {
     this.orders = [];
     this.currentTime = initialTime;
     this.historicalData = new Map();
+    this.rng = rng || Math.random;
 
     // Initialize position manager with config for backtest
     this.positionManager = new PositionUpdateManager({
@@ -53,6 +56,15 @@ export class BacktestExchange implements Exchange {
     this.currentTime = timestamp;
     // Update position manager with new time instead of recreating it
     this.positionManager.updateCurrentTime(timestamp);
+    // Advance indices for all series to current time
+    for (const [key, candles] of this.historicalData.entries()) {
+      let idx = this.candleIndex.get(key) ?? -1;
+      const len = candles.length;
+      while (idx + 1 < len && candles[idx + 1].timestamp <= this.currentTime) {
+        idx++;
+      }
+      this.candleIndex.set(key, idx);
+    }
   }
 
   getCurrentTime(): number {
@@ -65,6 +77,13 @@ export class BacktestExchange implements Exchange {
    */
   loadHistoricalData(symbol: string, candlesticks: Candlestick[]): void {
     this.historicalData.set(symbol, candlesticks);
+    // Initialize index for this series up to current time
+    let idx = -1;
+    const len = candlesticks.length;
+    while (idx + 1 < len && candlesticks[idx + 1].timestamp <= this.currentTime) {
+      idx++;
+    }
+    this.candleIndex.set(symbol, idx);
   }
 
   async getAccount(): Promise<Account> {
@@ -248,17 +267,29 @@ export class BacktestExchange implements Exchange {
   }
 
   private getCurrentPrice(symbol: string): number {
-    // Try to get from historical data
-    const candles = this.historicalData.get(symbol);
-    if (candles && candles.length > 0) {
-      // Find the most recent candle up to current time
-      const availableCandles = candles.filter(c => c.timestamp <= this.currentTime);
-      if (availableCandles.length > 0) {
-        return availableCandles[availableCandles.length - 1].close;
+    // Prefer lower timeframe data for more granular pricing
+    const preferredKeys = [`${symbol}_3m`, `${symbol}_4h`];
+
+    // 1) Try preferred timeframes first
+    for (const key of preferredKeys) {
+      const candles = this.historicalData.get(key);
+      if (candles && candles.length > 0) {
+        const idx = this.candleIndex.get(key) ?? -1;
+        if (idx >= 0) return candles[idx].close;
       }
     }
 
-    // Fallback to base price
+    // 2) Fallback: any timeframe for this symbol
+    const anyKey = [...this.historicalData.keys()].find(k => k.startsWith(`${symbol}_`));
+    if (anyKey) {
+      const candles = this.historicalData.get(anyKey);
+      if (candles && candles.length > 0) {
+        const idx = this.candleIndex.get(anyKey) ?? -1;
+        if (idx >= 0) return candles[idx].close;
+      }
+    }
+
+    // 3) Ultimate fallback: static base price
     return this.getBasePrice(symbol);
   }
 
@@ -295,7 +326,7 @@ export class BacktestExchange implements Exchange {
       executedPrice = order.price;
     } else {
       // Market order - apply historical slippage
-      const slippagePercent = Math.random() * 0.05; // 0-0.05% slippage for backtest
+      const slippagePercent = this.rng() * 0.0005; // 0-0.05% slippage for backtest (in decimal)
       const slippageMultiplier = order.side === 'buy' ? 1 + slippagePercent : 1 - slippagePercent;
       executedPrice = currentPrice * slippageMultiplier;
     }

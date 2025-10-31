@@ -192,6 +192,14 @@ quanta config init
 - **priceSanity.enabled**: If true, stale `entry_price` (> maxDeviation from live ticker) is ignored and converted to a market order.
 - **priceSanity.maxDeviation**: Relative deviation threshold (default 0.05 = 5%).
 
+### Backtesting Defaults
+
+- If dates are not fully specified, backtesting defaults to a 4-month window.
+  - No `--start` and no `--end` → last 4 months ending today
+  - Only `--start` → `--end` is 4 months after `--start`
+  - Only `--end` → `--start` is 4 months before `--end`
+- `--seed` enables deterministic results (historical data, slippage, and RNG use the seed).
+
 ### Exchange Settings
 
 - **name**: Exchange name (`simulator`, `okx`, `binance`, `coinbase`, `hyperliquid`)

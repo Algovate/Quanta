@@ -131,20 +131,48 @@ Run backtest with historical data. Results display with enhanced formatting and 
 quanta trade backtest [options]
 
 Options:
-  -c, --coins <coins>        Comma-separated list of coins (default: "BTC,ETH,SOL")
-  -s, --start <date>         Start date (YYYY-MM-DD) (default: "2024-01-01")
-  -e, --end <date>           End date (YYYY-MM-DD) (default: "2024-12-31")
-  --initial-balance <amount> Initial balance (default: "10000")
+  -c, --coins <coins>                 Comma-separated list of coins (default: "BTC,ETH,SOL")
+  -s, --start <date>                  Start date (YYYY-MM-DD)
+  -e, --end <date>                    End date (YYYY-MM-DD)
+  --initial-balance <amount>          Initial balance (default: "10000")
+  --seed <number>                     Seed for deterministic randomness (default: none)
+  --verbose                           Verbose output
+  --quiet                             Minimal output (summary + errors)
+  --json                              Output raw JSON
+  --no-progress                       Disable progress bar
+  --update-interval <ms>              UI update interval in ms (default: 750)
+  --cycle-sample <n>                  Print every N cycles (default: 10)
+  --equity-delta-pct <pct>            Print when equity % change ≥ pct (default: 0.001)
+  --upnl-delta <usd>                  Print when UPNL $ change ≥ usd (default: 10)
+  --exposure-delta-pct <pct>          Print when exposure % change ≥ pct (default: 0.1)
+  --leverage-delta <val>              Print when leverage absolute change ≥ val (default: 0.2)
+  --dd-steps <steps>                  Drawdown alert steps, comma-separated (e.g., 5,10,15)
+  --summary-only                      Only print executive summary line
+  --no-risks                          Hide Risk Metrics section
+  --no-signals                        Hide Signal Statistics section
+  --no-equity                         Hide Equity Curve section
 ```
+
+Defaults:
+
+- If neither `--start` nor `--end` is provided, the default span is the last 4 months.
+- If only `--start` is provided, `--end` defaults to 4 months later.
+- If only `--end` is provided, `--start` defaults to 4 months earlier.
 
 **Examples:**
 
 ```bash
-# Full year backtest
-quanta trade backtest --start 2024-01-01 --end 2024-12-31
+# Default (last 4 months)
+quanta trade backtest
 
-# Last 30 days
-quanta trade backtest --start 2024-11-01 --end 2024-12-01
+# Fixed window
+quanta trade backtest --start 2024-06-01 --end 2024-10-01
+
+# Deterministic run with reduced noise
+quanta trade backtest --seed 42 --no-signals --no-equity --cycle-sample 20
+
+# Summary line only
+quanta trade backtest --summary-only
 ```
 
 **Report Sections:**

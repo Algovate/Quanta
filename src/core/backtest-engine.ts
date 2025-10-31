@@ -42,6 +42,26 @@ interface TradingCycleContext {
   currentTime: number;
 }
 
+type BacktestPhase = 'loading' | 'running' | 'finalizing' | 'completed';
+
+export interface BacktestEngineCallbacks {
+  onPhase?: (phase: BacktestPhase) => void;
+  onProgress?: (progressPercent: number, elapsedSec: number) => void;
+  onCycle?: (info: {
+    cycleCount: number;
+    timestamp: number;
+    equity: number;
+    exposure?: number;
+    leverage?: number;
+    positions: number;
+    generatedSignals: number;
+    acceptedSignals: number;
+    rejectedSignals: number;
+    unrealizedPnl: number;
+  }) => void;
+  onSnapshot?: (snapshot: EquitySnapshot) => void;
+}
+
 /**
  * Progress tracker for backtest progress reporting
  */
@@ -113,9 +133,14 @@ export class BacktestEngine {
   private signalStats = { generated: 0, accepted: 0, rejected: 0 };
   private errorCount: number = 0;
   private logger = Logger.getInstance('BacktestEngine');
+  private rng: () => number;
+  private callbacks?: BacktestEngineCallbacks;
 
-  constructor(config: BacktestConfig) {
+  constructor(config: BacktestConfig, callbacks?: BacktestEngineCallbacks) {
     this.config = config;
+    // Initialize RNG (seeded if provided)
+    this.rng = this.createRng(config.seed);
+    this.callbacks = callbacks;
 
     // Convert dates to timestamps
     this.startTime = new Date(config.startDate).getTime();
@@ -125,10 +150,10 @@ export class BacktestEngine {
       throw new Error('Start date must be before end date');
     }
 
-    // Initialize exchange with historical data provider
-    this.historicalDataProvider = new HistoricalDataProvider();
+    // Initialize exchange with historical data provider (deterministic if seeded)
+    this.historicalDataProvider = new HistoricalDataProvider(this.rng);
 
-    this.exchange = new BacktestExchange(config.initialBalance, this.startTime);
+    this.exchange = new BacktestExchange(config.initialBalance, this.startTime, this.rng);
 
     this.marketDataProvider = new MarketDataProvider(this.exchange);
     this.aiAgent = new MockAIAgent();
@@ -149,10 +174,27 @@ export class BacktestEngine {
     this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor);
   }
 
+  private createRng(seed?: number): () => number {
+    if (seed === undefined) return Math.random;
+    // xorshift32-based RNG for determinism
+    let state = seed | 0;
+    if (state === 0) state = 0x6d2b79f5; // avoid zero state
+    return () => {
+      // xorshift32
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      // Convert to [0,1)
+      // >>> 0 ensures unsigned; divide by 2^32
+      return (state >>> 0) / 4294967296;
+    };
+  }
+
   /**
    * Run the complete backtest
    */
   async runBacktest(): Promise<BacktestResult> {
+    this.callbacks?.onPhase?.('loading');
     // Load historical data
     await this.loadHistoricalData();
 
@@ -160,13 +202,20 @@ export class BacktestEngine {
     this.displayDataSourceInfo();
 
     // Run the simulation
+    this.callbacks?.onPhase?.('running');
     await this.runSimulation();
 
     // Close all positions at the end
+    this.callbacks?.onPhase?.('finalizing');
     await this.exchange.closeAllPositions();
+
+    // Take a final snapshot post-close to ensure final equity/balance are accurate
+    await this.recordSnapshot();
 
     // Calculate final metrics
     const result = this.generateResult();
+
+    this.callbacks?.onPhase?.('completed');
 
     return result;
   }
@@ -241,6 +290,11 @@ export class BacktestEngine {
 
       // Update progress bar
       await progressTracker.updateProgress(currentTime, bar);
+      // Emit progress callback (recompute percent here to avoid coupling to tracker internals)
+      const totalDuration = this.endTime - this.startTime;
+      const progress = Math.max(0, ((currentTime - this.startTime) / totalDuration) * 100);
+      const elapsedMs = progressTracker.getElapsedTime();
+      this.callbacks?.onProgress?.(Math.min(100, progress), Math.floor(elapsedMs / 1000));
 
       // Record equity snapshot at regular intervals
       if (this.shouldRecordSnapshot(currentTime)) {
@@ -250,7 +304,7 @@ export class BacktestEngine {
       // Execute trading cycle when it's time
       if (this.shouldExecuteCycle(cycleCount, cyclePeriodMs)) {
         try {
-          await this.executeCycle(currentTime);
+          await this.executeCycle(currentTime, cycleCount);
         } catch (error) {
           this.logger.error('Error executing backtest cycle', error, {
             currentTime: new Date(currentTime).toISOString(),
@@ -273,7 +327,10 @@ export class BacktestEngine {
    * Check if a snapshot should be recorded at this time
    */
   private shouldRecordSnapshot(currentTime: number): boolean {
-    return currentTime === this.startTime || currentTime % TIME_CONSTANTS.SNAPSHOT_INTERVAL === 0;
+    return (
+      currentTime === this.startTime ||
+      (currentTime - this.startTime) % TIME_CONSTANTS.SNAPSHOT_INTERVAL === 0
+    );
   }
 
   /**
@@ -301,7 +358,7 @@ export class BacktestEngine {
   /**
    * Execute one trading cycle
    */
-  private async executeCycle(currentTime: number): Promise<void> {
+  private async executeCycle(currentTime: number, cycleIndex: number): Promise<void> {
     const context = await this.getCycleContext(currentTime);
 
     // Monitor existing positions
@@ -320,6 +377,34 @@ export class BacktestEngine {
 
     // Execute signals
     await this.executeSignals(signals, context);
+
+    // Emit aggregated cycle info for UI
+    const accountNow = await this.exchange.getAccount();
+    const positionsNow = await this.exchange.getPositions();
+    let exposure: number | undefined = undefined;
+    let leverage: number | undefined = undefined;
+    try {
+      const metrics = await (this.exchange as any).getPortfolioMetrics?.();
+      if (metrics) {
+        exposure = metrics.totalExposure;
+        leverage = metrics.leverage;
+      }
+    } catch {
+      // optional
+    }
+    const unrealizedPnl = positionsNow.reduce((s, p) => s + p.unrealizedPnl, 0);
+    this.callbacks?.onCycle?.({
+      cycleCount: cycleIndex,
+      timestamp: currentTime,
+      equity: accountNow.equity,
+      exposure,
+      leverage,
+      positions: positionsNow.length,
+      generatedSignals: signals.filter(s => s.action !== 'HOLD').length,
+      acceptedSignals: this.signalStats.accepted,
+      rejectedSignals: this.signalStats.rejected,
+      unrealizedPnl,
+    });
   }
 
   /**
@@ -450,6 +535,9 @@ export class BacktestEngine {
       balance: account.balance,
       unrealizedPnl,
     });
+
+    const last = this.snapshots[this.snapshots.length - 1];
+    this.callbacks?.onSnapshot?.(last);
   }
 
   /**

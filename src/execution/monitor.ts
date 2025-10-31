@@ -3,6 +3,7 @@ import { RiskManager } from './risk.js';
 import { OrderExecutor } from './orders.js';
 import { POSITION_MONITORING, ORDER_EXECUTION } from './constants.js';
 import { Logger } from '../utils/logger.js';
+import { LogLevel } from '../utils/logger-types.js';
 import { calculateUnrealizedPnl, aggregatePositionMetrics } from './position-utils.js';
 
 export interface PositionMonitor {
@@ -123,9 +124,12 @@ export class PositionMonitorService implements PositionMonitor {
         // Partial take-profit at 1R: close 50% and move stop to breakeven (once)
         try {
           if (!st.tp1Done && rMultiple >= 1) {
-            this.logger.info(
-              `Partial TP1 for ${position.symbol}: 1R reached, closing 50% and moving stop to breakeven`
-            );
+            // Reduce noise: only log info when in verbose (info) level; otherwise skip
+            if (this.logger.getConfig().level <= LogLevel.INFO) {
+              this.logger.info(
+                `Partial TP1 for ${position.symbol}: 1R reached, closing 50% and moving stop to breakeven`
+              );
+            }
             const result = await this.orderExecutor.executePartialClose(position, 0.5);
             if (!result.success) {
               this.logger.warn(`Partial close failed for ${position.symbol}: ${result.error}`);
@@ -155,22 +159,22 @@ export class PositionMonitorService implements PositionMonitor {
               !st.breakevenApplied &&
               st.flatCycles >= ORDER_EXECUTION.FLAT_CYCLES_BEFORE_BREAKEVEN
             ) {
-              this.logger.info(
-                `Time-based exit: ${position.symbol} flat for ${st.flatCycles} cycles, moving stop to breakeven`
-              );
+              // Actioned change: apply breakeven stop once; log concise, context-rich line
               this.riskManager.applyBreakevenStop(position);
               st.breakevenApplied = true;
+              if (this.logger.getConfig().level <= LogLevel.INFO) {
+                this.logger.info(
+                  `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${position.trailingStopPrice?.toFixed(2)}`
+                );
+              }
             }
 
             // After M cycles flat, auto-close
             if (st.flatCycles >= ORDER_EXECUTION.FLAT_CYCLES_BEFORE_AUTO_CLOSE) {
-              this.logger.info(
-                `Time-based exit: ${position.symbol} flat for ${st.flatCycles} cycles, auto-closing`
-              );
               await this.executePositionClose(
                 position,
                 currentPrice,
-                `Auto-close: flat for ${st.flatCycles} cycles (within ±${ORDER_EXECUTION.FLAT_R_MULTIPLE_THRESHOLD}R)`
+                `flat-auto-close | cycles=${st.flatCycles} r<=${ORDER_EXECUTION.FLAT_R_MULTIPLE_THRESHOLD}`
               );
               this.stateBySymbol.delete(key); // Clean up state
               return; // Position closed, exit
@@ -236,14 +240,10 @@ export class PositionMonitorService implements PositionMonitor {
         // Default to stop loss for unknown reasons
         await this.orderExecutor.executeStopLoss(position, currentPrice);
       }
-      // Emit a consistent close log with context for traceability
-      this.logger.info('Position closed', {
-        symbol: position.symbol,
-        side: position.side,
-        size: position.size,
-        price: currentPrice,
-        reason,
-      });
+      // Emit a concise, context-rich close log
+      this.logger.info(
+        `Position closed | symbol=${position.symbol} side=${position.side} size=${position.size} price=${currentPrice.toFixed(2)} reason=${reason}`
+      );
     } catch (error) {
       this.logger.error(`Failed to execute close for ${position.symbol}`, error);
       throw error; // Re-throw to trigger retry

@@ -269,6 +269,38 @@ logger.flushSync(); // 立即刷新缓冲区
 
 ## 最佳实践
 
+## Backtest 渲染与降噪
+
+### 渲染器概览
+
+Backtest 使用终端渲染器提供进度、心跳与周期摘要：
+
+- 进度条: `--no-progress` 可禁用
+- 心跳: 长时间无输出时，每 ~1.5s 提示一次
+- 周期摘要: 仅在采样间隔或显著变化时输出，减少噪声
+
+### 降噪阈值（可配置）
+
+通过 CLI 调整输出触发阈值：
+
+- `--cycle-sample <n>`: 每 N 个周期输出一次（默认 10）
+- `--equity-delta-pct <pct>`: 账户权益相对变化超过 pct 时输出（默认 0.001 = 0.1%）
+- `--upnl-delta <usd>`: UPNL 绝对变化超过 usd 时输出（默认 $10）
+- `--exposure-delta-pct <pct>`: 暴露（未加杠杆）相对变化超过 pct 时输出（默认 0.1）
+- `--leverage-delta <val>`: 杠杆绝对变化超过 val 时输出（默认 0.2）
+- `--dd-steps <steps>`: 回撤阈值，逗号分隔，例如 `5,10,15`
+
+### 结构化提示
+
+- RISK 行：当回撤跨越配置阈值时输出，例如：
+  - `RISK | dd=6.2% crossed 5% | eq=$10,120 | lev=1.80`
+- 周期行：包含 Eq、Positions、G/A/R、UPNL、EXP、LV 等关键字段
+
+### 报告视图控制
+
+- `--summary-only`: 仅输出概览一行
+- `--no-risks` / `--no-signals` / `--no-equity`: 隐藏对应报告分区
+
 ### 1. 使用有意义的上下文
 
 ```typescript

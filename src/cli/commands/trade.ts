@@ -201,9 +201,29 @@ export class TradeCommands {
       .command('backtest')
       .description('Run backtest with historical data')
       .option('-c, --coins <coins>', 'Comma-separated list of coins', 'BTC,ETH,SOL')
-      .option('-s, --start <date>', 'Start date (YYYY-MM-DD)', '2024-01-01')
-      .option('-e, --end <date>', 'End date (YYYY-MM-DD)', '2024-12-31')
+      .option('-s, --start <date>', 'Start date (YYYY-MM-DD)')
+      .option('-e, --end <date>', 'End date (YYYY-MM-DD)')
       .option('--initial-balance <amount>', 'Initial balance', '10000')
+      .option('--seed <number>', 'Deterministic seed', '')
+      .option('--verbose', 'Verbose output (per-signal details)', false)
+      .option('--quiet', 'Minimal output', false)
+      .option('--json', 'JSON summary output', false)
+      .option('--no-progress', 'Disable progress bar', false)
+      .option('--update-interval <ms>', 'Progress update interval (ms)', '750')
+      .option('--cycle-sample <n>', 'Print every N cycles (noise control)', '10')
+      .option('--summary-only', 'Show only executive summary line', false)
+      .option('--no-risks', 'Hide Risk Metrics section', false)
+      .option('--no-signals', 'Hide Signal Statistics section', false)
+      .option('--no-equity', 'Hide Equity Curve section', false)
+      .option(
+        '--equity-delta-pct <p>',
+        'Print when equity changes by >= p (e.g., 0.001 = 0.1%)',
+        '0.001'
+      )
+      .option('--upnl-delta <usd>', 'Print when UPNL changes by >= USD', '10')
+      .option('--exposure-delta-pct <p>', 'Print when exposure changes by >= p', '0.1')
+      .option('--leverage-delta <x>', 'Print when leverage changes by >= x', '0.2')
+      .option('--dd-steps <list>', 'Drawdown alert steps (comma, e.g., 5,10,15)', '')
       .action(async options => {
         await handleAsync(async () => {
           await TradeCommands.runBacktest(options);
@@ -326,25 +346,64 @@ export class TradeCommands {
     start: string;
     end: string;
     initialBalance: string;
+    seed?: string;
+    verbose?: boolean;
+    quiet?: boolean;
+    json?: boolean;
+    progress?: boolean;
+    updateInterval?: string;
+    cycleSample?: string;
+    equityDeltaPct?: string;
+    upnlDelta?: string;
+    exposureDeltaPct?: string;
+    leverageDelta?: string;
+    ddSteps?: string;
+    summaryOnly?: boolean;
+    noRisks?: boolean;
+    noSignals?: boolean;
+    noEquity?: boolean;
   }): Promise<void> {
     const { BacktestEngine } = await import('../../core/backtest-engine.js');
     const { BacktestReport } = await import('../../analytics/report.js');
+    const { BacktestRenderer } = await import('../../utils/cli-render.js');
+    const { Logger } = await import('../../utils/logger.js');
+    const { format, addMonths, subMonths } = await import('date-fns');
 
     console.log(chalk.cyan('📈 Quanta Backtest'));
     console.log(chalk.gray('Historical strategy validation\n'));
 
     const coins = options.coins.split(',').map((c: string) => c.trim().toUpperCase());
 
+    // Derive default 4-month span when dates are missing
+    const now = new Date();
+    let startStr = options.start;
+    let endStr = options.end;
+
+    if (!startStr && !endStr) {
+      const endD = now;
+      const startD = subMonths(endD, 4);
+      startStr = format(startD, 'yyyy-MM-dd');
+      endStr = format(endD, 'yyyy-MM-dd');
+    } else if (startStr && !endStr) {
+      const s = new Date(startStr);
+      if (isNaN(s.getTime())) throw new Error(`Invalid start date: ${startStr}. Use YYYY-MM-DD`);
+      endStr = format(addMonths(s, 4), 'yyyy-MM-dd');
+    } else if (!startStr && endStr) {
+      const e = new Date(endStr);
+      if (isNaN(e.getTime())) throw new Error(`Invalid end date: ${endStr}. Use YYYY-MM-DD`);
+      startStr = format(subMonths(e, 4), 'yyyy-MM-dd');
+    }
+
     // Validate dates
-    const startDate = new Date(options.start);
-    const endDate = new Date(options.end);
+    const startDate = new Date(startStr as string);
+    const endDate = new Date(endStr as string);
 
     if (isNaN(startDate.getTime())) {
-      throw new Error(`Invalid start date: ${options.start}. Use format YYYY-MM-DD`);
+      throw new Error(`Invalid start date: ${startStr}. Use format YYYY-MM-DD`);
     }
 
     if (isNaN(endDate.getTime())) {
-      throw new Error(`Invalid end date: ${options.end}. Use format YYYY-MM-DD`);
+      throw new Error(`Invalid end date: ${endStr}. Use format YYYY-MM-DD`);
     }
 
     if (startDate >= endDate) {
@@ -358,32 +417,79 @@ export class TradeCommands {
     }
 
     const backtestConfig = {
-      startDate: options.start,
-      endDate: options.end,
+      startDate: format(startDate, 'yyyy-MM-dd'),
+      endDate: format(endDate, 'yyyy-MM-dd'),
       initialBalance,
       coins,
       cyclePeriod: 180000, // 3 minutes
       maxPositions: 6,
       leverage: 1,
+      seed: options.seed ? Number(options.seed) : undefined,
     };
 
     console.log(chalk.blue('📊 Backtest Configuration:'));
-    console.log(`   Period: ${options.start} to ${options.end}`);
+    console.log(`   Period: ${backtestConfig.startDate} to ${backtestConfig.endDate}`);
     console.log(`   Coins: ${coins.join(', ')}`);
     console.log(`   Initial Balance: $${initialBalance.toLocaleString()}`);
     console.log(`   Max Positions: ${backtestConfig.maxPositions}`);
     console.log(`   Cycle Period: ${backtestConfig.cyclePeriod / 1000 / 60} minutes`);
     console.log('');
 
+    // Configuration will be printed after dates are resolved below
+
     try {
-      const engine = new BacktestEngine(backtestConfig);
+      const mode: 'verbose' | 'normal' | 'quiet' = options.quiet
+        ? 'quiet'
+        : options.verbose
+          ? 'verbose'
+          : 'normal';
+      const renderer = new BacktestRenderer({
+        mode,
+        showProgress: options.progress !== false,
+        updateIntervalMs: Number(options.updateInterval || '750') || 750,
+        sampleEveryCycles: Number(options.cycleSample || '10') || 10,
+        equityDeltaPctToPrint: Number(options.equityDeltaPct || '0.001') || 0.001,
+        upnlDeltaAbsToPrint: Number(options.upnlDelta || '10') || 10,
+        exposureDeltaPctToPrint: Number(options.exposureDeltaPct || '0.1') || 0.1,
+        leverageDeltaAbsToPrint: Number(options.leverageDelta || '0.2') || 0.2,
+        drawdownSteps:
+          (options.ddSteps
+            ? options.ddSteps.split(',').map((s: string) => Number(s))
+            : undefined) || undefined,
+      });
+
+      // Tune logger verbosity to reduce noise:
+      // - quiet: errors only
+      // - normal: warnings and above
+      // - verbose: info and above
+      const logger = Logger.getInstance('BacktestCLI');
+      logger.updateConfig({
+        level: (mode === 'quiet' ? 'error' : mode === 'verbose' ? 'info' : 'warn') as any,
+      });
+
+      const engine = new BacktestEngine(backtestConfig, {
+        onPhase: phase => renderer.startPhase(phase),
+        onProgress: (p, elapsed) => renderer.updateProgress(p, elapsed),
+        onCycle: info => renderer.updateCycleLine(info),
+        onSnapshot: () => renderer.heartbeat('Still running'),
+      });
+
       const result = await engine.runBacktest();
 
-      // Generate and display report
-      const report = new BacktestReport(result);
-      report.displayReport();
-
-      console.log(chalk.green('✅ Backtest completed successfully!'));
+      if (options.json) {
+        // eslint-disable-next-line no-console
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        // Generate and display compact report
+        const report = new BacktestReport(result, {
+          summaryOnly: options.summaryOnly === true,
+          showRisks: options.noRisks !== true,
+          showSignals: options.noSignals !== true,
+          showEquity: options.noEquity !== true,
+        });
+        report.displayReport();
+        console.log(chalk.green('✅ Backtest completed successfully!'));
+      }
     } catch (error) {
       if (error instanceof Error) {
         console.error(chalk.red(`\n❌ Error: ${error.message}`));

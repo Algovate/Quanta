@@ -131,12 +131,9 @@ export class OrderExecutor {
     currentPrice: number
   ): Promise<OrderResult> {
     try {
-      // Validate signal
+      // Validate signal (do not log per-failure here; caller aggregates for UI)
       const validationResult = this.riskManager.validateSignal(signal, account, currentPositions);
       if (!validationResult.valid) {
-        this.logger.warn(
-          `Signal validation failed for ${signal.coin} ${signal.action}: ${validationResult.reason}`
-        );
         return { success: false, error: validationResult.reason || 'Signal validation failed' };
       }
 

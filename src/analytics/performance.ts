@@ -77,33 +77,35 @@ export class PerformanceAnalytics {
    * Calculate Sharpe Ratio (risk-adjusted returns)
    * Uses 0% as risk-free rate for simplicity
    */
-  private calculateSharpeRatio(snapshots: EquitySnapshot[], durationSeconds: number): number {
+  private calculateSharpeRatio(snapshots: EquitySnapshot[], _durationSeconds: number): number {
     if (snapshots.length < 2) return 0;
 
-    // Calculate returns
+    // Calculate per-period returns and infer average period length from timestamps
     const returns: number[] = [];
+    const deltasSec: number[] = [];
     for (let i = 1; i < snapshots.length; i++) {
-      const return_ = (snapshots[i].equity - snapshots[i - 1].equity) / snapshots[i - 1].equity;
-      returns.push(return_);
+      const prev = snapshots[i - 1];
+      const curr = snapshots[i];
+      const r = (curr.equity - prev.equity) / prev.equity;
+      returns.push(r);
+      const delta = (curr.timestamp - prev.timestamp) / 1000;
+      if (delta > 0 && isFinite(delta)) deltasSec.push(delta);
     }
 
-    if (returns.length === 0) return 0;
+    if (returns.length === 0 || deltasSec.length === 0) return 0;
 
-    // Calculate mean return
-    const meanReturn = returns.reduce((sum, r) => sum + r, 0) / returns.length;
-
-    // Calculate standard deviation
-    const variance =
-      returns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / returns.length;
+    // Mean and standard deviation of returns
+    const meanReturn = returns.reduce((s, r) => s + r, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + Math.pow(r - meanReturn, 2), 0) / returns.length;
     const stdDev = Math.sqrt(variance);
-
     if (stdDev === 0) return 0;
 
-    // Annualize
-    const periodsPerYear = (365 * 24 * 60 * 60) / durationSeconds;
-    const annualizedStdDev = stdDev * Math.sqrt(periodsPerYear);
+    // Annualize using observed average period length
+    const avgPeriodSec = deltasSec.reduce((s, d) => s + d, 0) / deltasSec.length;
+    if (!isFinite(avgPeriodSec) || avgPeriodSec <= 0) return 0;
+    const periodsPerYear = (365 * 24 * 60 * 60) / avgPeriodSec;
 
-    return (meanReturn / annualizedStdDev) * Math.sqrt(periodsPerYear);
+    return (meanReturn / stdDev) * Math.sqrt(periodsPerYear);
   }
 
   /**

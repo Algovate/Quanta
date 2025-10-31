@@ -229,6 +229,7 @@ export interface BacktestConfig {
   cyclePeriod?: number;
   maxPositions?: number;
   leverage?: number;
+  seed?: number;
 }
 
 export interface EquitySnapshot {
