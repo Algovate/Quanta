@@ -8,6 +8,17 @@ import { PositionUpdateManager } from './position-manager.js';
  * BacktestExchange - Time-aware exchange for historical data replay
  * Tracks current simulation time and only allows actions based on historical data
  */
+export interface BacktestExecutionConfig {
+  takerFeeRate?: number; // e.g., 0.0004 = 4 bps
+  makerFeeRate?: number; // e.g., 0.0002 = 2 bps
+  maxMarketSlippageBps?: number; // cap for rng slippage, default 5 bps
+  partialFillProbability?: number; // probability [0,1]
+  minPartialFillRatio?: number; // e.g., 0.3
+  maxPartialFillRatio?: number; // e.g., 0.9
+  networkLatencyMs?: number; // simulated network/engine latency in ms
+  latencySlippageBpsPerSec?: number; // extra slip per second of latency
+}
+
 export class BacktestExchange implements Exchange {
   private account: Account;
   private positions: Position[];
@@ -19,7 +30,14 @@ export class BacktestExchange implements Exchange {
   private rng: () => number;
   private candleIndex: Map<string, number> = new Map();
 
-  constructor(initialBalance: number, initialTime: number, rng?: () => number) {
+  private cfg: Required<BacktestExecutionConfig>;
+
+  constructor(
+    initialBalance: number,
+    initialTime: number,
+    rng?: () => number,
+    cfg?: BacktestExecutionConfig
+  ) {
     this.account = {
       balance: initialBalance,
       equity: initialBalance,
@@ -34,6 +52,17 @@ export class BacktestExchange implements Exchange {
     this.currentTime = initialTime;
     this.historicalData = new Map();
     this.rng = rng || Math.random;
+    this.cfg = {
+      takerFeeRate: 0.0004,
+      makerFeeRate: 0.0002,
+      maxMarketSlippageBps: 5,
+      partialFillProbability: 0.0,
+      minPartialFillRatio: 0.5,
+      maxPartialFillRatio: 1.0,
+      networkLatencyMs: 0,
+      latencySlippageBpsPerSec: 0.5, // add 0.5 bps per second latency
+      ...(cfg || {}),
+    };
 
     // Initialize position manager with config for backtest
     this.positionManager = new PositionUpdateManager({
@@ -255,6 +284,12 @@ export class BacktestExchange implements Exchange {
     const currentPrice = this.getCurrentPrice(position.symbol);
     const side = position.side === 'long' ? 'sell' : 'buy'; // Opposite side to close
 
+    // Apply taker fee on closing notional (common in most venues)
+    const closeNotional = Math.abs(position.size) * currentPrice;
+    const closeFee = closeNotional * this.cfg.takerFeeRate;
+    this.account.balance -= closeFee;
+    this.account.equity -= closeFee;
+
     // Use position manager to close the position properly
     // This ensures all account updates, margin calculations, and trade recording are consistent
     this.positionManager.updatePosition(
@@ -326,12 +361,25 @@ export class BacktestExchange implements Exchange {
       executedPrice = order.price;
     } else {
       // Market order - apply historical slippage
-      const slippagePercent = this.rng() * 0.0005; // 0-0.05% slippage for backtest (in decimal)
+      const baseSlip = (this.rng() * this.cfg.maxMarketSlippageBps) / 10_000; // 0 - max bps
+      const latencySlipBps =
+        ((this.cfg.networkLatencyMs || 0) / 1000) * (this.cfg.latencySlippageBpsPerSec || 0);
+      const latencySlip = latencySlipBps / 10_000;
+      const slippagePercent = baseSlip + latencySlip;
       const slippageMultiplier = order.side === 'buy' ? 1 + slippagePercent : 1 - slippagePercent;
       executedPrice = currentPrice * slippageMultiplier;
     }
 
-    const notionalValue = order.amount * executedPrice;
+    // Partial fills (best-effort)
+    let filledAmount = order.amount;
+    if (this.rng() < this.cfg.partialFillProbability) {
+      const ratio =
+        this.cfg.minPartialFillRatio +
+        this.rng() * (this.cfg.maxPartialFillRatio - this.cfg.minPartialFillRatio);
+      filledAmount = Math.max(0, Math.min(order.amount, order.amount * ratio));
+    }
+
+    const notionalValue = filledAmount * executedPrice;
     const marginRequired = notionalValue / leverage;
 
     if (order.side === 'buy' || order.side === 'sell') {
@@ -339,12 +387,20 @@ export class BacktestExchange implements Exchange {
         this.positionManager.updatePosition(
           order.symbol,
           order.side,
-          order.amount,
+          filledAmount,
           executedPrice,
           leverage
         );
-        order.status = 'filled';
+        order.status = filledAmount < order.amount ? 'open' : 'filled';
+        order.amount = filledAmount;
         order.price = executedPrice; // Update with actual execution price
+
+        // Apply fees (taker for market, maker for resting limit)
+        const isLimit = !!order.price && order.price !== currentPrice;
+        const feeRate = isLimit ? this.cfg.makerFeeRate : this.cfg.takerFeeRate;
+        const fee = notionalValue * feeRate;
+        this.account.balance -= fee;
+        this.account.equity -= fee;
       } else {
         order.status = 'rejected';
       }

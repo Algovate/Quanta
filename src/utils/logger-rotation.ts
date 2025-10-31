@@ -28,12 +28,15 @@ export class LogRotation {
 
   private rotateLogFile(filePath: string): void {
     try {
-      const basename = path.basename(filePath, '.log');
+      const rawBase = path.basename(filePath, '.log');
+      // Normalize to stable base name to avoid chaining prior stamps
+      let base: string;
+      if (rawBase.startsWith('combined')) base = 'combined';
+      else if (rawBase.startsWith('error')) base = 'error';
+      else base = rawBase.split('.')[0] || rawBase; // take first token as base
       const dateStamp = this.getCurrentLogDate();
-      const rotatedPath = path.join(
-        this.config.logDir,
-        `${basename}.${dateStamp}.${Date.now()}.log`
-      );
+      const rotatedName = `${base}.${dateStamp}.${Date.now()}.log`;
+      const rotatedPath = path.join(this.config.logDir, rotatedName);
       fs.renameSync(filePath, rotatedPath);
     } catch (error: unknown) {
       console.error('Failed to rotate log file:', error);

@@ -16,6 +16,22 @@ interface SignalInfo {
  * Event payload definitions for all trading system events
  */
 type EventPayloads = {
+  /** Emitted when a bar closes for a symbol/timeframe */
+  'bar:closed': {
+    symbol: string;
+    timeframe: string;
+    openTime: number;
+    closeTime: number;
+  };
+
+  /** Emitted when a data gap is detected */
+  'gap:detected': {
+    symbol: string;
+    timeframe: string;
+    missingFrom: number;
+    missingTo: number;
+  };
+
   /** Emitted when a trading cycle starts */
   'cycle:start': {
     cycleCount: number;

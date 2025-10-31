@@ -6,6 +6,7 @@ import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
 import { EventBus } from './event-bus.js';
+import { BarScheduler, type BarTimeframe } from './scheduler.js';
 import { aggregatePositionMetrics, PositionAggregates } from '../execution/position-utils.js';
 import { validateAccount } from '../utils/account-validation.js';
 import { Logger } from '../utils/logger.js';
@@ -72,6 +73,9 @@ export class TradingWorkflow {
   private cycleDisplay: CycleDisplay;
   private isBackgroundMode: boolean;
   private snapshotService: ExchangeSnapshotService;
+  private barScheduler?: BarScheduler; // legacy fallback
+  private barDrivenEnabled: boolean = false;
+  private barUnsubscribe?: () => void;
 
   constructor(
     exchange: Exchange,
@@ -430,6 +434,14 @@ export class TradingWorkflow {
       this.nextTimeout = undefined;
     }
 
+    // Stop bar-driven scheduling if enabled
+    try {
+      if (this.barScheduler) this.barScheduler.stop();
+      if (this.barUnsubscribe) this.barUnsubscribe();
+    } catch {
+      // ignore
+    }
+
     // Generate final report
     this.generateReport();
   }
@@ -746,7 +758,8 @@ export class TradingWorkflow {
     } finally {
       this.isCycleRunning = false;
       // Chain next cycle if still running and not paused
-      if (this.state.isRunning && !this.isPaused) {
+      // When bar-driven scheduling is enabled, suppress timer-based chaining
+      if (this.state.isRunning && !this.isPaused && !this.barDrivenEnabled) {
         const elapsed = Date.now() - this.state.lastUpdate;
         const delay = Math.max(0, this.config.cyclePeriod - elapsed);
         if (this.nextTimeout) clearTimeout(this.nextTimeout);
@@ -1422,7 +1435,12 @@ export class TradingWorkflow {
     // Clear paused flag first
     this.isPaused = false;
     // Only resume if workflow is running, no cycle is currently executing, and no timeout is already scheduled
-    if (!this.nextTimeout && this.state.isRunning && !this.isCycleRunning) {
+    if (
+      !this.barDrivenEnabled &&
+      !this.nextTimeout &&
+      this.state.isRunning &&
+      !this.isCycleRunning
+    ) {
       this.nextTimeout = setTimeout(async () => {
         await this.executeCycle();
       }, this.config.cyclePeriod);
@@ -1432,5 +1450,40 @@ export class TradingWorkflow {
   updateConfig(newConfig: Partial<WorkflowConfig>): void {
     this.config = { ...this.config, ...newConfig };
     this.riskManager.updateRiskParams(newConfig.riskParams || {});
+  }
+
+  /**
+   * Enable bar-driven scheduling. When enabled, completed bar events trigger cycles,
+   * and timer-based chaining is disabled (acts as a fallback only).
+   */
+  enableBarDrivenScheduling(options: {
+    symbols: string[];
+    timeframes: BarTimeframe[];
+    pollIntervalMs?: number;
+  }): void {
+    if (this.barDrivenEnabled) return;
+    const symbols = new Set(options.symbols);
+    const tfs = new Set(options.timeframes);
+    // Subscribe to unified EventBus bar-close events
+    const listener = (payload: {
+      symbol: string;
+      timeframe: string;
+      openTime: number;
+      closeTime: number;
+    }) => {
+      try {
+        if (!this.state.isRunning || this.isPaused) return;
+        if (!symbols.has(payload.symbol)) return;
+        if (!tfs.has(payload.timeframe as BarTimeframe)) return;
+        if (this.isCycleRunning) return;
+        void this.executeCycle();
+      } catch {
+        // ignore
+      }
+    };
+    EventBus.on('bar:closed', listener);
+    this.barUnsubscribe = () => EventBus.off('bar:closed', listener as any);
+    this.barDrivenEnabled = true;
+    this.emitLog('info', '🟢 Bar-driven scheduling enabled (EventBus)');
   }
 }

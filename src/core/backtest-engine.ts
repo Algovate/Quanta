@@ -153,7 +153,12 @@ export class BacktestEngine {
     // Initialize exchange with historical data provider (deterministic if seeded)
     this.historicalDataProvider = new HistoricalDataProvider(this.rng);
 
-    this.exchange = new BacktestExchange(config.initialBalance, this.startTime, this.rng);
+    this.exchange = new BacktestExchange(
+      config.initialBalance,
+      this.startTime,
+      this.rng,
+      config.backtestExec
+    );
 
     this.marketDataProvider = new MarketDataProvider(this.exchange);
     this.aiAgent = new MockAIAgent();

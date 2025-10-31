@@ -5,3 +5,9 @@ export {
   type TechnicalIndicators,
   type Candlestick,
 } from './market.js';
+export {
+  StreamingIngestion,
+  type StreamingConfig,
+  type StreamTimeframe,
+  type GapInfo,
+} from './streaming.js';

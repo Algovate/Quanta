@@ -1,5 +1,8 @@
 import { EventEmitter } from 'events';
 import { TradingWorkflow } from '../core/workflow.js';
+import type { BarTimeframe } from '../core/scheduler.js';
+import { isTimeframe, timeframeToMs, type Timeframe } from '../utils/timeframe.js';
+import { StreamingIngestion, type StreamingConfig } from '../data/index.js';
 import type { Exchange } from '../exchange/types.js';
 import type { MarketDataProvider } from '../data/market.js';
 import type { OpenRouterClient } from '../ai/agent.js';
@@ -34,6 +37,7 @@ export class TradingManager extends EventEmitter {
   private equityHistory: Array<{ timestamp: number; equity: number }> = [];
   private latestRisk: RiskSnapshot | null = null;
   private updateIntervalId?: NodeJS.Timeout;
+  private streaming?: StreamingIngestion;
   // Caches attached by APIServer
   _priceCache?: Map<string, { price: number; ts: number }>;
   _klineCache?: Map<string, { candle: any; ts: number }>;
@@ -142,6 +146,43 @@ export class TradingManager extends EventEmitter {
     // Wrap the workflow methods to emit events
     this.setupEventEmitters();
 
+    // Optionally enable bar-driven scheduling if marketTimeframes are provided
+    try {
+      const tfs = (config as any).marketTimeframes as string[] | undefined;
+      if (Array.isArray(tfs) && tfs.length > 0) {
+        const symbols = (config.coins || []).map(c => `${c}/USDT`);
+        const timeframes = tfs.filter(isTimeframe) as Timeframe[];
+        this.workflow.enableBarDrivenScheduling({
+          symbols,
+          timeframes: timeframes as BarTimeframe[],
+          pollIntervalMs: 5_000,
+        });
+
+        // Start streaming ingestion for gap detection and future WS migration (non-intrusive)
+        const sCfg: StreamingConfig = { symbols, timeframes };
+        this.streaming = new StreamingIngestion(exchange, sCfg);
+        this.streaming.on('gap:detected', async gap => {
+          this.logger.warn('Market data gap detected', { gap } as Record<string, unknown>);
+          // Attempt a lightweight targeted backfill to warm caches (best-effort)
+          try {
+            const tf = gap.timeframe as Timeframe;
+            const tfMs = timeframeToMs(tf);
+            const estBars = Math.min(
+              500,
+              Math.max(1, Math.floor((gap.missingTo - gap.missingFrom) / tfMs))
+            );
+            await exchange.getCandlesticks(gap.symbol, tf, estBars);
+          } catch (e) {
+            this.logger.warn('Backfill attempt failed', { error: (e as Error)?.message });
+          }
+        });
+        this.streaming.on('stream:error', e => this.logger.warn('Streaming error', e));
+        this.streaming.start(5_000);
+      }
+    } catch (e) {
+      this.logger.warn('Failed to enable bar-driven scheduling; falling back to timer', e);
+    }
+
     this.workflow.start().catch(error => {
       this.logger.error('Trading workflow error', error);
       this.emit('error', error);
@@ -152,6 +193,8 @@ export class TradingManager extends EventEmitter {
     this.emit('system:state', { ...this.state });
   }
 
+  // timeframeToMs from utils/timeframe is used
+
   async stop(): Promise<void> {
     if (!this.workflow) {
       throw new Error('No trading workflow is running');
@@ -160,6 +203,14 @@ export class TradingManager extends EventEmitter {
     this.logger.info('Stopping trading workflow...');
     await this.workflow.stop();
     this.workflow = null;
+
+    // Stop streaming ingestion if active
+    try {
+      if (this.streaming) this.streaming.stop();
+      this.streaming = undefined;
+    } catch {
+      // ignore
+    }
 
     this.state.isRunning = false;
     this.emit('system:state', { ...this.state });

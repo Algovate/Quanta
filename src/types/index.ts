@@ -230,6 +230,16 @@ export interface BacktestConfig {
   maxPositions?: number;
   leverage?: number;
   seed?: number;
+  backtestExec?: {
+    takerFeeRate?: number;
+    makerFeeRate?: number;
+    maxMarketSlippageBps?: number;
+    partialFillProbability?: number;
+    minPartialFillRatio?: number;
+    maxPartialFillRatio?: number;
+    networkLatencyMs?: number;
+    latencySlippageBpsPerSec?: number;
+  };
 }
 
 export interface EquitySnapshot {
