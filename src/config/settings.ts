@@ -119,6 +119,43 @@ const SimulationConfigSchema = z.object({
     }),
 });
 
+// LangSmith tracing configuration under ai.tracing.langsmith
+const LangsmithTracingSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    project: z.string().optional().default(''),
+    apiKey: z.string().optional().default(''),
+    redact: z.boolean().default(true),
+    includeSections: z
+      .object({
+        prompts: z.boolean().default(true),
+        response: z.boolean().default(true),
+        market: z.boolean().default(false),
+      })
+      .default({ prompts: true, response: true, market: false }),
+  })
+  .default({
+    enabled: false,
+    project: '',
+    apiKey: '',
+    redact: true,
+    includeSections: { prompts: true, response: true, market: false },
+  });
+
+const AITracingSchema = z
+  .object({
+    langsmith: LangsmithTracingSchema,
+  })
+  .default({
+    langsmith: {
+      enabled: false,
+      project: '',
+      apiKey: '',
+      redact: true,
+      includeSections: { prompts: true, response: true, market: false },
+    },
+  });
+
 const ConfigSchema = z.object({
   mode: z.enum(['live', 'simulation', 'paper']).default('simulation'), // backtest mode is handled by separate command
   exchange: ExchangeConfigSchema,
@@ -126,6 +163,7 @@ const ConfigSchema = z.object({
     apiKey: z.string(),
     model: z.string().default('deepseek/deepseek-chat'),
     temperature: z.number().min(0).max(2).default(0.7),
+    tracing: AITracingSchema.optional(),
     prompt: z
       .object({
         candles: z
@@ -278,6 +316,15 @@ const DEFAULT_CONFIG: Partial<Config> = {
     apiKey: '',
     model: 'deepseek/deepseek-chat-v3-0324',
     temperature: 0.7,
+    tracing: {
+      langsmith: {
+        enabled: false,
+        project: '',
+        apiKey: '',
+        redact: true,
+        includeSections: { prompts: true, response: true, market: false },
+      },
+    },
     prompt: {
       candles: { m3: 10, h4: 5 },
       sections: { candlesTA: true, sentiment: true, technicalState: true },
@@ -391,6 +438,19 @@ function parseEnvConfig(): Partial<Config> {
       apiKey: process.env.OPENROUTER_API_KEY || '',
       model: process.env.AI_MODEL || 'deepseek/deepseek-chat',
       temperature: parseNumberEnv(process.env.AI_TEMPERATURE, 0.7),
+      tracing: {
+        langsmith: {
+          enabled: parseBooleanEnv(process.env.LANGCHAIN_TRACING_V2, false),
+          project: process.env.LANGCHAIN_PROJECT || '',
+          apiKey: process.env.LANGCHAIN_API_KEY || '',
+          redact: parseBooleanEnv(process.env.LANGSMITH_REDACT, true),
+          includeSections: {
+            prompts: parseBooleanEnv(process.env.LANGSMITH_INCLUDE_PROMPTS, true),
+            response: parseBooleanEnv(process.env.LANGSMITH_INCLUDE_RESPONSE, true),
+            market: parseBooleanEnv(process.env.LANGSMITH_INCLUDE_MARKET, false),
+          },
+        },
+      },
       prompt: {
         candles: {
           m3: parseIntegerEnv(process.env.PROMPT_CANDLES_3M, 10),

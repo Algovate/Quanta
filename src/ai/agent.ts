@@ -5,6 +5,13 @@ import type { TechnicalIndicators, MarketData as TMarketData } from '../types/in
 import { Logger } from '../utils/logger.js';
 import { withRetry, createRetryConfig } from '../utils/retry.js';
 import { CircuitBreaker, createCircuitBreaker } from '../utils/circuit-breaker.js';
+import {
+  initLangSmithTracing,
+  traceable,
+  getTracingConfig,
+  buildTraceInputs,
+  buildTraceOutputs,
+} from './tracing.js';
 
 export interface AIResponse {
   coin: string;
@@ -56,6 +63,8 @@ export class OpenRouterClient {
       resetTimeout: 60000, // 1 minute
       halfOpenMaxAttempts: 2,
     });
+    // Initialize LangChain tracing from config
+    initLangSmithTracing();
   }
 
   async generateTradingSignal(
@@ -64,14 +73,44 @@ export class OpenRouterClient {
     existingPositions: Position[],
     context: AIContext
   ): Promise<TradingSignal[]> {
-    try {
-      const prompt = this.buildPrompt(marketData, account, existingPositions, context);
-      const response = await this.callOpenRouterAPI(prompt);
-      return this.parseResponse(response);
-    } catch (error) {
-      this.logger.error('Error generating trading signal', error);
-      return [];
-    }
+    const tracingConfig = getTracingConfig();
+
+    // Build prompt before tracing so it can be included in trace inputs
+    const prompt = this.buildPrompt(marketData, account, existingPositions, context);
+
+    // Prepare inputs for traceable to capture (includes system/user/full prompt when enabled)
+    const traceableInputs = buildTraceInputs(
+      {
+        coins: context.tradableCoins,
+        model: this.model,
+        temperature: this.temperature,
+        mode: context.invokeCount > 0 ? 'live' : 'initial',
+      },
+      prompt,
+      tracingConfig
+    );
+
+    // Create a traced version that includes the prompt in inputs
+    const tracedWithPrompt = traceable(
+      async (_inputs: typeof traceableInputs) => {
+        // Inputs parameter is here so traceable captures it in the trace
+        // Use the prompt from closure (it's already in inputs for trace viewing)
+        const response = await this.callOpenRouterAPI(prompt);
+        const parsed = this.parseResponse(response);
+
+        // Attach raw API response when enabled
+        return buildTraceOutputs({ signals: parsed }, response, tracingConfig);
+      },
+      {
+        name: 'generateTradingSignal',
+        run_type: 'chain',
+      }
+    );
+
+    const result = await tracedWithPrompt(traceableInputs);
+
+    // Extract signals from result (which may include api_response)
+    return Array.isArray(result.signals) ? result.signals : [];
   }
 
   private buildPrompt(

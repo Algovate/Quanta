@@ -320,6 +320,52 @@ quanta simulate cycle --coins BTC --ai real --verbose
 
 ---
 
+## LangSmith Tracing
+
+You can enable rich tracing for AI operations using LangSmith.
+
+Configuration (file): add under `ai.tracing.langsmith` in `config.json`:
+
+```json
+{
+  "ai": {
+    "tracing": {
+      "langsmith": {
+        "enabled": true,
+        "project": "quanta",
+        "redact": true,
+        "includeSections": { "prompts": true, "response": true, "market": false }
+      }
+    }
+  }
+}
+```
+
+Environment (optional overrides):
+
+```bash
+export LANGCHAIN_API_KEY=lsm_...
+export LANGCHAIN_PROJECT=quanta
+# optional fine-grained controls (defaults shown)
+export LANGSMITH_REDACT=true
+export LANGSMITH_INCLUDE_PROMPTS=true
+export LANGSMITH_INCLUDE_RESPONSE=true
+export LANGSMITH_INCLUDE_MARKET=false
+```
+
+Example run (config controls enablement):
+
+```bash
+LANGCHAIN_API_KEY=lsm_... \
+LANGCHAIN_PROJECT=quanta \
+OPENROUTER_API_KEY=sk-or-... \
+quanta test ai --type real --coin BTC --verbose
+```
+
+If available, a LangSmith run URL is printed after signal generation.
+
+---
+
 ## Configuration Commands
 
 ### `config show` - Show Configuration
