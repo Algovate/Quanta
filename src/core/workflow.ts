@@ -63,7 +63,6 @@ export class TradingWorkflow {
   private positionMonitor: PositionMonitorService;
   private config: WorkflowConfig;
   private state: SystemState;
-  private intervalId?: NodeJS.Timeout; // legacy; replaced by nextTimeout
   private nextTimeout?: NodeJS.Timeout;
   private isCycleRunning: boolean = false;
   private isPaused: boolean = false;
@@ -425,10 +424,6 @@ export class TradingWorkflow {
     this.state.isRunning = false;
     this.isPaused = false; // Clear paused flag on stop
 
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = undefined;
-    }
     if (this.nextTimeout) {
       clearTimeout(this.nextTimeout);
       this.nextTimeout = undefined;
@@ -469,9 +464,14 @@ export class TradingWorkflow {
       // 1. Get a consistent snapshot of account and positions
       const { account, positions } = await this.snapshotService.getSnapshot();
 
-      // Set initial balance on first cycle
-      if (this.state.cycleCount === 1 && this.state.initialBalance === 0) {
+      // Set initial balance on first cycle (must happen early before any operations that might fail)
+      // This ensures P&L calculations are correct even if the cycle fails later
+      if (this.state.cycleCount === 1 && this.state.initialBalance === 0 && account.equity > 0) {
         this.state.initialBalance = account.equity;
+        this.logger.info('Initial balance set for P&L tracking', {
+          initialBalance: this.state.initialBalance,
+          equity: account.equity,
+        });
       }
 
       this.emitLog(
@@ -538,6 +538,22 @@ export class TradingWorkflow {
           `✅ Market data ready: ${allMarketData.length} items | ${successCount} ok / ${failCount} failed | ${this.config.coins.length} coin(s) in ${fetchMs}ms`
         )
       );
+
+      // Validate market data before generating signals
+      // If all market data fails or insufficient data, skip signal generation
+      if (successCount === 0 || allMarketData.length === 0) {
+        this.emitLog(
+          'warn',
+          `⚠️  No market data available - skipping signal generation for this cycle`
+        );
+        this.logger.warn('Cycle aborted due to insufficient market data', {
+          cycleCount: this.state.cycleCount,
+          successCount,
+          failCount,
+          coins: this.config.coins.length,
+        });
+        return; // Skip signal generation and execution
+      }
 
       // 4. Generate AI signals
       this.emitLog('info', chalk.gray('⏳ Generating AI signals...'));
@@ -606,7 +622,24 @@ export class TradingWorkflow {
           break; // Stop processing signals if workflow stopped
         }
         const symbol = `${signal.coin}/USDT`;
-        const currentPrice = (await getCachedPrice(symbol)) ?? 0;
+        const currentPrice = await getCachedPrice(symbol);
+
+        // Skip signal execution if price is unavailable
+        // Using 0 as fallback would cause invalid position sizing and risk calculations
+        if (currentPrice === undefined || currentPrice <= 0) {
+          this.emitLog(
+            'warn',
+            `⚠️  ${signal.coin}: Skipping signal execution - price unavailable (${currentPrice === undefined ? 'undefined' : `$${currentPrice.toFixed(2)}`})`
+          );
+          this.logger.warn('Signal execution skipped due to unavailable price', {
+            coin: signal.coin,
+            symbol,
+            action: signal.action,
+            price: currentPrice,
+          });
+          continue; // Skip this signal and continue with next
+        }
+
         const result = await this.executeSignal(
           signal,
           currentAccount,
@@ -626,8 +659,17 @@ export class TradingWorkflow {
             currentPositions = snapshot.positions;
             currentAccount = snapshot.account;
           } catch (error) {
-            this.logger.debug('Failed to refresh positions after signal execution', error);
-            // Continue with stale positions rather than failing the cycle
+            this.logger.warn(
+              'Failed to refresh positions after signal execution - aborting remaining signals',
+              {
+                coin: signal.coin,
+                action: signal.action,
+                error: error instanceof Error ? error.message : String(error),
+              }
+            );
+            // If position refresh fails after executing a signal, abort remaining signals
+            // to prevent stale state from causing duplicate positions or risk violations
+            break; // Exit signal loop to prevent using stale positions
           }
         }
       }
@@ -836,7 +878,17 @@ export class TradingWorkflow {
 
     // Calculate total P&L: (Current Equity - Initial Balance)
     // This includes both realized P&L from closed trades and unrealized P&L from open positions
-    this.state.totalPnl = account.equity - this.state.initialBalance;
+    // Guard: ensure initialBalance is set before calculating P&L
+    if (this.state.initialBalance > 0) {
+      this.state.totalPnl = account.equity - this.state.initialBalance;
+    } else {
+      // If initialBalance is not set, use 0 as default (prevents incorrect calculations)
+      this.state.totalPnl = 0;
+      this.logger.warn('Cannot calculate total P&L: initial balance not set', {
+        cycleCount: this.state.cycleCount,
+        equity: account.equity,
+      });
+    }
 
     // Calculate win rate from completed trades
     this.state.winRate = this.calculateWinRate();
@@ -1348,11 +1400,7 @@ export class TradingWorkflow {
   async pause(): Promise<void> {
     // Set paused flag first to prevent race condition
     this.isPaused = true;
-    // Clear any pending timeouts/intervals
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = undefined;
-    }
+    // Clear any pending timeouts
     if (this.nextTimeout) {
       clearTimeout(this.nextTimeout);
       this.nextTimeout = undefined;
