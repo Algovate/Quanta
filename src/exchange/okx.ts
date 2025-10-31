@@ -2,11 +2,12 @@ import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { Logger } from '../utils/logger.js';
 import { withRetry, createRetryConfig } from '../utils/retry.js';
+import { ensureMarketsLoaded, mapOHLCV, type MarketsState } from './ccxt-helpers.js';
 
 export class OKXExchange implements Exchange {
   private exchange: ccxt.okx;
   private isTestnet: boolean;
-  private marketsLoaded: Promise<void> | null = null;
+  private marketsState: MarketsState = { promise: null };
   private logger = Logger.getInstance('OKXExchange');
 
   constructor(
@@ -83,7 +84,7 @@ export class OKXExchange implements Exchange {
     input: string,
     marketType: 'perp' | 'spot' = 'perp'
   ): Promise<{ symbol: string; mark: number; bid: number; ask: number; mid: number; ts: number }> {
-    await this.ensureMarketsLoaded();
+    await this.ensureMarkets();
     const symbol = this.resolveInstrument(input, marketType);
     const ticker = await this.exchange.fetchTicker(symbol);
     // Extract mark price when exposed by OKX via ccxt .info.markPx
@@ -99,20 +100,8 @@ export class OKXExchange implements Exchange {
     return { symbol, mark, bid: bid || 0, ask: ask || 0, mid, ts };
   }
 
-  private async ensureMarketsLoaded(): Promise<void> {
-    if (!this.marketsLoaded) {
-      this.marketsLoaded = (async () => {
-        try {
-          await this.exchange.loadMarkets();
-        } catch (error) {
-          // Reset so future calls can retry
-          this.marketsLoaded = null;
-          this.logger.error('Failed to load markets', error as Error);
-          throw error;
-        }
-      })();
-    }
-    return this.marketsLoaded;
+  private async ensureMarkets(): Promise<void> {
+    return ensureMarketsLoaded(this.exchange, this.logger, this.marketsState);
   }
 
   async getAccount(): Promise<Account> {
@@ -153,7 +142,7 @@ export class OKXExchange implements Exchange {
 
     return withRetry(
       async () => {
-        await this.ensureMarketsLoaded();
+        await this.ensureMarkets();
         const positions = await this.exchange.fetchPositions();
         return (positions as unknown[]).map((pos: Record<string, unknown>) => {
           const size = pos.contracts as number;
@@ -193,17 +182,10 @@ export class OKXExchange implements Exchange {
   async getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]> {
     return withRetry(
       async () => {
-        await this.ensureMarketsLoaded();
+        await this.ensureMarkets();
         const perpSymbol = this.resolveInstrument(symbol, 'perp');
         const ohlcv = await this.exchange.fetchOHLCV(perpSymbol, timeframe, undefined, limit);
-        return ohlcv.map((candle: number[]) => ({
-          timestamp: candle[0],
-          open: candle[1],
-          high: candle[2],
-          low: candle[3],
-          close: candle[4],
-          volume: candle[5],
-        }));
+        return ohlcv.map(mapOHLCV);
       },
       createRetryConfig({
         maxRetries: 3,
@@ -238,7 +220,7 @@ export class OKXExchange implements Exchange {
         throw new Error('Trading operations require API credentials for OKX');
       }
 
-      await this.ensureMarketsLoaded();
+      await this.ensureMarkets();
       const order = await this.exchange.createOrder(
         symbol,
         'market',
@@ -267,7 +249,7 @@ export class OKXExchange implements Exchange {
       if (!this.exchange.apiKey || this.exchange.apiKey === 'test') {
         throw new Error('Trading operations require API credentials for OKX');
       }
-      await this.ensureMarketsLoaded();
+      await this.ensureMarkets();
       await this.exchange.cancelOrder(orderId, symbol);
       return true;
     } catch (error) {
@@ -279,7 +261,7 @@ export class OKXExchange implements Exchange {
   async getTicker(symbol: string): Promise<{ price: number; timestamp: number }> {
     return withRetry(
       async () => {
-        await this.ensureMarketsLoaded();
+        await this.ensureMarkets();
         const { mid, ts } = await this.getMarkAndBestPrices(symbol, 'perp');
         return { price: mid, timestamp: ts };
       },

@@ -1,6 +1,7 @@
 import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { getConfig } from '../config/settings.js';
+import { mapAccountFromBalance, mapPositionsStandard, mapOHLCV } from './ccxt-helpers.js';
 
 export class HyperliquidExchange implements Exchange {
   private exchange: ccxt.hyperliquid;
@@ -26,22 +27,7 @@ export class HyperliquidExchange implements Exchange {
     return !this.exchange.apiKey || this.exchange.apiKey === 'test';
   }
 
-  /**
-   * Get balance for USDC (Hyperliquid uses USDC, not USDT)
-   */
-  private extractBalanceValue(balance: ccxt.Balances): number {
-    const total = balance.total as unknown as Record<string, number>;
-    return total?.USDC || total?.USDT || 0;
-  }
-
-  /**
-   * Safely extract a currency value from a balance field preferring USDC then USDT
-   */
-  private getCurrencyValue(field: unknown): number {
-    const map = field as Record<string, number> | undefined;
-    if (!map) return 0;
-    return map.USDC ?? map.USDT ?? 0;
-  }
+  // Removed legacy balance helpers; we now use mapAccountFromBalance
 
   /**
    * Resolve market type for Hyperliquid defaultType option.
@@ -97,18 +83,8 @@ export class HyperliquidExchange implements Exchange {
 
     try {
       const balance = await this.exchange.fetchBalance();
-      const totalValue = this.extractBalanceValue(balance);
-      const freeValue = this.getCurrencyValue(balance.free);
-      const usedValue = this.getCurrencyValue(balance.used);
-
-      return {
-        balance: totalValue,
-        equity: totalValue,
-        availableMargin: freeValue,
-        usedMargin: usedValue,
-        marginRatio: 0,
-        timestamp: Date.now(),
-      };
+      // Prefer USDC for Hyperliquid
+      return mapAccountFromBalance(balance, 'USDC');
     } catch (error) {
       console.error('Error fetching account from Hyperliquid:', error);
       throw error;
@@ -122,7 +98,7 @@ export class HyperliquidExchange implements Exchange {
       }
 
       const positions = await this.exchange.fetchPositions();
-      return this.mapPositions(positions);
+      return mapPositionsStandard(positions as unknown[]);
     } catch (error) {
       console.error('Error fetching positions from Hyperliquid:', error);
       return [];
@@ -132,40 +108,14 @@ export class HyperliquidExchange implements Exchange {
   /**
    * Map raw positions to standardized Position format
    */
-  private mapPositions(positions: unknown[]): Position[] {
-    return positions.map((pos: Record<string, unknown>) => {
-      const size = pos.contracts as number;
-      const markPrice = (pos.markPrice as number) || 0;
-      const leverage = (pos.leverage as number) || 1;
-
-      return {
-        symbol: pos.symbol as string,
-        side: pos.side as 'long' | 'short',
-        size,
-        entryPrice: (pos.entryPrice as number) || 0,
-        markPrice,
-        unrealizedPnl: (pos.unrealizedPnl as number) || 0,
-        marginUsed: (pos.marginUsed as number) || 0,
-        notional: size * markPrice * leverage,
-        leverage,
-        timestamp: Date.now(),
-      };
-    });
-  }
+  // Removed legacy mapper; using mapPositionsStandard directly
 
   async getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]> {
     try {
       // Convert to Hyperliquid format
       const hyperliquidSymbol = this.convertSymbolToHyperliquid(symbol);
       const ohlcv = await this.exchange.fetchOHLCV(hyperliquidSymbol, timeframe, undefined, limit);
-      return ohlcv.map((candle: number[]) => ({
-        timestamp: candle[0],
-        open: candle[1],
-        high: candle[2],
-        low: candle[3],
-        close: candle[4],
-        volume: candle[5],
-      }));
+      return ohlcv.map(mapOHLCV);
     } catch (error) {
       console.error('Error fetching candlesticks from Hyperliquid:', error);
       throw error;

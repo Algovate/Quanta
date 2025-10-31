@@ -1,9 +1,20 @@
 import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
+import { Logger } from '../utils/logger.js';
+import {
+  ensureMarketsLoaded,
+  mapOHLCV,
+  mapAccountFromBalance,
+  mapPositionsStandard,
+  supportsSandbox,
+  type MarketsState,
+} from './ccxt-helpers.js';
 
 export class CoinbaseExchange implements Exchange {
   private exchange: ccxt.coinbase;
   private isTestnet: boolean;
+  private marketsState: MarketsState = { promise: null };
+  private logger = Logger.getInstance('CoinbaseExchange');
 
   constructor(apiKey?: string, apiSecret?: string, testnet: boolean = true) {
     this.isTestnet = testnet;
@@ -22,9 +33,9 @@ export class CoinbaseExchange implements Exchange {
 
     // Only set sandbox if the exchange supports it
     try {
-      const tempExchange = new ccxt.coinbase();
-      if (tempExchange.urls && (tempExchange.urls as Record<string, unknown>).sandbox) {
-        exchangeOptions.sandbox = testnet;
+      if (supportsSandbox(ccxt.coinbase as unknown as new () => ccxt.Exchange)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (exchangeOptions as any).sandbox = testnet;
       }
     } catch {
       // If we can't determine sandbox support, don't set it
@@ -59,14 +70,7 @@ export class CoinbaseExchange implements Exchange {
 
     try {
       const balance = await this.exchange.fetchBalance();
-      return {
-        balance: (balance.total as unknown as Record<string, number>)?.USDT || 0,
-        equity: (balance.total as unknown as Record<string, number>)?.USDT || 0,
-        availableMargin: (balance.free as unknown as Record<string, number>)?.USDT || 0,
-        usedMargin: (balance.used as unknown as Record<string, number>)?.USDT || 0,
-        marginRatio: 0,
-        timestamp: Date.now(),
-      };
+      return mapAccountFromBalance(balance, 'USDT');
     } catch (error) {
       console.error('Error fetching account from Coinbase:', error);
       throw error;
@@ -79,24 +83,9 @@ export class CoinbaseExchange implements Exchange {
         return [];
       }
 
+      await ensureMarketsLoaded(this.exchange, this.logger, this.marketsState);
       const positions = await this.exchange.fetchPositions();
-      return (positions as unknown[]).map((pos: Record<string, unknown>) => {
-        const size = pos.contracts as number;
-        const markPrice = (pos.markPrice as number) || 0;
-        const leverage = (pos.leverage as number) || 1;
-        return {
-          symbol: pos.symbol as string,
-          side: pos.side as 'long' | 'short',
-          size,
-          entryPrice: (pos.entryPrice as number) || 0,
-          markPrice,
-          unrealizedPnl: (pos.unrealizedPnl as number) || 0,
-          marginUsed: (pos.marginUsed as number) || 0,
-          notional: size * markPrice * leverage,
-          leverage,
-          timestamp: Date.now(),
-        };
-      });
+      return mapPositionsStandard(positions as unknown[]);
     } catch (error) {
       console.error('Error fetching positions from Coinbase:', error);
       return [];
@@ -112,15 +101,9 @@ export class CoinbaseExchange implements Exchange {
     try {
       // Map timeframe to Coinbase-specific format
       const mappedTimeframe = this.mapTimeframe(timeframe);
+      await ensureMarketsLoaded(this.exchange, this.logger, this.marketsState);
       const ohlcv = await this.exchange.fetchOHLCV(symbol, mappedTimeframe, undefined, limit);
-      return ohlcv.map((candle: number[]) => ({
-        timestamp: candle[0],
-        open: candle[1],
-        high: candle[2],
-        low: candle[3],
-        close: candle[4],
-        volume: candle[5],
-      }));
+      return ohlcv.map(mapOHLCV);
     } catch (error) {
       console.error('Error fetching candlesticks from Coinbase:', error);
       throw error;
