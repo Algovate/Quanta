@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { Account, Position, TradingSignal } from '../../types/index.js';
+import { calculatePnlPercentVsMargin } from '../../execution/position-utils.js';
 
 /**
  * Handles console display formatting for trading cycles
@@ -128,25 +129,7 @@ export class CycleDisplay {
         output += `   Diversification: ${divColor((divScore * 100).toFixed(0) + '%')} | Correlation: ${corrColor((corrScore * 100).toFixed(0) + '%')}\n`;
       }
 
-      output += `\n📊 Positions:\n`;
-      output += `   SIDE      COIN  LEVERAGE  MARGIN USED      ENTRY          UNREAL P&L\n`;
-      output += `   ${'─'.repeat(75)}\n`;
-
-      positions.forEach(position => {
-        const sideColor = position.side === 'long' ? chalk.green : chalk.red;
-        const sideText = position.side === 'long' ? 'LONG' : 'SHORT';
-        const leverageText = `${position.leverage}x`;
-        const marginText = `$${position.marginUsed.toFixed(2)}`;
-        const entryText = `$${position.entryPrice.toFixed(2)}`;
-        const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
-        const entryValue = position.size * position.entryPrice;
-        const impliedMargin = position.leverage ? entryValue / position.leverage : 0;
-        const marginBasis = position.marginUsed || impliedMargin;
-        const pnlPercent = marginBasis !== 0 ? (position.unrealizedPnl / marginBasis) * 100 : 0;
-        const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}% vs margin)`;
-
-        output += `   ${sideColor(sideText.padEnd(8))}  ${position.symbol.replace('/USDT', '').padEnd(4)}  ${chalk.cyan(leverageText.padEnd(8))}  ${chalk.white(marginText.padEnd(13))}  ${chalk.yellow(entryText.padEnd(13))}  ${pnlColor(pnlText)}\n`;
-      });
+      output += this.formatPositionsTable(positions);
 
       output += chalk.gray(`\n   📊 Position Details:\n`);
       positions.forEach(position => {
@@ -169,6 +152,83 @@ export class CycleDisplay {
       chalk.cyan(`⏱️  Next cycle in ${countdown}`) + chalk.gray(` | Press Ctrl+C to stop\n`);
 
     return output;
+  }
+
+  /**
+   * Format the positions table (header + rows) for reuse in other logs
+   */
+  formatPositionsTable(positions: Position[]): string {
+    if (!positions || positions.length === 0) return `\n   No open positions\n`;
+
+    let out = `\n📊 Positions:\n`;
+    out += `   SIDE      COIN  LEVERAGE  MARGIN USED      ENTRY          UNREAL P&L\n`;
+    out += `   ${'─'.repeat(75)}\n`;
+
+    positions.forEach(position => {
+      const sideColor = position.side === 'long' ? chalk.green : chalk.red;
+      const sideText = position.side === 'long' ? 'LONG' : 'SHORT';
+      const leverageText = `${position.leverage}x`;
+      const marginText = `$${position.marginUsed.toFixed(2)}`;
+      const entryText = `$${position.entryPrice.toFixed(2)}`;
+      const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
+      const pnlPercent = calculatePnlPercentVsMargin(position);
+      const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}% vs margin)`;
+
+      out += `   ${sideColor(sideText.padEnd(8))}  ${position.symbol.replace('/USDT', '').padEnd(4)}  ${chalk.cyan(leverageText.padEnd(8))}  ${chalk.white(marginText.padEnd(13))}  ${chalk.yellow(entryText.padEnd(13))}  ${pnlColor(pnlText)}\n`;
+    });
+
+    return out;
+  }
+
+  /**
+   * Format the account status block for reuse outside this class
+   */
+  formatAccountStatus(params: {
+    account: Account;
+    totalMarginUsed: number;
+    totalUnleveredExposure: number;
+    pnl: {
+      totalPnl: number;
+      totalPnlPercent: number;
+      unrealizedPnl: number;
+      unrealizedPnlPercent: number;
+      realizedCyclePnl: number;
+      cyclePnlChange?: number;
+      cyclePnlPercent?: number;
+    };
+    previousEquity?: number;
+  }): string {
+    const { account, totalMarginUsed, totalUnleveredExposure, pnl, previousEquity } = params;
+
+    let out = chalk.magenta(`\n💰 Account Status:\n`);
+
+    // Equity line with trend
+    let equityDisplay = `$${account.equity.toFixed(2)}`;
+    if (previousEquity !== undefined) {
+      const cycleDelta = pnl.cyclePnlChange ?? 0;
+      let trendArrow: string;
+      if (cycleDelta > 0) trendArrow = chalk.green('↑');
+      else if (cycleDelta < 0) trendArrow = chalk.red('↓');
+      else trendArrow = chalk.gray('→');
+      equityDisplay += ` ${trendArrow}`;
+    }
+    out += `   Equity: ${equityDisplay} | Available: $${account.availableMargin.toFixed(2)} | Used: $${totalMarginUsed.toFixed(2)}\n`;
+
+    // Exposure and leverage
+    const leverage = account.equity > 0 ? totalUnleveredExposure / account.equity : 0;
+    out += `   Unlevered Exposure: $${totalUnleveredExposure.toFixed(2)} | Leverage: ${leverage.toFixed(2)}x\n`;
+
+    // P&L lines
+    const totalPnlColor = pnl.totalPnl >= 0 ? chalk.green : chalk.red;
+    const unrealizedPnlColor = pnl.unrealizedPnl >= 0 ? chalk.green : chalk.red;
+    out += `   Total P&L: ${totalPnlColor(`$${pnl.totalPnl.toFixed(2)} (${pnl.totalPnlPercent.toFixed(2)}%)`)} | Unrealized: ${unrealizedPnlColor(`$${pnl.unrealizedPnl.toFixed(2)} (${pnl.unrealizedPnlPercent.toFixed(2)}%)`)} | Realized (cycle): $${pnl.realizedCyclePnl.toFixed(2)}\n`;
+
+    if ((pnl.cyclePnlChange ?? 0) !== 0) {
+      const cyclePnlColor = (pnl.cyclePnlChange ?? 0) >= 0 ? chalk.green : chalk.red;
+      out += `   Cycle P&L: ${cyclePnlColor(`$${(pnl.cyclePnlChange ?? 0).toFixed(2)} (${(pnl.cyclePnlPercent ?? 0).toFixed(2)}%)`)}\n`;
+    }
+
+    return out;
   }
 
   /**

@@ -1226,39 +1226,22 @@ export class TradingWorkflow {
       realizedCyclePnl: number;
     }
   ): void {
-    console.log(chalk.magenta(`\n💰 Account Status:`));
-
-    // Show equity with trend indicator
-    let equityDisplay = `$${account.equity.toFixed(2)}`;
-    if (this.state.cycleCount > 1 && this.state.previousEquity) {
-      const trendArrow =
-        pnlMetrics.cyclePnlChange > 0
-          ? chalk.green('↑')
-          : pnlMetrics.cyclePnlChange < 0
-            ? chalk.red('↓')
-            : chalk.gray('→');
-      equityDisplay += ` ${trendArrow}`;
-    }
-
-    console.log(
-      `   Equity: ${equityDisplay} | Available: $${account.availableMargin.toFixed(2)} | Used: $${aggregates.totalMarginUsed.toFixed(2)}`
-    );
-
-    // Guard against division by zero
-    const leverage = account.equity > 0 ? aggregates.totalUnleveredExposure / account.equity : 0;
-    console.log(
-      `   Unlevered Exposure: $${aggregates.totalUnleveredExposure.toFixed(2)} | Leverage: ${leverage.toFixed(2)}x`
-    );
-    console.log(
-      `   Total P&L: ${pnlMetrics.totalPnlColor(`$${pnlMetrics.totalPnl.toFixed(2)} (${pnlMetrics.totalPnlPercent.toFixed(2)}%)`)} | Unrealized: ${pnlMetrics.unrealizedPnlColor(`$${pnlMetrics.unrealizedPnl.toFixed(2)} (${pnlMetrics.unrealizedPnlPercent.toFixed(2)}%)`)} | Realized (cycle): $${pnlMetrics.realizedCyclePnl.toFixed(2)}`
-    );
-
-    // Cycle P&L change if applicable
-    if (this.state.cycleCount > 1 && pnlMetrics.cyclePnlChange !== 0) {
-      console.log(
-        `   Cycle P&L: ${pnlMetrics.cyclePnlColor(`$${pnlMetrics.cyclePnlChange.toFixed(2)} (${pnlMetrics.cyclePnlPercent.toFixed(2)}%)`)}`
-      );
-    }
+    const accountBlock = this.cycleDisplay.formatAccountStatus({
+      account,
+      totalMarginUsed: aggregates.totalMarginUsed,
+      totalUnleveredExposure: aggregates.totalUnleveredExposure,
+      pnl: {
+        totalPnl: pnlMetrics.totalPnl,
+        totalPnlPercent: pnlMetrics.totalPnlPercent,
+        unrealizedPnl: pnlMetrics.unrealizedPnl,
+        unrealizedPnlPercent: pnlMetrics.unrealizedPnlPercent,
+        realizedCyclePnl: pnlMetrics.realizedCyclePnl,
+        cyclePnlChange: pnlMetrics.cyclePnlChange,
+        cyclePnlPercent: pnlMetrics.cyclePnlPercent,
+      },
+      previousEquity: this.state.cycleCount > 1 ? this.state.previousEquity : undefined,
+    });
+    console.log(accountBlock);
   }
 
   /**
@@ -1320,29 +1303,9 @@ export class TradingWorkflow {
       return;
     }
 
-    // Display positions table (single-line format to prevent column breaks)
-    console.log(`\n📊 Positions:`);
-    console.log(`   SIDE      COIN  LEVERAGE  MARGIN USED      ENTRY          UNREAL P&L`);
-    console.log(`   ${'─'.repeat(75)}`);
-
-    positions.forEach(position => {
-      const sideColor = position.side === 'long' ? chalk.green : chalk.red;
-      const sideText = position.side === 'long' ? 'LONG' : 'SHORT';
-      const leverageText = `${position.leverage}x`;
-      const marginText = `$${position.marginUsed.toFixed(2)}`;
-      const entryText = `$${position.entryPrice.toFixed(2)}`;
-      const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
-      // Calculate P&L percentage vs margin used (clearer risk basis)
-      const entryValue = position.size * position.entryPrice;
-      const impliedMargin = position.leverage ? entryValue / position.leverage : 0;
-      const marginBasis = position.marginUsed || impliedMargin;
-      const pnlPercent = marginBasis !== 0 ? (position.unrealizedPnl / marginBasis) * 100 : 0;
-      const pnlText = `$${position.unrealizedPnl.toFixed(2)} (${pnlPercent.toFixed(1)}% vs margin)`;
-
-      console.log(
-        `   ${sideColor(sideText.padEnd(8))}  ${position.symbol.replace('/USDT', '').padEnd(4)}  ${chalk.cyan(leverageText.padEnd(8))}  ${chalk.white(marginText.padEnd(13))}  ${chalk.yellow(entryText.padEnd(13))}  ${pnlColor(pnlText)}`
-      );
-    });
+    // Use CycleDisplay to format the positions table consistently
+    const table = this.cycleDisplay.formatPositionsTable(positions);
+    console.log(table);
 
     // Display individual position metrics
     console.log(chalk.gray(`\n   📊 Position Details:`));

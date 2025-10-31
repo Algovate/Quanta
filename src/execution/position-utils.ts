@@ -87,6 +87,18 @@ export function calculatePnlPercent(position: Position, currentPrice: number): n
 }
 
 /**
+ * Calculate P&L percent relative to margin used (preferred for risk display)
+ * Falls back to implied margin (entryValue / leverage) if marginUsed is 0
+ */
+export function calculatePnlPercentVsMargin(position: Position): number {
+  const entryValue = position.size * position.entryPrice;
+  const impliedMargin = position.leverage ? entryValue / position.leverage : 0;
+  const marginBasis = position.marginUsed || impliedMargin;
+  if (!marginBasis) return 0;
+  return (position.unrealizedPnl / marginBasis) * 100;
+}
+
+/**
  * Calculate risk percentage (absolute value of P&L percentage)
  * @param position - The position to calculate risk for
  * @param currentPrice - Current market price
