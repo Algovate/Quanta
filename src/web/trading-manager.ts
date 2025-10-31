@@ -204,6 +204,25 @@ export class TradingManager extends EventEmitter {
           if (typeof maybePM.getPortfolioMetrics === 'function') {
             try {
               const pm = await maybePM.getPortfolioMetrics();
+              // Derive additional portfolio quality metrics from current positions
+              const avgLev = positions.length
+                ? positions.reduce((sum, p) => sum + (p.leverage || 0), 0) / positions.length
+                : 0;
+              // Simple correlation/diversification proxies aligned with PositionMonitorService
+              const sides = positions.map(p => p.side);
+              const allSameSide = sides.length > 0 && sides.every(side => side === sides[0]);
+              let correlationScore = allSameSide ? 0.8 : 0.3;
+              correlationScore = Math.min(
+                1,
+                correlationScore * (positions.length > 0 ? 3 / positions.length : 1)
+              );
+              const uniqueSymbols = new Set(positions.map(p => p.symbol)).size;
+              const diversificationBase =
+                positions.length > 1 ? uniqueSymbols / positions.length : 1;
+              const diversificationScore = allSameSide
+                ? diversificationBase * 0.7
+                : diversificationBase;
+
               const risk: RiskSnapshot = {
                 timestamp: Date.now(),
                 marginRatio: account.marginRatio,
@@ -212,6 +231,9 @@ export class TradingManager extends EventEmitter {
                 leverage: pm.leverage,
                 totalExposure: pm.totalExposure,
                 exposureBySymbol: pm.exposureBySymbol,
+                averageLeverage: Number.isFinite(avgLev) ? avgLev : 0,
+                correlationScore: Math.max(0, Math.min(1, correlationScore)),
+                diversificationScore: Math.max(0, Math.min(1, diversificationScore)),
                 flags: [],
               };
               if (risk.marginRatio > 0.5) risk.flags.push('High margin usage');
@@ -220,6 +242,55 @@ export class TradingManager extends EventEmitter {
               this.emit('risk:update', risk);
             } catch (error) {
               this.logger.warn('Risk snapshot failed', error);
+            }
+          } else {
+            // Fallback risk snapshot when exchange lacks getPortfolioMetrics
+            try {
+              // Compute exposure by symbol (unlevered)
+              const exposureBySymbol: Record<string, number> = {};
+              let totalExposure = 0;
+              for (const p of positions) {
+                const value = Math.abs((p.size || 0) * (p.markPrice || 0));
+                exposureBySymbol[p.symbol] = (exposureBySymbol[p.symbol] || 0) + value;
+                totalExposure += value;
+              }
+              const leverage = account.equity > 0 ? totalExposure / account.equity : 0;
+
+              // Derive additional portfolio quality metrics from current positions
+              const avgLev = positions.length
+                ? positions.reduce((sum, p) => sum + (p.leverage || 0), 0) / positions.length
+                : 0;
+              const sides = positions.map(p => p.side);
+              const allSameSide = sides.length > 0 && sides.every(side => side === sides[0]);
+              let correlationScore = allSameSide ? 0.8 : 0.3;
+              correlationScore = Math.min(1, correlationScore * (positions.length > 0 ? 3 / positions.length : 1));
+              const uniqueSymbols = new Set(positions.map(p => p.symbol)).size;
+              const diversificationBase = positions.length > 1 ? uniqueSymbols / positions.length : 1;
+              const diversificationScore = allSameSide ? diversificationBase * 0.7 : diversificationBase;
+
+              const risk: RiskSnapshot = {
+                timestamp: Date.now(),
+                marginRatio: account.marginRatio,
+                usedMargin: account.usedMargin,
+                availableMargin: account.availableMargin,
+                leverage,
+                totalExposure,
+                exposureBySymbol,
+                averageLeverage: Number.isFinite(avgLev) ? avgLev : 0,
+                correlationScore: Math.max(0, Math.min(1, correlationScore)),
+                diversificationScore: Math.max(0, Math.min(1, diversificationScore)),
+                flags: [],
+              };
+              if (risk.marginRatio > 0.5) risk.flags.push('High margin usage');
+              // Approximate unrealized PnL sum for drawdown flag when pm unavailable
+              const totalUnrealizedPnl = positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0);
+              if (account.equity > 0 && totalUnrealizedPnl < -account.equity * 0.05) {
+                risk.flags.push('Drawdown > 5%');
+              }
+              this.latestRisk = risk;
+              this.emit('risk:update', risk);
+            } catch (error) {
+              this.logger.warn('Fallback risk snapshot failed', error);
             }
           }
         } catch (error) {

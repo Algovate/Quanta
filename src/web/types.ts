@@ -30,6 +30,11 @@ export interface RiskSnapshot {
   leverage: number;
   totalExposure: number;
   exposureBySymbol: Record<string, number>;
+  // Portfolio quality metrics (0..1). Higher diversification is better; higher correlation is worse
+  diversificationScore?: number;
+  correlationScore?: number;
+  // Average position leverage across open positions
+  averageLeverage?: number;
   flags: string[];
 }
 
