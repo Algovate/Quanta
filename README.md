@@ -114,7 +114,7 @@ Additional runtime configuration is managed via JSON files in `config/` (see bel
 ### Configuration Files
 
 - **Trading**: `config/config.json`
-- **Simulation**: `config/simulate.json` (independent from trading config)
+- **Simulation**: `config/config.json` → `simulation` section
 
 ## Architecture
 

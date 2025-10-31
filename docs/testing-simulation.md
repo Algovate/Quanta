@@ -31,7 +31,7 @@ quanta simulate cycle --coins BTC,ETH \
 # Use real AI
 quanta simulate cycle --coins BTC --ai real --verbose
 
-# Requires OPENROUTER_API_KEY in config/simulate.json
+# Requires OPENROUTER_API_KEY in config.json (simulation.ai.real.apiKey)
 ```
 
 **Features:**

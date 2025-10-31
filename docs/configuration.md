@@ -46,32 +46,58 @@ Used for live trading and general settings:
 }
 ```
 
-### Simulation Config: `config/simulate.json`
+### Simulation Settings in `config/config.json`
 
-Independent configuration for simulation:
+Simulation is now configured under the `simulation` section of `config/config.json`:
 
 ```json
 {
   "simulation": {
-    "defaultInitialBalance": 10000,
-    "defaultMaxPositions": 6,
-    "defaultAI": "mock"
-  },
-  "risk": {
-    "maxRiskPerTrade": 0.05,
-    "maxTotalRisk": 0.3,
-    "stopLoss": 0.05,
-    "takeProfit": 0.06
-  },
-  "logging": {
-    "verbose": false,
-    "saveResults": false
-  },
-  "ai": {
-    "real": {
-      "apiKey": "your_api_key_here",
-      "model": "deepseek/deepseek-chat-v3-0324",
-      "temperature": 0.7
+    "simulation": {
+      "enabled": true,
+      "defaultInitialBalance": 10000,
+      "defaultMaxPositions": 6,
+      "defaultAI": "mock",
+      "autoRun": false,
+      "confirmBeforeExecute": true
+    },
+    "scenarios": {
+      "defaultCoins": ["BTC", "ETH", "SOL"],
+      "testScenarios": ["bullish", "bearish", "sideways", "volatile"]
+    },
+    "risk": {
+      "minConfidence": 0.5,
+      "maxRiskPerTrade": 0.05,
+      "maxTotalRisk": 0.3,
+      "stopLoss": 0.03,
+      "takeProfit": 0.06
+    },
+    "logging": {
+      "verbose": false,
+      "logTrades": true,
+      "logPositions": true,
+      "logRiskMetrics": true,
+      "saveResults": false,
+      "resultsDir": "./results"
+    },
+    "performance": {
+      "trackPnL": true,
+      "trackDrawdown": true,
+      "calculateSharpeRatio": true,
+      "benchmark": "BTC"
+    },
+    "ai": {
+      "mock": {
+        "signalInterval": 10000,
+        "confidenceRange": { "min": 0.5, "max": 0.95 }
+      },
+      "real": {
+        "apiKey": "",
+        "model": "deepseek/deepseek-chat",
+        "temperature": 0.7,
+        "maxRetries": 3,
+        "timeout": 30000
+      }
     }
   }
 }
@@ -89,7 +115,7 @@ Independent configuration for simulation:
 ### For Simulation Command
 
 1. Command-line arguments (highest)
-2. `config/simulate.json` ⚠️ **Independent from config.json**
+2. `config/config.json` → `simulation` section
 3. Default values (lowest)
 
 ## Environment Variables

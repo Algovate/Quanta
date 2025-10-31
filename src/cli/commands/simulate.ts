@@ -1,8 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
-import fs from 'fs';
-import path from 'path';
+import { getConfig } from '../../config/settings.js';
 import { SimulatorExchange } from '../../exchange/simulator.js';
 import { MarketDataProvider } from '../../data/market.js';
 import { MockAIAgent } from '../../ai/mock-agent.js';
@@ -70,15 +69,14 @@ export class SimulateCommands {
 
   private static loadSimulateConfig(): Partial<SimulateConfig> {
     try {
-      const configPath = path.join(process.cwd(), 'config', 'simulate.json');
-      if (fs.existsSync(configPath)) {
-        const configData = fs.readFileSync(configPath, 'utf8');
-        return JSON.parse(configData);
-      }
+      const config = getConfig() as unknown as { simulation?: Partial<SimulateConfig> };
+      return config.simulation ?? {};
     } catch {
-      console.warn(chalk.yellow('Warning: Could not load simulate.json, using defaults'));
+      console.warn(
+        chalk.yellow('Warning: Could not load simulation settings from config.json, using defaults')
+      );
+      return {};
     }
-    return {};
   }
 
   static register(program: Command): void {
@@ -93,11 +91,7 @@ export class SimulateCommands {
       .option('-p, --max-positions <number>', 'Maximum number of concurrent positions', '3')
       .option('--cycles <number>', 'Number of cycles to run', '1')
       .option('--interval <ms>', 'Delay between cycles in ms', '3000')
-      .option(
-        '-a, --ai <type>',
-        'AI type: mock or real (requires API key in config/simulate.json)',
-        'mock'
-      )
+      .option('-a, --ai <type>', 'AI type: mock or real (requires API key in config.json)', 'mock')
       .action(async options => {
         if (SimulateCommands.isRunning) {
           return;
@@ -199,11 +193,9 @@ export class SimulateCommands {
           console.error(chalk.red('\n❌ Error: Real AI mode requires API key'));
           console.log(chalk.yellow('\n💡 To use real AI:'));
           console.log(chalk.yellow('  1. Get API key from https://openrouter.ai'));
-          console.log(
-            chalk.yellow('  2. Set environment variable or update config/simulate.json:')
-          );
+          console.log(chalk.yellow('  2. Set environment variable or update config.json:'));
           console.log(chalk.gray('     export OPENROUTER_API_KEY="your_api_key_here"'));
-          console.log(chalk.gray('     or edit config/simulate.json: ai.real.apiKey'));
+          console.log(chalk.gray('     or edit config.json: simulation.ai.real.apiKey'));
           console.log(chalk.yellow('  3. Or use Mock AI (default):'));
           console.log(chalk.gray('     quanta simulate cycle --coins BTC --ai mock'));
           process.exit(1);

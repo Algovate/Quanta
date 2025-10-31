@@ -15,6 +15,110 @@ const ExchangeConfigSchema = z.object({
   marketType: z.enum(['spot', 'swap', 'perp', 'perpetual']).optional(),
 });
 
+// Simulation (CLI) configuration lives under config.json -> simulation
+const SimulationConfigSchema = z.object({
+  simulation: z
+    .object({
+      enabled: z.boolean().default(true),
+      defaultInitialBalance: z.number().default(10000),
+      defaultMaxPositions: z.number().default(6),
+      defaultAI: z.enum(['mock', 'real']).default('mock'),
+      autoRun: z.boolean().default(false),
+      confirmBeforeExecute: z.boolean().default(true),
+    })
+    .default({
+      enabled: true,
+      defaultInitialBalance: 10000,
+      defaultMaxPositions: 6,
+      defaultAI: 'mock',
+      autoRun: false,
+      confirmBeforeExecute: true,
+    }),
+  scenarios: z
+    .object({
+      defaultCoins: z.array(z.string()).default(['BTC', 'ETH', 'SOL']),
+      testScenarios: z.array(z.string()).default(['bullish', 'bearish', 'sideways', 'volatile']),
+    })
+    .default({
+      defaultCoins: ['BTC', 'ETH', 'SOL'],
+      testScenarios: ['bullish', 'bearish', 'sideways', 'volatile'],
+    }),
+  risk: z
+    .object({
+      minConfidence: z.number().default(0.5),
+      maxRiskPerTrade: z.number().default(0.05),
+      maxTotalRisk: z.number().default(0.3),
+      stopLoss: z.number().default(0.03),
+      takeProfit: z.number().default(0.06),
+    })
+    .default({
+      minConfidence: 0.5,
+      maxRiskPerTrade: 0.05,
+      maxTotalRisk: 0.3,
+      stopLoss: 0.03,
+      takeProfit: 0.06,
+    }),
+  logging: z
+    .object({
+      verbose: z.boolean().default(false),
+      logTrades: z.boolean().default(true),
+      logPositions: z.boolean().default(true),
+      logRiskMetrics: z.boolean().default(true),
+      saveResults: z.boolean().default(false),
+      resultsDir: z.string().default('./results'),
+    })
+    .default({
+      verbose: false,
+      logTrades: true,
+      logPositions: true,
+      logRiskMetrics: true,
+      saveResults: false,
+      resultsDir: './results',
+    }),
+  performance: z
+    .object({
+      trackPnL: z.boolean().default(true),
+      trackDrawdown: z.boolean().default(true),
+      calculateSharpeRatio: z.boolean().default(true),
+      benchmark: z.string().default('BTC'),
+    })
+    .default({
+      trackPnL: true,
+      trackDrawdown: true,
+      calculateSharpeRatio: true,
+      benchmark: 'BTC',
+    }),
+  ai: z
+    .object({
+      mock: z
+        .object({
+          signalInterval: z.number().default(10000),
+          confidenceRange: z
+            .object({ min: z.number().default(0.5), max: z.number().default(0.95) })
+            .default({ min: 0.5, max: 0.95 }),
+        })
+        .default({ signalInterval: 10000, confidenceRange: { min: 0.5, max: 0.95 } }),
+      real: z
+        .object({
+          apiKey: z.string().optional(),
+          model: z.string().default('deepseek/deepseek-chat'),
+          temperature: z.number().min(0).max(2).default(0.7),
+          maxRetries: z.number().default(3),
+          timeout: z.number().default(30000),
+        })
+        .default({
+          model: 'deepseek/deepseek-chat',
+          temperature: 0.7,
+          maxRetries: 3,
+          timeout: 30000,
+        }),
+    })
+    .default({
+      mock: { signalInterval: 10000, confidenceRange: { min: 0.5, max: 0.95 } },
+      real: { model: 'deepseek/deepseek-chat', temperature: 0.7, maxRetries: 3, timeout: 30000 },
+    }),
+});
+
 const ConfigSchema = z.object({
   mode: z.enum(['live', 'simulation', 'paper']).default('simulation'), // backtest mode is handled by separate command
   exchange: ExchangeConfigSchema,
@@ -130,6 +234,8 @@ const ConfigSchema = z.object({
         }),
     })
     .optional(),
+  // Optional simulation settings (unified config)
+  simulation: SimulationConfigSchema.optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -198,6 +304,45 @@ const DEFAULT_CONFIG: Partial<Config> = {
   },
   notifications: {
     enabled: false,
+  },
+  simulation: {
+    simulation: {
+      enabled: true,
+      defaultInitialBalance: 10000,
+      defaultMaxPositions: 6,
+      defaultAI: 'mock',
+      autoRun: false,
+      confirmBeforeExecute: true,
+    },
+    scenarios: {
+      defaultCoins: ['BTC', 'ETH', 'SOL'],
+      testScenarios: ['bullish', 'bearish', 'sideways', 'volatile'],
+    },
+    risk: {
+      minConfidence: 0.5,
+      maxRiskPerTrade: 0.05,
+      maxTotalRisk: 0.3,
+      stopLoss: 0.03,
+      takeProfit: 0.06,
+    },
+    logging: {
+      verbose: false,
+      logTrades: true,
+      logPositions: true,
+      logRiskMetrics: true,
+      saveResults: false,
+      resultsDir: './results',
+    },
+    performance: {
+      trackPnL: true,
+      trackDrawdown: true,
+      calculateSharpeRatio: true,
+      benchmark: 'BTC',
+    },
+    ai: {
+      mock: { signalInterval: 10000, confidenceRange: { min: 0.5, max: 0.95 } },
+      real: { model: 'deepseek/deepseek-chat', temperature: 0.7, maxRetries: 3, timeout: 30000 },
+    },
   },
 };
 
