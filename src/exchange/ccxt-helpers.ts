@@ -79,6 +79,8 @@ export function mapPositionsStandard(raw: unknown[]): Position[] {
     const size = (pos.contracts as number) ?? 0;
     const markPrice = (pos.markPrice as number) ?? 0;
     const leverage = (pos.leverage as number) ?? 1;
+    // Note: markPrice may be 0 from exchange if position data is incomplete
+    // Caller should validate positions before using them in calculations
     return {
       symbol: (pos.symbol as string) ?? '',
       side: (pos.side as 'long' | 'short') ?? 'long',

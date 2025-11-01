@@ -15,6 +15,7 @@ import {
   roundToPrecision,
   EXCHANGE_PRECISION,
 } from '../utils/precision.js';
+import { validatePrice } from '../utils/price-validation.js';
 
 /**
  * Calculate notional value for a position
@@ -77,21 +78,32 @@ export function createPosition(
 /**
  * Update position with current market price
  * Recalculates unrealized P&L and notional value using precision-safe arithmetic
+ * @param position - Position to update
+ * @param currentPrice - Current market price (must be valid, will be validated)
  */
 export function updatePositionWithPrice(position: Position, currentPrice: number): void {
-  position.markPrice = currentPrice;
+  // Validate price before updating position - critical for PnL accuracy
+  // Skip update if price is 0 or invalid (better than using invalid price)
+  if (currentPrice <= 0 || !isFinite(currentPrice)) {
+    // Don't throw here - log warning and skip update to preserve last valid markPrice
+    console.warn(`Skipping position update for ${position.symbol}: invalid price ${currentPrice}`);
+    return;
+  }
+
+  const validatedPrice = validatePrice(currentPrice, `updatePositionWithPrice(${position.symbol})`);
+  position.markPrice = validatedPrice;
 
   // Calculate P&L using precision-safe function
   position.unrealizedPnl = calculatePositionPnl(
     position.side,
-    currentPrice,
+    validatedPrice,
     position.entryPrice,
     position.size,
     position.symbol
   );
 
   // Notional = position size * current price * leverage (matches real exchanges)
-  position.notional = calculateNotional(position.size, currentPrice, position.leverage);
+  position.notional = calculateNotional(position.size, validatedPrice, position.leverage);
 }
 
 /**
@@ -113,7 +125,19 @@ export function verifyLeverageConsistency(position: Position): {
     };
   }
 
-  const calculatedLeverageFromNotional = position.notional / (position.size * position.markPrice);
+  // Validate inputs to avoid division by zero
+  const positionValue = position.size * position.markPrice;
+  if (positionValue <= 0 || !isFinite(positionValue)) {
+    // Invalid position value - cannot calculate leverage
+    return {
+      isValid: false,
+      stored: position.leverage,
+      fromNotional: position.leverage,
+      fromMargin: position.leverage,
+    };
+  }
+
+  const calculatedLeverageFromNotional = position.notional / positionValue;
   const calculatedLeverageFromMargin =
     position.marginUsed > 0 ? position.notional / position.marginUsed : position.leverage;
 

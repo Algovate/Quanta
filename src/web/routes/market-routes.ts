@@ -57,18 +57,37 @@ export function registerMarketRoutes(router: Router, tradingManager: any): void 
           const exchangeName = exchange.getExchangeName?.() || '';
           const sym = normalizeSymbolForExchange(exchangeName, symbol);
 
-          let price: number = 0;
+          let price: number | undefined = undefined;
           let candle = null;
 
           try {
-            // price with cache
+            // price with cache - validate cached price before using
             const priceEntry = tradingManager._priceCache.get(sym);
             if (priceEntry && now - priceEntry.ts < PRICE_TTL_MS) {
-              price = priceEntry.price;
-            } else {
-              const ticker = await exchange.getTicker(sym);
-              price = ticker.price;
-              tradingManager._priceCache.set(sym, { price, ts: now });
+              // Validate cached price before using
+              if (priceEntry.price > 0 && isFinite(priceEntry.price)) {
+                price = priceEntry.price;
+              } else {
+                // Invalid cached price - remove it and fetch fresh
+                tradingManager._priceCache.delete(sym);
+              }
+            }
+
+            // Fetch fresh price if not cached or invalid
+            if (price === undefined) {
+              try {
+                const ticker = await exchange.getTicker(sym);
+                // Only cache valid prices
+                if (ticker.price > 0 && isFinite(ticker.price)) {
+                  price = ticker.price;
+                  tradingManager._priceCache.set(sym, { price, ts: now });
+                } else {
+                  logger.warn(`Invalid price from ticker for ${sym}: ${ticker.price}`);
+                }
+              } catch (tickerError) {
+                logger.error(`Error fetching ticker for ${sym}:`, tickerError);
+                // Don't set price to 0 - leave undefined, return null for this symbol
+              }
             }
 
             // latest kline with cache
@@ -77,19 +96,24 @@ export function registerMarketRoutes(router: Router, tradingManager: any): void 
             if (klineEntry && now - klineEntry.ts < KLINE_TTL_MS) {
               candle = klineEntry.candle;
             } else {
-              const candles = await exchange.getCandlesticks(sym, interval, 1);
-              const last = candles && candles.length ? candles[candles.length - 1] : null;
-              candle = last || null;
-              if (candle) tradingManager._klineCache.set(kKey, { candle, ts: now });
+              try {
+                const candles = await exchange.getCandlesticks(sym, interval, 1);
+                const last = candles && candles.length ? candles[candles.length - 1] : null;
+                candle = last || null;
+                if (candle) tradingManager._klineCache.set(kKey, { candle, ts: now });
+              } catch (klineError) {
+                logger.error(`Error fetching candlesticks for ${sym}:`, klineError);
+                // Don't fail completely - just skip this symbol's kline
+              }
             }
           } catch (error) {
             logger.error(`Error fetching data for ${sym}:`, error);
-            // Return zeros instead of failing completely
+            // Don't return zeros - return undefined/null to indicate failure
           }
 
           return {
             symbol: sym,
-            price,
+            price: price ?? null, // Return null instead of 0 for invalid/missing price
             kline: candle
               ? {
                   t: candle.timestamp,

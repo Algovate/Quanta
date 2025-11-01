@@ -183,6 +183,14 @@ export class OrderExecutor {
     side: 'buy' | 'sell'
   ): Promise<OrderResult> {
     try {
+      // Validate current price before proceeding
+      if (currentPrice <= 0 || !isFinite(currentPrice)) {
+        return {
+          success: false,
+          error: `Invalid current price: ${currentPrice}`,
+        };
+      }
+
       const symbol = this.buildSymbol(signal.coin);
       const amount = sizing.suggestedSize;
       // Determine intended price
@@ -190,7 +198,8 @@ export class OrderExecutor {
 
       // Stale price guard: if entry_price deviates too much from current ticker, convert to market
       if (!this.forceMarketOrders && this.priceSanityEnabled && signal.entry_price !== undefined) {
-        const denom = currentPrice || 0;
+        // currentPrice is already validated above
+        const denom = currentPrice;
         const relDiff = denom > 0 ? Math.abs(signal.entry_price - denom) / denom : 0;
         if (relDiff > this.priceSanityMaxDeviation) {
           this.logger.warn('Overriding stale entry price with market due to deviation', {

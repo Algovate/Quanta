@@ -694,19 +694,30 @@ export class TradingWorkflow {
       const tickerCache = new Map<string, { price: number; timestamp: number }>();
 
       // Helper to get ticker price with caching
-      const getTickerPrice = async (symbol: string): Promise<number> => {
+      // Returns undefined if price is invalid or unavailable (caller must handle)
+      const getTickerPrice = async (symbol: string): Promise<number | undefined> => {
         const cached = tickerCache.get(symbol);
         if (cached) {
-          return cached.price;
+          // Validate cached price before returning
+          if (cached.price > 0 && isFinite(cached.price)) {
+            return cached.price;
+          }
+          // Invalid cached price - remove it and fetch fresh
+          tickerCache.delete(symbol);
         }
         try {
           const ticker = await this.snapshotService.getTicker(symbol);
-          const price = ticker.price ?? 0;
-          tickerCache.set(symbol, { price, timestamp: Date.now() });
-          return price;
+          const price = ticker.price;
+          // Only cache valid prices
+          if (price !== undefined && price !== null && isFinite(price) && price > 0) {
+            tickerCache.set(symbol, { price, timestamp: Date.now() });
+            return price;
+          }
+          this.logger.warn(`Invalid price from ticker for ${symbol}: ${price}`);
+          return undefined;
         } catch (error) {
           this.logger.debug(`Failed to fetch ticker for ${symbol}`, error);
-          return 0;
+          return undefined; // Return undefined instead of 0 - caller must handle
         }
       };
 
@@ -936,10 +947,7 @@ export class TradingWorkflow {
 
           // Build enriched decision path with AI reasoning
           const decision = this.buildSignalDecisionString(signals);
-          const reason = this.buildSignalDecisionReason(
-            signals,
-            allMarketData.length
-          );
+          const reason = this.buildSignalDecisionReason(signals, allMarketData.length);
           const decisionConfidence = this.calculatePrimaryDecisionConfidence(
             signals,
             confidenceScores,
@@ -1024,12 +1032,24 @@ export class TradingWorkflow {
       // 6. Execute all signals
       const getCachedPrice = async (symbol: string): Promise<number | undefined> => {
         const cached = tickerCache.get(symbol);
-        if (cached) return cached.price;
+        if (cached) {
+          // Validate cached price before returning
+          if (cached.price > 0 && isFinite(cached.price)) {
+            return cached.price;
+          }
+          // Invalid cached price - remove it and fetch fresh
+          tickerCache.delete(symbol);
+        }
         try {
           const t = await this.snapshotService.getTicker(symbol);
-          const price = t.price ?? undefined;
-          if (price !== undefined) tickerCache.set(symbol, { price, timestamp: Date.now() });
-          return price;
+          const price = t.price;
+          // Only cache valid prices
+          if (price !== undefined && price !== null && isFinite(price) && price > 0) {
+            tickerCache.set(symbol, { price, timestamp: Date.now() });
+            return price;
+          }
+          this.logger.warn(`Invalid price from ticker for ${symbol}: ${price}`);
+          return undefined;
         } catch {
           return undefined;
         }
@@ -1079,7 +1099,7 @@ export class TradingWorkflow {
             action: signal.action,
             validation: { passed: false, reason: 'Price unavailable' },
             sizing: { passed: false },
-            execution: { expectedPrice: currentPrice || 0 },
+            execution: { expectedPrice: currentPrice ?? undefined }, // Use undefined instead of 0 for invalid price
           });
           continue; // Skip this signal and continue with next
         }
@@ -1532,10 +1552,16 @@ export class TradingWorkflow {
         this.state.totalTrades++;
 
         // Use actual order execution price, not estimated ticker price
-        const actualPrice = result.order.price || currentPrice;
+        // For market orders, order.price may be 0 or undefined - use currentPrice as fallback
+        // For limit orders, order.price should be the execution price
+        const actualPrice =
+          result.order.price && result.order.price > 0 ? result.order.price : currentPrice;
 
-        // Calculate slippage
-        const slippage = currentPrice > 0 ? ((actualPrice - currentPrice) / currentPrice) * 100 : 0;
+        // Calculate slippage (only if we have valid prices)
+        const slippage =
+          currentPrice > 0 && actualPrice > 0
+            ? ((actualPrice - currentPrice) / currentPrice) * 100
+            : 0;
         const slippageAbs = Math.abs(slippage);
 
         // Record execution validation
@@ -1647,12 +1673,16 @@ export class TradingWorkflow {
           execution: {
             expectedPrice: currentPrice,
             actualPrice:
-              result.success && result.order ? result.order.price || currentPrice : undefined,
+              result.success && result.order && result.order.price && result.order.price > 0
+                ? result.order.price
+                : result.success && result.order
+                  ? currentPrice // Market order or price not available - use expected price
+                  : undefined,
             slippage:
-              result.success && result.order
-                ? currentPrice > 0
-                  ? ((result.order.price || currentPrice) - currentPrice) / currentPrice
-                  : undefined
+              result.success && result.order && currentPrice > 0
+                ? result.order.price && result.order.price > 0
+                  ? ((result.order.price - currentPrice) / currentPrice) * 100
+                  : 0 // Market order - no slippage calculated (price not available from exchange)
                 : undefined,
             slippageAbs:
               result.success && result.order
@@ -1677,11 +1707,8 @@ export class TradingWorkflow {
    * Build decision string from signals grouped by action
    */
   private buildSignalDecisionString(signals: TradingSignal[]): string {
-    const signalsByAction: Record<
-      string,
-      Array<{ coin: string; confidence: number }>
-    > = {};
-    
+    const signalsByAction: Record<string, Array<{ coin: string; confidence: number }>> = {};
+
     for (const signal of signals) {
       if (!signalsByAction[signal.action]) {
         signalsByAction[signal.action] = [];
@@ -1699,17 +1726,14 @@ export class TradingWorkflow {
         .join(', ');
       decisionParts.push(`${action}: ${signalSummary}`);
     }
-    
+
     return decisionParts.join('; ');
   }
 
   /**
    * Build decision reason with AI reasoning summary
    */
-  private buildSignalDecisionReason(
-    signals: TradingSignal[],
-    marketDataCount: number
-  ): string {
+  private buildSignalDecisionReason(signals: TradingSignal[], marketDataCount: number): string {
     const reasonParts: string[] = [
       `Generated ${signals.length} signals from ${marketDataCount} market data items`,
     ];
@@ -1733,9 +1757,7 @@ export class TradingWorkflow {
     const reasoningSource = primarySignals.length > 0 ? primarySignals : signals;
 
     // Select the highest confidence signal's reasoning
-    const bestSignal = reasoningSource.sort(
-      (a, b) => b.confidence - a.confidence
-    )[0];
+    const bestSignal = reasoningSource.sort((a, b) => b.confidence - a.confidence)[0];
 
     if (!bestSignal?.reasoning) {
       return null;
@@ -1767,7 +1789,7 @@ export class TradingWorkflow {
     overallAvgConfidence: number
   ): number {
     const primarySignals = signals.filter(s => s.action !== 'HOLD');
-    
+
     if (primarySignals.length === 0) {
       // If only HOLD signals, use overall average
       return overallAvgConfidence;
@@ -1775,9 +1797,7 @@ export class TradingWorkflow {
 
     // Calculate average confidence of primary signals
     const primaryConfidences = primarySignals.map(s => s.confidence);
-    return (
-      primaryConfidences.reduce((a, b) => a + b, 0) / primaryConfidences.length
-    );
+    return primaryConfidences.reduce((a, b) => a + b, 0) / primaryConfidences.length;
   }
 
   private updatePerformanceMetrics(account: Account, aggregates: PositionAggregates): void {

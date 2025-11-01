@@ -79,6 +79,11 @@ export class OKXExchange implements Exchange {
   /**
    * Fetch mark, bid, ask, mid prices for a given instrument using a unified source.
    * Prefers mark price (ticker.info.markPx) when available; falls back to last/close.
+   *
+   * Price type usage:
+   * - Mark Price: Used for PnL calculations, position valuation, risk checks (derivatives)
+   * - Mid Price: Used for order execution decisions, limit order price matching
+   * - Last Price: Fallback when mark price unavailable
    */
   public async getMarkAndBestPrices(
     input: string,
@@ -94,8 +99,18 @@ export class OKXExchange implements Exchange {
     const bid = (ticker.bid as number) ?? 0;
     const ask = (ticker.ask as number) ?? 0;
     const lastLike = (ticker.last as number) ?? (ticker.close as number) ?? 0;
-    const mark = Number.isFinite(markFromInfo) ? (markFromInfo as number) : lastLike;
-    const mid = bid && ask ? (bid + ask) / 2 : mark || lastLike;
+
+    // Mark price: prefer from exchange API, fallback to last/close
+    const mark =
+      Number.isFinite(markFromInfo) && markFromInfo! > 0
+        ? (markFromInfo as number)
+        : lastLike > 0
+          ? lastLike
+          : 0;
+
+    // Mid price: (bid + ask) / 2, fallback to mark, then last
+    const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : mark > 0 ? mark : lastLike;
+
     const ts = ticker.timestamp || Date.now();
     return { symbol, mark, bid: bid || 0, ask: ask || 0, mid, ts };
   }
@@ -146,8 +161,18 @@ export class OKXExchange implements Exchange {
         const positions = await this.exchange.fetchPositions();
         return (positions as unknown[]).map((pos: Record<string, unknown>) => {
           const size = pos.contracts as number;
-          const markPrice = (pos.markPrice as number) || 0;
+          const markPrice = (pos.markPrice as number) ?? 0;
           const leverage = (pos.leverage as number) || 1;
+          // Validate markPrice - positions from exchange should always have valid markPrice
+          // But handle gracefully if exchange returns invalid data
+          if (markPrice <= 0 || !isFinite(markPrice)) {
+            this.logger.warn(`Invalid markPrice from OKX position: ${markPrice}`, {
+              symbol: pos.symbol as string,
+              markPrice,
+            });
+            // Don't skip position - return with 0 but log warning
+            // Caller should handle this appropriately
+          }
           return {
             symbol: pos.symbol as string,
             side: pos.side as 'long' | 'short',
@@ -234,6 +259,9 @@ export class OKXExchange implements Exchange {
         symbol: order.symbol,
         side: order.side as 'buy' | 'sell',
         amount: order.amount,
+        // For market orders, price may be 0 or undefined (executed by market)
+        // For limit orders, price should be the limit price
+        // Callers should handle 0 price appropriately (e.g., use ticker price for slippage calculation)
         price: order.price || 0,
         status: order.status,
         timestamp: Date.now(),
@@ -258,12 +286,22 @@ export class OKXExchange implements Exchange {
     }
   }
 
+  /**
+   * Get ticker price for a symbol
+   * CRITICAL: Returns mark price (not mid) for derivatives trading
+   * Mark price is used for PnL calculations and position valuation
+   * For order execution decisions, use getMarkAndBestPrices() to get mid price
+   *
+   * @param symbol - Symbol to get ticker for
+   * @returns Ticker with mark price (critical for accurate PnL calculations)
+   */
   async getTicker(symbol: string): Promise<{ price: number; timestamp: number }> {
     return withRetry(
       async () => {
         await this.ensureMarkets();
-        const { mid, ts } = await this.getMarkAndBestPrices(symbol, 'perp');
-        return { price: mid, timestamp: ts };
+        const { mark, ts } = await this.getMarkAndBestPrices(symbol, 'perp');
+        // Use mark price instead of mid - critical for derivatives PnL accuracy
+        return { price: mark, timestamp: ts };
       },
       createRetryConfig({
         maxRetries: 3,

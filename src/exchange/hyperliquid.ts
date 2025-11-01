@@ -157,6 +157,12 @@ export class HyperliquidExchange implements Exchange {
   /**
    * Map raw order to standardized Order format
    */
+  /**
+   * Map raw order to standardized Order format
+   * NOTE: For market orders, price may be 0 (executed by market)
+   * For limit orders, price should be the limit price
+   * Callers should handle 0 price appropriately (e.g., use ticker price for slippage calculation)
+   */
   private mapOrder(order: ccxt.Order): Order {
     return {
       id: order.id,
@@ -189,9 +195,17 @@ export class HyperliquidExchange implements Exchange {
       // Convert to Hyperliquid format
       const hyperliquidSymbol = this.convertSymbolToHyperliquid(symbol);
       const ticker = await this.exchange.fetchTicker(hyperliquidSymbol);
+      // Prefer last price, fallback to close, but validate before returning
+      const price = (ticker.last as number) ?? (ticker.close as number) ?? 0;
+      // Validate price - if invalid, throw error rather than returning 0
+      if (price <= 0 || !isFinite(price)) {
+        throw new Error(
+          `Invalid price from Hyperliquid ticker for ${symbol}: ${price} (last: ${ticker.last}, close: ${ticker.close})`
+        );
+      }
       return {
-        price: ticker.last || ticker.close || 0,
-        timestamp: Date.now(),
+        price,
+        timestamp: ticker.timestamp || Date.now(),
       };
     } catch (error) {
       console.error('Error fetching ticker from Hyperliquid:', error);

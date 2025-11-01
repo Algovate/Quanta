@@ -301,7 +301,10 @@ export class TradingManager extends EventEmitter {
               const exposureBySymbol: Record<string, number> = {};
               let totalExposure = 0;
               for (const p of positions) {
-                const value = Math.abs((p.size || 0) * (p.markPrice || 0));
+                // Validate markPrice before calculating exposure
+                // Only include positions with valid prices in exposure calculation
+                const validPrice = p.markPrice > 0 && isFinite(p.markPrice) ? p.markPrice : 0;
+                const value = Math.abs((p.size || 0) * validPrice);
                 exposureBySymbol[p.symbol] = (exposureBySymbol[p.symbol] || 0) + value;
                 totalExposure += value;
               }

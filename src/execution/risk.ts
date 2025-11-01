@@ -66,7 +66,15 @@ export class RiskManager {
   computeExposure(positions: Position[]): number {
     if (!positions?.length) return 0;
     // Use unlevered exposure (size * markPrice) for portfolio metrics, matches aggregates.totalNotional
-    const total = positions.reduce((sum, p) => sum + Math.abs(p.size * p.markPrice || 0), 0);
+    // Only include positions with valid markPrice (skip positions with invalid prices)
+    const total = positions.reduce((sum, p) => {
+      // Validate markPrice before including in exposure calculation
+      if (p.markPrice > 0 && isFinite(p.markPrice)) {
+        return sum + Math.abs(p.size * p.markPrice);
+      }
+      // Skip positions with invalid markPrice (shouldn't happen, but handle gracefully)
+      return sum;
+    }, 0);
     return roundToPrecision(total, EXCHANGE_PRECISION.USDT);
   }
 

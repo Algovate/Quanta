@@ -148,6 +148,9 @@ export class BinanceExchange implements Exchange {
         symbol: order.symbol,
         side: order.side as 'buy' | 'sell',
         amount: order.amount,
+        // For market orders, price may be 0 or undefined (executed by market)
+        // For limit orders, price should be the limit price
+        // Callers should handle 0 price appropriately (e.g., use ticker price for slippage calculation)
         price: order.price || 0,
         status: order.status,
         timestamp: Date.now(),
@@ -176,8 +179,16 @@ export class BinanceExchange implements Exchange {
     return withRetry(
       async () => {
         const ticker = await this.exchange.fetchTicker(symbol);
+        // Prefer last price, fallback to close, but validate before returning
+        const price = (ticker.last as number) ?? (ticker.close as number) ?? 0;
+        // Validate price - if invalid, throw error rather than returning 0
+        if (price <= 0 || !isFinite(price)) {
+          throw new Error(
+            `Invalid price from Binance ticker for ${symbol}: ${price} (last: ${ticker.last}, close: ${ticker.close})`
+          );
+        }
         return {
-          price: ticker.last || ticker.close || 0,
+          price,
           timestamp: ticker.timestamp || Date.now(),
         };
       },

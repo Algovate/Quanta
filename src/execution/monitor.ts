@@ -173,9 +173,14 @@ export class PositionMonitorService implements PositionMonitor {
 
         const currentPrice = (ticker as { price: number }).price;
 
-        // Validate price
-        if (!currentPrice || currentPrice <= 0) {
-          throw new Error(`Invalid price received: ${currentPrice}`);
+        // Validate price - use strict validation
+        if (
+          currentPrice === undefined ||
+          currentPrice === null ||
+          !isFinite(currentPrice) ||
+          currentPrice <= 0
+        ) {
+          throw new Error(`Invalid price received: ${currentPrice} (must be finite and > 0)`);
         }
 
         // Maintenance margin/liquidation check (highest priority)

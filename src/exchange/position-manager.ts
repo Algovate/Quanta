@@ -377,13 +377,35 @@ export class PositionUpdateManager {
 
   /**
    * Update all positions with current market prices
+   * Only updates positions with valid prices (invalid prices are skipped to preserve last valid markPrice)
+   *
+   * @param getCurrentPrice - Function to get current price for a symbol (may return 0 for invalid)
    */
   updateAllPositions(getCurrentPrice: (symbol: string) => number): void {
+    let updatedCount = 0;
+    let skippedCount = 0;
+
     for (const position of this.config.positions) {
       const currentPrice = getCurrentPrice(position.symbol);
+      // updatePositionWithPrice will skip if price is invalid (preserves last valid markPrice)
+      const previousMarkPrice = position.markPrice;
       updatePositionWithPrice(position, currentPrice);
+
+      // Check if position was actually updated
+      if (position.markPrice !== previousMarkPrice && currentPrice > 0 && isFinite(currentPrice)) {
+        updatedCount++;
+      } else if (currentPrice <= 0 || !isFinite(currentPrice)) {
+        skippedCount++;
+      }
     }
-    updateAccountEquity(this.config.account, this.config.positions);
+
+    // Only update account equity if at least some positions were updated
+    // This ensures equity calculation uses consistent price point
+    if (updatedCount > 0 || skippedCount === 0) {
+      updateAccountEquity(this.config.account, this.config.positions);
+    }
+    // If all positions were skipped due to invalid prices, account equity keeps previous value
+    // This is better than recalculating with stale/invalid prices
   }
 
   /**
