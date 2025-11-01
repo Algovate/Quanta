@@ -84,8 +84,8 @@ quanta simulate cycle --coins BTC,ETH --ai real --verbose
 
 ```bash
 quanta test ai --type mock --coin BTC
-quanta test kline --exchange simulator --coin BTC
-quanta test exchanges --coin BTC --timeframe 3m
+quanta test exchange --exchange simulator --coin BTC
+quanta test exchange --all --coin BTC
 ```
 
 ### Configuration

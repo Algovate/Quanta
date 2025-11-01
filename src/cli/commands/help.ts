@@ -25,9 +25,8 @@ export class HelpCommand {
     console.log('');
 
     console.log(chalk.yellow('🧪 Testing Commands:'));
-    console.log('  quanta test kline         Test K-line data retrieval');
-    console.log('  quanta test exchanges     Test multiple exchanges');
-    console.log('  quanta test data-sources  Test multi-data source configuration');
+    console.log('  quanta test exchange      Test exchange data retrieval');
+    console.log('  quanta test ai            Test AI integration');
     console.log('');
 
     console.log(chalk.yellow('⚙️  Configuration Commands:'));
@@ -41,8 +40,11 @@ export class HelpCommand {
     console.log('  # Start simulation trading');
     console.log('  quanta trade start --mode simulation --coins BTC,ETH');
     console.log('');
-    console.log('  # Test OKX K-line data');
-    console.log('  quanta test kline --exchange okx --coin BTC --timeframe 3m');
+    console.log('  # Test single exchange');
+    console.log('  quanta test exchange --exchange okx --coin BTC');
+    console.log('');
+    console.log('  # Test all exchanges');
+    console.log('  quanta test exchange --all --coin BTC');
     console.log('');
     console.log('  # Show configuration');
     console.log('  quanta config show');

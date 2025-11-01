@@ -179,7 +179,7 @@ quanta config validate
 
 ```bash
 # Check API keys
-quanta test kline --exchange simulator --coin BTC
+quanta test exchange --exchange simulator --coin BTC
 
 # Test AI
 quanta test ai --type mock --coin BTC

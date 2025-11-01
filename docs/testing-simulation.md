@@ -109,14 +109,11 @@ quanta test ai --type both --verbose
 ### Test Market Data
 
 ```bash
-# Test K-line data
-quanta test kline --exchange simulator --coin BTC --timeframe 3m
+# Test exchange data
+quanta test exchange --exchange simulator --coin BTC --timeframe 3m
 
 # Test multiple exchanges
-quanta test exchanges --coin BTC --timeframe 3m
-
-# Test data sources
-quanta test data-sources --coin BTC
+quanta test exchange --all --coin BTC --timeframe 3m
 ```
 
 ## Simulation Examples
@@ -211,7 +208,7 @@ quanta test ai --type both --verbose --coin BTC
 
 ```bash
 # Validate data quality
-quanta test kline \
+quanta test exchange \
   --exchange simulator \
   --coin BTC \
   --timeframe 3m \
@@ -306,7 +303,7 @@ quanta simulate cycle --verbose
 quanta test ai --type mock --coin BTC
 
 # Check market data
-quanta test kline --exchange simulator --coin BTC
+quanta test exchange --exchange simulator --coin BTC
 ```
 
 ### Issue: Simulation Too Fast

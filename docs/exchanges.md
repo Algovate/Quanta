@@ -58,23 +58,23 @@ Quanta supports multiple cryptocurrency exchanges with unified API.
 ### Using Full Names
 
 ```bash
-quanta test kline --exchange binance --coin BTC
-quanta test kline --exchange coinbase --coin ETH
-quanta test kline --exchange hyperliquid --coin SOL
+quanta test exchange --exchange binance --coin BTC
+quanta test exchange --exchange coinbase --coin ETH
+quanta test exchange --exchange hyperliquid --coin SOL
 ```
 
 ### Using Abbreviations
 
 ```bash
-quanta test kline --exchange bin --coin BTC
-quanta test kline --exchange cb --coin ETH
-quanta test kline --exchange hliq --coin SOL
+quanta test exchange --exchange bin --coin BTC
+quanta test exchange --exchange cb --coin ETH
+quanta test exchange --exchange hliq --coin SOL
 ```
 
 ### Test All Exchanges
 
 ```bash
-quanta test exchanges --coin BTC --timeframe 1h
+quanta test exchange --all --coin BTC --timeframe 1h
 ```
 
 ## Environment Variables
@@ -110,8 +110,8 @@ Example:
 
 ```bash
 # Works with all exchanges automatically
-quanta test kline --exchange binance --coin BTC
-quanta test kline --exchange hliq --coin BTC  # auto-converts symbol
+quanta test exchange --exchange binance --coin BTC
+quanta test exchange --exchange hliq --coin BTC  # auto-converts symbol
 ```
 
 ## Features Supported
@@ -160,7 +160,7 @@ All exchanges support:
 quanta config show
 
 # Test exchange connection
-quanta test kline --exchange <exchange> --coin BTC
+quanta test exchange --exchange <exchange> --coin BTC
 ```
 
 ### Symbol Errors

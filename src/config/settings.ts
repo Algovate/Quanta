@@ -462,7 +462,9 @@ function parseEnvConfig(): Partial<Config> {
       },
     },
     trading: {
-      ...(process.env.TRADING_COINS && { coins: process.env.TRADING_COINS.split(',').map(c => c.trim()) }),
+      ...(process.env.TRADING_COINS && {
+        coins: process.env.TRADING_COINS.split(',').map(c => c.trim()),
+      }),
       cyclePeriod: parseIntegerEnv(process.env.CYCLE_PERIOD, 180000),
       maxPositions: parseIntegerEnv(process.env.MAX_POSITIONS, 6),
       leverageRange: [

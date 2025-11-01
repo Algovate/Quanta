@@ -265,7 +265,7 @@ export class TradeCommands {
     // Get mode and config first
     const config = getConfig();
     const mode = options.mode || config.mode || 'simulation';
-    
+
     // Use CLI coins if explicitly provided, otherwise use config
     const coins = options.coins
       ? options.coins.split(',').map((c: string) => c.trim())

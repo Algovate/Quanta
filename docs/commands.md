@@ -7,9 +7,11 @@ Complete reference for all Quanta commands.
 ```
 quanta
 ├── trade      Trading operations (5 sub-commands)
-├── test       Testing and validation (4 sub-commands)
+├── test       Testing and validation (2 sub-commands)
 ├── config     Configuration management (6 sub-commands)
-└── simulate   Simulation and demonstration (1 sub-command)
+├── simulate   Simulation and demonstration (1 sub-command)
+├── server     Web server for trading UI (3 sub-commands)
+└── log        Log query and analysis (6 sub-commands)
 ```
 
 ## Trading Commands
@@ -219,66 +221,44 @@ quanta test ai --type both --verbose
 
 ---
 
-### `test kline` - Test K-line Data
+### `test exchange` - Test Exchange Data
 
-Test K-line data retrieval.
+Test exchange connectivity and data retrieval with comprehensive technical analysis.
 
 ```bash
-quanta test kline [options]
+quanta test exchange [options]
 
 Options:
   -e, --exchange <exchange>    Exchange to test (default: "simulator")
-  -c, --coin <coin>           Coin to test (default: "BTC")
+  -a, --all                    Test all supported exchanges
+  -c, --coin <coin>            Coin to test (default: "BTC")
   -t, --timeframe <timeframe>  Timeframe to test (default: "3m")
   -l, --limit <limit>          Number of candles to fetch (default: "20")
+  -v, --verbose                Show detailed output when testing all exchanges
 ```
 
 **Examples:**
 
 ```bash
-# Test simulator
-quanta test kline --exchange simulator --coin BTC
+# Test single exchange with detailed analysis
+quanta test exchange --exchange okx --coin BTC
 
-# Test real exchange (full name)
-quanta test kline --exchange binance --coin BTC --timeframe 1h
+# Quick connectivity test of all exchanges
+quanta test exchange --all --coin BTC
+
+# Detailed test of all exchanges (comprehensive)
+quanta test exchange --all --verbose --coin BTC
+
+# Test simulator (default)
+quanta test exchange --coin BTC
 
 # Test with abbreviations
-quanta test kline --exchange bin --coin BTC
-quanta test kline --exchange cb --coin ETH
-quanta test kline --exchange hliq --coin SOL
-
-# Supported exchanges: simulator, binance/bin, okx, coinbase/cb, hyperliquid/hliq
+quanta test exchange --exchange bin --coin BTC --timeframe 1h
+quanta test exchange --exchange cb --coin ETH
+quanta test exchange --exchange hliq --coin SOL
 ```
 
----
-
-### `test exchanges` - Test Multiple Exchanges
-
-Test multiple exchanges.
-
-```bash
-quanta test exchanges [options]
-
-Options:
-  -c, --coin <coin>           Coin to test (default: "BTC")
-  -t, --timeframe <timeframe>  Timeframe to test (default: "3m")
-  -l, --limit <limit>          Number of candles to fetch (default: "10")
-```
-
----
-
-### `test data-sources` - Test Data Sources
-
-Test multi-data source configuration.
-
-```bash
-quanta test data-sources [options]
-
-Options:
-  -c, --coin <coin>           Coin to test (default: "BTC")
-  -t, --timeframe <timeframe>  Timeframe to test (default: "3m")
-  -l, --limit <limit>          Number of candles to fetch (default: "5")
-```
+**Supported exchanges**: simulator, binance/bin, okx, coinbase/cb, hyperliquid/hliq
 
 ---
 
@@ -363,6 +343,70 @@ quanta test ai --type real --coin BTC --verbose
 ```
 
 If available, a LangSmith run URL is printed after signal generation.
+
+---
+
+## Server Commands
+
+### `server start` - Start API Server
+
+Start the API server for web UI.
+
+```bash
+quanta server start [options]
+
+Options:
+  -p, --port <port>  Port to listen on (default: "3001")
+```
+
+**Examples:**
+
+```bash
+# Start on default port
+quanta server start
+
+# Start on custom port
+quanta server start --port 8080
+```
+
+---
+
+### `server stop` - Stop API Server
+
+Stop the running API server.
+
+```bash
+quanta server stop
+```
+
+**Examples:**
+
+```bash
+# Stop the server
+quanta server stop
+```
+
+---
+
+### `server status` - Check Server Status
+
+Check API server status.
+
+```bash
+quanta server status
+```
+
+**Examples:**
+
+```bash
+# Check if server is running
+quanta server status
+```
+
+**Output:**
+
+- Shows server status (running/stopped)
+- Displays port and basic information
 
 ---
 

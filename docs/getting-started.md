@@ -30,12 +30,12 @@ quanta simulate cycle --coins BTC --verbose
 quanta test ai --type mock --coin BTC
 
 # Test market data
-quanta test kline --exchange simulator --coin BTC
+quanta test exchange --exchange simulator --coin BTC
 
 # Test different exchanges
-quanta test kline --exchange bin --coin BTC
-quanta test kline --exchange cb --coin ETH
-quanta test kline --exchange hliq --coin SOL
+quanta test exchange --exchange bin --coin BTC
+quanta test exchange --exchange cb --coin ETH
+quanta test exchange --exchange hliq --coin SOL
 ```
 
 ### 2. Configure API Keys

@@ -6,43 +6,21 @@ import { handleAsync } from '../../utils/error-handler.js';
 export class TestCommands {
   static register(program: Command): void {
     program
-      .command('kline')
-      .description('Test K-line data retrieval')
+      .command('exchange')
+      .description('Test exchange connectivity and data retrieval')
       .option('-e, --exchange <exchange>', 'Exchange to test', 'simulator')
+      .option('-a, --all', 'Test all supported exchanges', false)
       .option('-c, --coin <coin>', 'Coin to test', 'BTC')
       .option('-t, --timeframe <timeframe>', 'Timeframe to test', '3m')
       .option('-l, --limit <limit>', 'Number of candles to fetch', '20')
+      .option('-v, --verbose', 'Show detailed output when testing all exchanges', false)
       .action(async options => {
         try {
-          await TestCommands.testKline(options);
+          await TestCommands.testExchange(options);
         } catch {
-          // Error already displayed in testKline, just exit
+          // Error already displayed in testExchange, just exit
           process.exit(1);
         }
-      });
-
-    program
-      .command('exchanges')
-      .description('Test multiple exchanges')
-      .option('-c, --coin <coin>', 'Coin to test', 'BTC')
-      .option('-t, --timeframe <timeframe>', 'Timeframe to test', '3m')
-      .option('-l, --limit <limit>', 'Number of candles to fetch', '10')
-      .action(async options => {
-        await handleAsync(async () => {
-          await TestCommands.testExchanges(options);
-        }, 'TestCommands.exchanges');
-      });
-
-    program
-      .command('data-sources')
-      .description('Test multi-data source configuration')
-      .option('-c, --coin <coin>', 'Coin to test', 'BTC')
-      .option('-t, --timeframe <timeframe>', 'Timeframe to test', '3m')
-      .option('-l, --limit <limit>', 'Number of candles to fetch', '5')
-      .action(async options => {
-        await handleAsync(async () => {
-          await TestCommands.testDataSources(options);
-        }, 'TestCommands.data-sources');
       });
 
     program
@@ -58,13 +36,66 @@ export class TestCommands {
       });
   }
 
-  private static async testKline(options: {
+  private static async createExchangeInstance(
+    exchangeName: string,
+    apiKey?: string,
+    apiSecret?: string,
+    testnet: boolean = true
+  ): Promise<any> {
+    const name = exchangeName.toLowerCase();
+
+    if (name === 'simulator') {
+      const { SimulatorExchange } = await import('../../exchange/simulator.js');
+      return new SimulatorExchange(10000);
+    } else if (name === 'okx') {
+      const { OKXExchange } = await import('../../exchange/okx.js');
+      return new OKXExchange(apiKey, apiSecret, testnet);
+    } else if (name === 'coinbase' || name === 'cb') {
+      const { CoinbaseExchange } = await import('../../exchange/coinbase.js');
+      return new CoinbaseExchange(apiKey, apiSecret, testnet);
+    } else if (name === 'binance' || name === 'bin') {
+      const { BinanceExchange } = await import('../../exchange/binance.js');
+      return new BinanceExchange(apiKey, apiSecret, testnet);
+    } else if (name === 'hyperliquid' || name === 'hliq') {
+      const { HyperliquidExchange } = await import('../../exchange/hyperliquid.js');
+      return new HyperliquidExchange(apiKey, apiSecret, testnet);
+    } else {
+      throw new Error(`Unsupported exchange: ${exchangeName}`);
+    }
+  }
+
+  private static async testExchange(options: {
+    exchange?: string;
+    all?: boolean;
+    coin: string;
+    timeframe: string;
+    limit: string;
+    verbose?: boolean;
+  }): Promise<void> {
+    if (options.all) {
+      if (options.verbose) {
+        await TestCommands.testAllExchangesDetailed(options);
+      } else {
+        await TestCommands.testAllExchangesQuick(options);
+      }
+    } else {
+      const exchange = options.exchange || 'simulator';
+      await TestCommands.testSingleExchangeDetailed({
+        exchange,
+        coin: options.coin,
+        timeframe: options.timeframe,
+        limit: options.limit,
+      });
+    }
+  }
+
+  private static async testSingleExchangeDetailed(options: {
     exchange: string;
     coin: string;
     timeframe: string;
     limit: string;
   }): Promise<void> {
-    console.log(chalk.cyan('📊 Testing K-line Data Retrieval'));
+    console.log(chalk.cyan('📊 Testing Exchange Data Retrieval'));
     console.log(
       chalk.gray(
         `Exchange: ${options.exchange}, Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`
@@ -73,30 +104,17 @@ export class TestCommands {
 
     const symbol = `${options.coin}/USDT`;
 
-    let exchange: any;
     const { MarketDataProvider } = await import('../../data/market.js');
 
     const apiKey = process.env[`${options.exchange.toUpperCase()}_API_KEY`];
     const apiSecret = process.env[`${options.exchange.toUpperCase()}_API_SECRET`];
 
-    if (options.exchange === 'simulator') {
-      const { SimulatorExchange } = await import('../../exchange/simulator.js');
-      exchange = new SimulatorExchange(10000);
-    } else if (options.exchange === 'okx') {
-      const { OKXExchange } = await import('../../exchange/okx.js');
-      exchange = new OKXExchange(apiKey, apiSecret, true);
-    } else if (options.exchange === 'coinbase' || options.exchange === 'cb') {
-      const { CoinbaseExchange } = await import('../../exchange/coinbase.js');
-      exchange = new CoinbaseExchange(apiKey, apiSecret, true);
-    } else if (options.exchange === 'binance' || options.exchange === 'bin') {
-      const { BinanceExchange } = await import('../../exchange/binance.js');
-      exchange = new BinanceExchange(apiKey, apiSecret, true);
-    } else if (options.exchange === 'hyperliquid' || options.exchange === 'hliq') {
-      const { HyperliquidExchange } = await import('../../exchange/hyperliquid.js');
-      exchange = new HyperliquidExchange(apiKey, apiSecret, true);
-    } else {
-      throw new Error(`Unsupported exchange: ${options.exchange}`);
-    }
+    const exchange = await TestCommands.createExchangeInstance(
+      options.exchange,
+      apiKey,
+      apiSecret,
+      true
+    );
 
     if (options.exchange !== 'simulator' && (!apiKey || !apiSecret)) {
       console.log(chalk.yellow(`⚠️  No API credentials found for ${options.exchange}`));
@@ -106,12 +124,43 @@ export class TestCommands {
 
     const provider = new MarketDataProvider(exchange);
 
-    // Test 1: Basic K-line data
-    console.log(chalk.yellow('🔍 Test 1: Basic K-line Data'));
+    // Test 1: Ticker data (real-time)
+    console.log(chalk.yellow('🔍 Test 1: Real-time Ticker Data'));
+    let latestPrice = 0;
+    try {
+      const ticker = await exchange.getTicker(symbol);
+      latestPrice = ticker.price;
+      console.log(chalk.green('✅ Ticker data retrieved:'));
+      console.log(`   Current Price: $${latestPrice.toFixed(2)}`);
+      console.log(`   Timestamp: ${new Date(ticker.timestamp ?? Date.now()).toLocaleString()}`);
+    } catch (error: any) {
+      console.log(chalk.yellow(`⚠️  Ticker data unavailable: ${error?.message || String(error)}`));
+    }
+
+    // Test 2: Basic K-line data
+    console.log(chalk.yellow('\n🔍 Test 2: Historical K-line Data'));
     let klines;
     try {
       klines = await exchange.getCandlesticks(symbol, options.timeframe, parseInt(options.limit));
       console.log(chalk.green(`✅ Retrieved ${klines.length} K-lines`));
+
+      // Show latest candles
+      if (klines.length >= 3) {
+        console.log(chalk.gray('\n📈 Latest 3 candles:'));
+        klines.slice(-3).forEach((kline, index) => {
+          const time = new Date(kline.timestamp).toLocaleTimeString();
+          console.log(
+            `   ${index + 1}. ${time}: O:$${kline.open.toFixed(2)} H:$${kline.high.toFixed(2)} L:$${kline.low.toFixed(2)} C:$${kline.close.toFixed(2)} V:${kline.volume.toFixed(2)}`
+          );
+        });
+      } else if (klines.length > 0) {
+        console.log(chalk.gray('\n📈 Latest candle:'));
+        const kline = klines[klines.length - 1];
+        const time = new Date(kline.timestamp).toLocaleTimeString();
+        console.log(
+          `   ${time}: O:$${kline.open.toFixed(2)} H:$${kline.high.toFixed(2)} L:$${kline.low.toFixed(2)} C:$${kline.close.toFixed(2)} V:${kline.volume.toFixed(2)}`
+        );
+      }
     } catch (error: any) {
       console.log(chalk.red(`❌ Failed to retrieve K-line data\n`));
 
@@ -148,33 +197,8 @@ export class TestCommands {
       throw error;
     }
 
-    // Show data source information
-    console.log(chalk.blue('📊 Data Source Information:'));
-    console.log(`   Exchange: ${exchange.constructor.name}`);
-    console.log(
-      `   Exchange Name: ${exchange.getExchangeName ? exchange.getExchangeName() : 'Simulator'}`
-    );
-    console.log(
-      `   Mode: ${exchange.constructor.name === 'SimulatorExchange' ? 'Simulation (Mock Data)' : 'Live Trading (Real Data)'}`
-    );
-    console.log(`   Testnet: ${exchange.isTestnetMode ? exchange.isTestnetMode() : 'N/A'}`);
-    console.log(`   Symbol: ${symbol}`);
-    console.log(`   Timeframe: ${options.timeframe}`);
-    console.log(
-      `   Data Range: ${new Date(klines[0].timestamp).toLocaleString()} - ${new Date(klines[klines.length - 1].timestamp).toLocaleString()}`
-    );
-
-    // Show latest 3 candles
-    console.log(chalk.gray('\n📈 Latest 3 candles:'));
-    klines.slice(-3).forEach((kline, index) => {
-      const time = new Date(kline.timestamp).toLocaleTimeString();
-      console.log(
-        `   ${index + 1}. ${time}: O:$${kline.open.toFixed(2)} H:$${kline.high.toFixed(2)} L:$${kline.low.toFixed(2)} C:$${kline.close.toFixed(2)} V:${kline.volume.toFixed(2)}`
-      );
-    });
-
-    // Test 2: Market data with indicators
-    console.log(chalk.yellow('\n🔍 Test 2: Market Data with Indicators'));
+    // Test 3: Market data with indicators
+    console.log(chalk.yellow('\n🔍 Test 3: Technical Analysis with Indicators'));
     const marketData = await provider.getMarketData(symbol, [options.timeframe]);
 
     if (marketData.length > 0) {
@@ -192,15 +216,73 @@ export class TestCommands {
       console.log(`   Current Price: $${data.currentPrice.toFixed(2)}`);
       console.log(`   Trend: ${data.trend}`);
       console.log(`   Volatility: ${data.volatility}`);
+
+      // Moving Averages
+      console.log(chalk.gray('\n   Moving Averages:'));
+      if (data.indicators.sma5) {
+        console.log(`   SMA5:  $${data.indicators.sma5.toFixed(2)}`);
+      }
+      if (data.indicators.sma20) {
+        console.log(`   SMA20: $${data.indicators.sma20.toFixed(2)}`);
+      }
+      if (data.indicators.sma50) {
+        console.log(`   SMA50: $${data.indicators.sma50.toFixed(2)}`);
+      }
+      if (data.indicators.ema5) {
+        console.log(`   EMA5:  $${data.indicators.ema5.toFixed(2)}`);
+      }
       console.log(`   EMA20: $${data.indicators.ema20.toFixed(2)}`);
       console.log(`   EMA50: $${data.indicators.ema50.toFixed(2)}`);
+
+      // Momentum & Volatility
+      console.log(chalk.gray('\n   Momentum & Volatility:'));
       console.log(`   RSI14: ${data.indicators.rsi14.toFixed(2)}`);
-      console.log(`   MACD: ${data.indicators.macd.macd.toFixed(4)}`);
       console.log(`   ATR14: $${data.indicators.atr14.toFixed(2)}`);
+
+      // MACD
+      console.log(chalk.gray('\n   MACD:'));
+      console.log(`   Line:     ${data.indicators.macd.macd.toFixed(4)}`);
+      console.log(`   Signal:   ${data.indicators.macd.signal.toFixed(4)}`);
+      console.log(`   Histogram: ${data.indicators.macd.histogram.toFixed(4)}`);
+
+      // Bollinger Bands
+      if (data.indicators.bollinger) {
+        console.log(chalk.gray('\n   Bollinger Bands:'));
+        console.log(`   Upper:   $${data.indicators.bollinger.upper.toFixed(2)}`);
+        console.log(`   Middle:  $${data.indicators.bollinger.middle.toFixed(2)}`);
+        console.log(`   Lower:   $${data.indicators.bollinger.lower.toFixed(2)}`);
+        console.log(`   %B:      ${data.indicators.bollinger.percentB.toFixed(4)}`);
+        console.log(`   Position: ${data.indicators.bollinger.position}`);
+      }
+
+      // Support & Resistance
+      if (data.indicators.supportResistance) {
+        console.log(chalk.gray('\n   Support & Resistance:'));
+        if (data.indicators.supportResistance.support) {
+          console.log(`   Support:  $${data.indicators.supportResistance.support.toFixed(2)}`);
+        } else {
+          console.log(`   Support:  N/A`);
+        }
+        if (data.indicators.supportResistance.resistance) {
+          console.log(`   Resistance: $${data.indicators.supportResistance.resistance.toFixed(2)}`);
+        } else {
+          console.log(`   Resistance: N/A`);
+        }
+      }
+
+      // Volume Metrics
+      if (data.indicators.volume) {
+        console.log(chalk.gray('\n   Volume Metrics:'));
+        console.log(`   SMA20: $${data.indicators.volume.sma20.toFixed(2)}`);
+        console.log(`   Ratio:  ${data.indicators.volume.ratio.toFixed(2)}`);
+        if (data.indicators.volume.obv !== undefined) {
+          console.log(`   OBV:    ${data.indicators.volume.obv.toFixed(2)}`);
+        }
+      }
     }
 
-    // Test 3: Account info (skip if no API credentials for non-simulator exchanges)
-    console.log(chalk.yellow('\n🔍 Test 3: Account Information'));
+    // Test 4: Account info (skip if no API credentials for non-simulator exchanges)
+    console.log(chalk.yellow('\n🔍 Test 4: Account Information'));
     const isSimulator = exchange.constructor.name === 'SimulatorExchange';
     const hasApiKey = !!(
       options.exchange === 'simulator' || process.env[`${options.exchange.toUpperCase()}_API_KEY`]
@@ -236,15 +318,17 @@ export class TestCommands {
     }
 
     // Summary
-    console.log(chalk.green('\n🎯 All tests passed! K-line data retrieval is working correctly.'));
+    console.log(
+      chalk.green('\n🎯 All tests passed! Exchange data retrieval is working correctly.')
+    );
   }
 
-  private static async testExchanges(options: {
+  private static async testAllExchangesQuick(options: {
     coin: string;
     timeframe: string;
     limit: string;
   }): Promise<void> {
-    console.log(chalk.cyan('🏦 Testing Multiple Exchanges'));
+    console.log(chalk.cyan('📊 Testing All Exchanges (Quick Mode)'));
     console.log(
       chalk.gray(
         `Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`
@@ -259,45 +343,21 @@ export class TestCommands {
       console.log('='.repeat(50));
 
       try {
-        let exchange: any;
         const { MarketDataProvider } = await import('../../data/market.js');
 
         const apiKey = process.env[`${exchangeName.toUpperCase()}_API_KEY`];
         const apiSecret = process.env[`${exchangeName.toUpperCase()}_API_SECRET`];
 
-        if (exchangeName === 'simulator') {
-          const { SimulatorExchange } = await import('../../exchange/simulator.js');
-          exchange = new SimulatorExchange(10000);
-        } else if (exchangeName === 'okx') {
-          const { OKXExchange } = await import('../../exchange/okx.js');
-          exchange = new OKXExchange(apiKey, apiSecret, true);
-          if (!apiKey || !apiSecret) {
-            console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
-            console.log(chalk.gray(`   Using public data access\n`));
-          }
-        } else if (exchangeName === 'coinbase' || exchangeName === 'cb') {
-          const { CoinbaseExchange } = await import('../../exchange/coinbase.js');
-          exchange = new CoinbaseExchange(apiKey, apiSecret, true);
-          if (!apiKey || !apiSecret) {
-            console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
-            console.log(chalk.gray(`   Using public data access\n`));
-          }
-        } else if (exchangeName === 'binance' || exchangeName === 'bin') {
-          const { BinanceExchange } = await import('../../exchange/binance.js');
-          exchange = new BinanceExchange(apiKey, apiSecret, true);
-          if (!apiKey || !apiSecret) {
-            console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
-            console.log(chalk.gray(`   Using public data access\n`));
-          }
-        } else if (exchangeName === 'hyperliquid' || exchangeName === 'hliq') {
-          const { HyperliquidExchange } = await import('../../exchange/hyperliquid.js');
-          exchange = new HyperliquidExchange(apiKey, apiSecret, true);
-          if (!apiKey || !apiSecret) {
-            console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
-            console.log(chalk.gray(`   Using public data access\n`));
-          }
-        } else {
-          throw new Error(`Unsupported exchange: ${exchangeName}`);
+        const exchange = await TestCommands.createExchangeInstance(
+          exchangeName,
+          apiKey,
+          apiSecret,
+          true
+        );
+
+        if (exchangeName !== 'simulator' && (!apiKey || !apiSecret)) {
+          console.log(chalk.yellow(`⚠️  No API credentials found for ${exchangeName}`));
+          console.log(chalk.gray(`   Using public data access\n`));
         }
 
         const provider = new MarketDataProvider(exchange);
@@ -337,95 +397,72 @@ export class TestCommands {
         }
 
         // Test account
-        const account = await exchange.getAccount();
-        console.log(chalk.green(`✅ Account: $${account.balance.toFixed(2)}`));
+        try {
+          const account = await exchange.getAccount();
+          console.log(chalk.green(`✅ Account: $${account.balance.toFixed(2)}`));
+        } catch (e: any) {
+          console.log(chalk.yellow(`⚠️  Account unavailable: ${e?.message || String(e)}`));
+        }
 
         console.log(chalk.green(`🎯 ${exchangeName.toUpperCase()} test passed!\n`));
       } catch (error: any) {
         console.log(chalk.red(`❌ ${exchangeName.toUpperCase()} test failed:`));
-        console.log(chalk.red(`   ${error.message}\n`));
+
+        // Clean error message without stack trace
+        let errorMsg = error.message || String(error);
+        if (errorMsg.includes('fetch failed')) {
+          console.log(
+            chalk.gray(`   Network error - exchange may be unreachable or require credentials`)
+          );
+        } else if (errorMsg.length > 100) {
+          errorMsg = errorMsg.substring(0, 100) + '...';
+          console.log(chalk.gray(`   ${errorMsg}\n`));
+        } else {
+          console.log(chalk.gray(`   ${errorMsg}\n`));
+        }
       }
     }
   }
 
-  private static async testDataSources(options: {
+  private static async testAllExchangesDetailed(options: {
     coin: string;
     timeframe: string;
     limit: string;
   }): Promise<void> {
-    console.log(chalk.cyan('🔄 Testing Multi-Data Sources'));
-    console.log(
-      chalk.gray(
-        `Coin: ${options.coin}, Timeframe: ${options.timeframe}, Limit: ${options.limit}\n`
-      )
-    );
+    console.log(chalk.cyan('📊 Testing All Exchanges (Detailed Mode)'));
+    console.log(chalk.gray(`Coin: ${options.coin}, Timeframe: ${options.timeframe}\n`));
 
-    const config = getConfig();
-    const symbol = `${options.coin}/USDT`;
+    const exchanges = ['simulator', 'okx', 'coinbase', 'hyperliquid'];
+    let successCount = 0;
+    let failCount = 0;
 
-    const { createDataSourceManager } = await import('../../core/data-source-manager.js');
-    const manager = createDataSourceManager(config);
+    for (const exchangeName of exchanges) {
+      console.log(chalk.yellow(`\n${'='.repeat(60)}`));
+      console.log(chalk.yellow(`Testing ${exchangeName.toUpperCase()}`));
+      console.log(chalk.yellow('='.repeat(60)));
 
-    const exchangeInfo = (manager as any).getExchangeInfo();
-    console.log(chalk.blue('📊 Data Source Configuration:'));
-    console.log(`   Name: ${exchangeInfo.name}`);
-    console.log(`   Type: ${exchangeInfo.type}`);
-    console.log(`   Testnet: ${exchangeInfo.testnet}`);
-    console.log('');
-
-    const exchange = manager.getExchange();
-
-    console.log(chalk.yellow(`🔍 Testing Exchange:`));
-    console.log('='.repeat(50));
-
-    try {
-      const klines = await exchange.getCandlesticks(
-        symbol,
-        options.timeframe,
-        parseInt(options.limit)
-      );
-      console.log(chalk.green(`   ✅ K-line data: ${klines.length} candles`));
-
-      if (klines.length > 0) {
-        const latest = klines[klines.length - 1];
-        console.log(`   📈 Latest price: $${latest.close.toFixed(2)}`);
-        console.log(`   📊 Volume: ${latest.volume.toFixed(2)}`);
+      try {
+        await TestCommands.testSingleExchangeDetailed({
+          exchange: exchangeName,
+          coin: options.coin,
+          timeframe: options.timeframe,
+          limit: options.limit,
+        });
+        successCount++;
+      } catch (error) {
+        console.log(chalk.red(`\n❌ ${exchangeName.toUpperCase()} test failed\n`));
+        failCount++;
       }
-
-      const account = await exchange.getAccount();
-      console.log(chalk.green(`   ✅ Account data: $${account.balance.toFixed(2)}`));
-
-      const positions = await exchange.getPositions();
-      console.log(chalk.green(`   ✅ Positions: ${positions.length} active`));
-
-      console.log(chalk.green(`   🎯 Exchange test passed!\n`));
-    } catch (error: any) {
-      console.log(chalk.red(`   ❌ Exchange test failed:`));
-      console.log(chalk.red(`      ${error.message}\n`));
     }
 
-    console.log(chalk.cyan('🔍 Validating All Exchanges:'));
-    console.log('='.repeat(50));
-
-    const validationResult = await (manager as any).validateExchange();
-    if (validationResult.valid) {
-      console.log(chalk.green(`   ✅ Exchange: Valid`));
-    } else {
-      console.log(chalk.red(`   ❌ Exchange: ${validationResult.error}`));
+    // Summary
+    console.log(chalk.cyan(`\n${'='.repeat(60)}`));
+    console.log(chalk.cyan('📊 Overall Summary'));
+    console.log(chalk.cyan('='.repeat(60)));
+    console.log(chalk.green(`✅ Passed: ${successCount}/${exchanges.length}`));
+    if (failCount > 0) {
+      console.log(chalk.red(`❌ Failed: ${failCount}/${exchanges.length}`));
     }
-
-    console.log('');
-    console.log(chalk.cyan('📋 Multi-Data Source Summary:'));
-    console.log('='.repeat(50));
-    console.log('🎯 Configuration:');
-    console.log(`   Exchange: ${config.exchange.name} (testnet: ${config.exchange.testnet})`);
-    console.log('');
-    console.log('💡 Benefits:');
-    console.log('   - Flexible data source selection');
-    console.log('   - Risk diversification');
-    console.log('   - Performance optimization');
-    console.log('   - Cost control');
-    console.log('   - Security isolation');
   }
 
   private static async testAI(options: {
