@@ -2,6 +2,279 @@
 
 Complete guide to Quanta's operation-driven logging system.
 
+---
+
+## Part 1: Core Concepts
+
+This section explains the key concepts in Quanta's logging system and their relationships: **Cycle**, **Trace**, **Operation**, **Stage**, and **Snapshot**.
+
+### Hierarchy and Relationships
+
+```
+Cycle
+  └─ Trace [one per cycle]
+       └─ Operation [one main operation per cycle, can have nested operations]
+            └─ Stage [multiple stages per operation]
+
+Snapshot [created at end of cycle]
+```
+
+### 1. Cycle
+
+**Definition**: A complete trading cycle from start to finish. Each cycle represents one iteration of the trading workflow.
+
+**Characteristics**:
+
+- **ID**: Sequential number starting from 1 (`cycleId: 1, 2, 3, ...`)
+- **Duration**: Typically 3 minutes (configurable via `cyclePeriod`)
+- **Scope**: Contains all operations performed during one trading iteration
+
+**Example**:
+
+```
+Cycle #2
+  Started: 14:00:33
+  Duration: 11.92s
+  Activities: Fetch account → Monitor positions → Fetch market data → Generate signals → Execute signals
+```
+
+### 2. Trace
+
+**Definition**: A cycle-level trace ID that groups all operations belonging to the same cycle.
+
+**Characteristics**:
+
+- **Format**: `trace-{cycleId}-{timestamp}`
+- **Relationship**: One trace per cycle (1:1)
+- **Purpose**: Allows querying all operations that occurred in a specific cycle
+
+**Example**:
+
+```
+Cycle #2 → Trace ID: trace-2-1761976833581
+```
+
+**Usage**:
+
+```bash
+# Query all operations in a trace
+quanta log trace trace-2-1761976833581
+
+# Filter operations by trace ID
+quanta log query --trace-id trace-2
+```
+
+### 3. Operation
+
+**Definition**: A discrete unit of work with a clear start and end, tracked for logging and analysis.
+
+**Characteristics**:
+
+- **ID**: UUID (e.g., `456468a4-4faf-463f-bef0-3a0577b9fb13`)
+- **Type**: Examples: `trading_cycle`, `signal_generation`, `order_execution`
+- **Scope**: Can span multiple stages
+- **Parent-Child**: Can have nested operations via `parentOperationId`
+
+**Example**:
+
+```json
+{
+  "operationId": "456468a4-4faf-463f-bef0-3a0577b9fb13",
+  "traceId": "trace-2-1761976833581",
+  "cycleId": 2,
+  "operationType": "trading_cycle",
+  "status": "completed",
+  "stages": [...]
+}
+```
+
+**Common Operation Types**:
+
+- `trading_cycle`: The main cycle operation (one per cycle)
+- `signal_generation`: AI signal generation (can be nested)
+- `order_execution`: Order placement/execution (can be nested)
+- `position_monitoring`: Position updates (can be nested)
+
+**Usage**:
+
+```bash
+# Query operations
+quanta log query --operation-id 456468a4
+
+# Filter by type
+quanta log query --type trading_cycle
+
+# View detailed information
+quanta log query --operation-id 456468a4 --verbose
+```
+
+### 4. Stage
+
+**Definition**: A step within an operation, providing fine-grained tracking of operation progress.
+
+**Characteristics**:
+
+- **Name**: Descriptive stage name (e.g., `fetch_account`, `generate_signals`)
+- **Timing**: Tracks start time, end time, and duration
+- **Status**: `started`, `completed`, or `failed`
+- **I/O**: Can have input and output data
+
+**Example**:
+
+```json
+{
+  "stage": "generate_signals",
+  "startTime": 1761976834885,
+  "endTime": 1761976845501,
+  "duration": 10616,
+  "status": "completed",
+  "input": { "marketDataCount": 6 },
+  "output": { "signalCount": 3, "duration": 10615 }
+}
+```
+
+**Trading Cycle Stages** (in order):
+
+1. `cycle_start` - Cycle initialization
+2. `fetch_account` - Fetch account data and balance
+3. `monitor_positions` - Monitor existing positions
+4. `fetch_market_data` - Fetch market data for all symbols
+5. `generate_signals` - Generate AI trading signals
+6. `execute_signals` - Execute trading signals
+7. `create_snapshot` - Create system state snapshot
+
+**Usage**:
+
+```bash
+# View all stages in detailed output
+quanta log query --cycle-id 2 --verbose
+
+# Stages are visible in operation details
+quanta log trace trace-2-1761976833581 --format json
+```
+
+### 5. Snapshot
+
+**Definition**: A complete capture of system state at a specific point in time, created at the end of each cycle.
+
+**Characteristics**:
+
+- **ID**: UUID (e.g., `a9129f1f-5a5f-4ce5-af3c-8ac3b6905899`)
+- **Timing**: Created at the end of each trading cycle
+- **Content**: Account, positions, system metrics, circuit breakers, recent operations
+- **Storage**: Saved to L2 storage layer (persistent across workflow restarts)
+
+**Example**:
+
+```json
+{
+  "snapshotId": "a9129f1f-5a5f-4ce5-af3c-8ac3b6905899",
+  "timestamp": 1761977324000,
+  "cycleId": 18,
+  "account": {
+    "equity": 9978.88,
+    "balance": 9978.88,
+    "marginUsed": 0.0,
+    "availableMargin": 9978.88
+  },
+  "positions": [],
+  "systemMetrics": {
+    "memoryUsage": { "heapUsed": 75, "heapTotal": 77, "rss": 228 }
+  }
+}
+```
+
+**Usage**:
+
+```bash
+# View latest snapshot
+quanta log snapshot
+
+# View specific snapshot
+quanta log snapshot a9129f1f-5a5f-4ce5-af3c-8ac3b6905899
+
+# JSON format
+quanta log snapshot --format json
+```
+
+### Relationships Diagram
+
+```
+Cycle #2
+│
+├─ Trace: trace-2-1761976833581
+│  │
+│  └─ Operation: trading_cycle (456468a4-...)
+│     │
+│     ├─ Stage: cycle_start (11.92s)
+│     ├─ Stage: fetch_account (1ms)
+│     ├─ Stage: monitor_positions
+│     ├─ Stage: fetch_market_data (1.30s)
+│     ├─ Stage: generate_signals (10.62s)
+│     ├─ Stage: execute_signals
+│     └─ Stage: create_snapshot
+│
+└─ Snapshot: a9129f1f-... (created at end)
+```
+
+### Data Flow
+
+1. **Cycle Starts**
+   - `cycleId` increments (e.g., 1 → 2)
+   - `traceId` created: `trace-2-{timestamp}`
+   - `operationId` created: `trading_cycle` operation starts
+
+2. **Operation Progress**
+   - Multiple stages execute sequentially
+   - Each stage logs input/output
+   - Stages can fail, but operation continues
+
+3. **Cycle Completes**
+   - Operation marked as `completed` or `failed`
+   - Snapshot created with current system state
+   - All data persisted to storage layers
+
+4. **Query Time**
+   - Operations stored in L0 (memory) and L1 (SQLite)
+   - Snapshots stored in L2 (files)
+   - Query interface combines data from all layers
+
+### Storage Locations
+
+- **L0 (Memory)**: Recent operations, fast access
+- **L1 (SQLite)**: Recent cycles (default: 1000), queryable
+- **L2 (Files)**: Historical cycles, compressed JSON
+- **L3 (Archive)**: Old cycles, long-term storage
+
+Operations are stored in L1 SQLite database:
+
+- Table: `operations`
+- Indexes: `cycleId`, `traceId`, `operationType`, `status`, `symbol`, `startTime`
+
+Snapshots are stored in L2 directory:
+
+- Files: `snapshot-{snapshotId}.json` or `.json.gz`
+- Location: `logs/l2-history/`
+
+### Summary
+
+- **Cycle**: One complete trading iteration (numbered sequentially)
+- **Trace**: One per cycle, groups all cycle operations (format: `trace-{cycleId}-{timestamp}`)
+- **Operation**: Discrete unit of work (UUID, belongs to a trace)
+- **Stage**: Step within an operation (tracks progress, I/O, timing)
+- **Snapshot**: System state capture at cycle end (account, positions, metrics)
+
+All concepts work together to provide complete observability:
+
+- **Trace** links all operations in a cycle
+- **Operation** contains multiple **Stages** for detailed tracking
+- **Snapshot** captures final state after cycle completes
+- **Cycle** number ties everything together chronologically
+
+---
+
+## Part 2: Usage Guide
+
 ## Overview
 
 Quanta uses a sophisticated **operation-driven logging system** that tracks the complete lifecycle of operations, aggregates errors intelligently, captures system state snapshots, and provides powerful query capabilities for analysis and debugging.
@@ -438,12 +711,269 @@ L3: Cold Storage (Compressed Archive)
 const LOGGING_CONSTANTS = {
   STORAGE: {
     DEFAULT_LOG_DIR: './logs',
-    L0_MAX_SIZE: 1000,        // Max operations in memory
-    L1_MAX_CYCLES: 1000,      // Max cycles in SQLite
-    L2_DIR: 'l2-history',     // L2 directory name
-    L3_DIR: 'l3-archive',      // L3 directory name
+    L0_MAX_SIZE: 1000, // Max operations in memory
+    L1_MAX_CYCLES: 1000, // Max cycles in SQLite
+    L2_DIR: 'l2-history', // L2 directory name
+    L3_DIR: 'l3-archive', // L3 directory name
   },
 };
+```
+
+## Algorithm Correctness Verification
+
+The logging system tracks detailed information to help verify algorithm correctness, including decision processes, validation results, data quality metrics, and execution validation.
+
+### Viewing Algorithm Correctness Information
+
+#### 1. Decision Process (Decision Path)
+
+The decision path shows the step-by-step decisions made during an operation, including the reason for each decision and confidence levels.
+
+```bash
+# View decision paths in detailed output
+quanta log query --verbose
+
+# View specific operation's decision path
+quanta log query --operation-id <operation-id> --verbose
+
+# JSON format for complete decision path data
+quanta log query --format json --verbose | jq '.operations[0].decisionPath'
+```
+
+**Decision Path Information:**
+
+- `step`: Decision step name
+- `decision`: The decision made
+- `reason`: Explanation for the decision
+- `confidence`: Confidence level (if available)
+- `threshold`: Threshold value (if available)
+
+#### 2. Validation Results
+
+Validation results show all risk checks and validation tests performed, including which checks passed or failed and why.
+
+```bash
+# View validation results
+quanta log query --verbose
+
+# View failed operations and their validation failures
+quanta log query --status failed --verbose
+
+# View specific operation's validation results
+quanta log query --operation-id <operation-id> --verbose
+```
+
+**Validation Results Information:**
+
+- `passed`: Overall validation status
+- `checks`: Array of validation checks
+  - `check`: Check name (e.g., `signal_validation`, `position_sizing`)
+  - `passed`: Whether the check passed
+  - `reason`: Failure reason (if failed)
+  - `details`: Additional validation details
+
+**Common Validation Checks:**
+
+- `signal_validation`: Signal format and confidence validation
+- `position_sizing`: Position sizing calculation validation
+- `execution_price_validation`: Execution price vs expected price (slippage check)
+
+#### 3. Data Quality Metrics
+
+Data quality metrics track the freshness, completeness, and gaps in input data used by algorithms.
+
+```bash
+# View data quality metrics
+quanta log query --verbose
+
+# View operations with data quality issues
+quanta log query --format json | jq '.operations[] | select(.dataQuality.freshness.isStale == true)'
+
+# View operations with data gaps
+quanta log query --format json | jq '.operations[] | select(.dataQuality.gaps != null)'
+```
+
+**Data Quality Information:**
+
+- `freshness`: Data age (in milliseconds)
+  - `latestTimestamp`: Latest data timestamp
+  - `ageMs`: Age of data in milliseconds
+  - `isStale`: Whether data is stale (> 60 seconds)
+- `completeness`: Data completeness metrics
+  - `expectedItems`: Expected number of data items
+  - `actualItems`: Actual number of data items
+  - `missingItems`: List of missing items (if any)
+- `gaps`: Array of data gaps
+  - `symbol`: Symbol with gap
+  - `timeframe`: Timeframe with gap
+  - `missingFrom`: Gap start timestamp
+  - `missingTo`: Gap end timestamp
+
+#### 4. Stage-Level Information
+
+Each stage within an operation can have its own validation checks, data quality metrics, and decision metrics.
+
+```bash
+# View stage-level details
+quanta log query --verbose
+
+# View specific stage validation checks
+quanta log query --format json | jq '.operations[0].stages[] | select(.validationChecks != null)'
+```
+
+**Stage-Level Information:**
+
+- **Validation Checks** (`validationChecks`): Per-stage validation checks
+- **Data Quality** (`dataQuality`): Per-stage data quality metrics
+- **Decision Metrics** (`decisionMetrics`): Decision-making metrics for the stage
+  - `confidence`: Decision confidence level
+  - `threshold`: Decision threshold
+  - `reasoning`: Decision reasoning text
+  - `factors`: Decision factors and context
+
+### Example: Complete Algorithm Correctness Analysis
+
+```bash
+# Step 1: Find a trading cycle operation
+quanta log query --type trading_cycle --limit 1 --verbose
+
+# Step 2: View its decision path
+quanta log query --type trading_cycle --format json | jq '.operations[0].decisionPath'
+
+# Step 3: View validation results
+quanta log query --type trading_cycle --format json | jq '.operations[0].validationResults'
+
+# Step 4: View data quality
+quanta log query --type trading_cycle --format json | jq '.operations[0].dataQuality'
+
+# Step 5: View stage-level validation checks
+quanta log query --type trading_cycle --format json | jq '.operations[0].stages[] | select(.validationChecks != null)'
+
+# Step 6: View stage-level decision metrics
+quanta log query --type trading_cycle --format json | jq '.operations[0].stages[] | select(.decisionMetrics != null)'
+```
+
+### Use Cases
+
+#### 1. Verify Signal Generation Correctness
+
+```bash
+# View signal generation decision process
+quanta log query --type trading_cycle --verbose | grep -A 30 "Decision Metrics"
+
+# Check signal validation results
+quanta log query --type trading_cycle --format json | jq '.operations[0].stages[] | select(.stage == "generate_signals") | .decisionMetrics'
+
+# View market data quality used for signal generation
+quanta log query --type trading_cycle --format json | jq '.operations[0].stages[] | select(.stage == "fetch_market_data") | .dataQuality'
+```
+
+#### 2. Verify Order Execution Correctness
+
+```bash
+# View execution validation (price slippage)
+quanta log query --type trading_cycle --verbose | grep -A 20 "execution_price_validation"
+
+# Check validation results for signal execution
+quanta log query --type trading_cycle --format json | jq '.operations[0].stages[] | select(.stage == "execute_signals") | .validationChecks'
+```
+
+**Execution Validation Details:**
+
+When using `--verbose`, execution validation shows detailed information for `execution_price_validation`:
+
+- **Expected Price**: The market price when the signal was generated
+- **Actual Price**: The actual execution price from the exchange
+- **Slippage**: Price deviation percentage (colored: green ≤1%, yellow ≤3%, red >3%)
+- **Order ID**: The exchange order ID
+- **Realized P&L**: Profit or loss from the trade
+- **Fees**: Trading fees charged
+- **Size, Leverage, Risk**: Position sizing details
+
+**Example Output:**
+
+```
+🔍 Validation Checks (execute_signals):
+   ✓ execution_price_validation
+      └─ Actual: 0.15, Threshold: 5
+      └─ Expected Price: $45000.00, Actual Price: $45067.50
+      └─ Slippage: 0.150%
+      └─ Order ID: order-123456
+      └─ Realized P&L: $0.00
+      └─ Fees: $0.90
+      └─ Size: 0.001, Leverage: 2x, Risk: $10.00
+```
+
+#### 3. Identify Data Quality Issues
+
+```bash
+# Find operations with stale data
+quanta log query --format json | jq '.operations[] | select(.dataQuality.freshness.isStale == true)'
+
+# Find operations with data gaps
+quanta log query --format json | jq '.operations[] | select(.dataQuality.gaps != null and (.dataQuality.gaps | length) > 0)'
+
+# Find operations with incomplete data
+quanta log query --format json | jq '.operations[] | select(.dataQuality.completeness.actualItems < .dataQuality.completeness.expectedItems)'
+```
+
+#### 4. Analyze Validation Failures
+
+```bash
+# View all failed validations
+quanta log query --status failed --verbose | grep -A 10 "Validation Results"
+
+# Find operations rejected due to position sizing
+quanta log query --format json | jq '.operations[] | select(.stages[].validationChecks[]?.name == "position_sizing" and .stages[].validationChecks[]?.passed == false)'
+```
+
+### Programmatic Access
+
+```typescript
+import { QueryInterface } from '../logging/index.js';
+
+const query = QueryInterface.getInstance();
+
+// Query operations with algorithm correctness information
+const result = await query.queryOperations({
+  cycleId: 2,
+  operationType: 'trading_cycle',
+  limit: 10,
+});
+
+for (const op of result.operations) {
+  // Access decision path
+  if (op.decisionPath) {
+    console.log('Decision Path:', op.decisionPath.choices);
+  }
+
+  // Access validation results
+  if (op.validationResults) {
+    console.log('Validation Results:', op.validationResults.checks);
+  }
+
+  // Access data quality
+  if (op.dataQuality) {
+    console.log('Data Quality:', {
+      freshness: op.dataQuality.freshness,
+      completeness: op.dataQuality.completeness,
+      gaps: op.dataQuality.gaps,
+    });
+  }
+
+  // Access stage-level information
+  for (const stage of op.stages) {
+    if (stage.validationChecks) {
+      console.log(`Stage ${stage.stage} validation:`, stage.validationChecks);
+    }
+    if (stage.dataQuality) {
+      console.log(`Stage ${stage.stage} data quality:`, stage.dataQuality);
+    }
+    if (stage.decisionMetrics) {
+      console.log(`Stage ${stage.stage} decision:`, stage.decisionMetrics);
+    }
+  }
+}
 ```
 
 ## Query Interface
@@ -479,6 +1009,10 @@ quanta log query --limit 20 --offset 0
 
 # JSON output
 quanta log query --format json
+
+# Detailed view with algorithm correctness information
+quanta log query --verbose
+quanta log query --detail
 ```
 
 #### Statistics
@@ -781,10 +1315,10 @@ Default storage configuration:
 const LOGGING_CONSTANTS = {
   STORAGE: {
     DEFAULT_LOG_DIR: './logs',
-    L0_MAX_SIZE: 1000,        // Max operations in memory
-    L1_MAX_CYCLES: 1000,      // Max cycles in SQLite (hot storage)
-    L2_DIR: 'l2-history',    // L2 directory name
-    L3_DIR: 'l3-archive',      // L3 directory name
+    L0_MAX_SIZE: 1000, // Max operations in memory
+    L1_MAX_CYCLES: 1000, // Max cycles in SQLite (hot storage)
+    L2_DIR: 'l2-history', // L2 directory name
+    L3_DIR: 'l3-archive', // L3 directory name
   },
 };
 ```
@@ -817,9 +1351,9 @@ quanta log cleanup --keep-days 7 --force
 ```typescript
 const LOGGING_CONSTANTS = {
   SAMPLING: {
-    NORMAL_RATE: 1.0,    // 100% in normal state
-    WARNING_RATE: 1.5,   // 150% in warning state
-    CRITICAL_RATE: 2.0,  // 200% in critical state
+    NORMAL_RATE: 1.0, // 100% in normal state
+    WARNING_RATE: 1.5, // 150% in warning state
+    CRITICAL_RATE: 2.0, // 200% in critical state
   },
 };
 ```
@@ -829,9 +1363,9 @@ const LOGGING_CONSTANTS = {
 ```typescript
 const LOGGING_CONSTANTS = {
   ANOMALY: {
-    ERROR_RATE_SPIKE: 0.1,        // 10% error rate threshold
-    LATENCY_DEGRADATION: 2.0,      // 2x latency increase
-    MEMORY_LEAK_RATE: 0.05,        // 5% memory increase per cycle
+    ERROR_RATE_SPIKE: 0.1, // 10% error rate threshold
+    LATENCY_DEGRADATION: 2.0, // 2x latency increase
+    MEMORY_LEAK_RATE: 0.05, // 5% memory increase per cycle
   },
 };
 ```
@@ -1027,7 +1561,7 @@ setInterval(() => {
   const anomalies = logger.checkAnomalies();
   if (anomalies.length > 0) {
     console.warn('Anomalies detected:', anomalies);
-    
+
     // Force snapshot on critical anomalies
     const criticalAnomalies = anomalies.filter(a => a.severity === 'critical');
     if (criticalAnomalies.length > 0) {
@@ -1043,10 +1577,10 @@ setInterval(() => {
 ```typescript
 // Use specific filters to improve performance
 const result = await query.queryOperations({
-  cycleId: 42,              // Use cycle ID for fast L1 lookup
+  cycleId: 42, // Use cycle ID for fast L1 lookup
   operationType: 'order_execution', // Filter by type
-  status: 'failed',         // Filter by status
-  limit: 50,                // Limit results
+  status: 'failed', // Filter by status
+  limit: 50, // Limit results
 });
 
 // Use pagination for large datasets
@@ -1060,10 +1594,10 @@ while (hasMore) {
     limit: pageSize,
     offset,
   });
-  
+
   // Process page
   processOperations(page.operations);
-  
+
   hasMore = page.hasMore;
   offset += pageSize;
 }
@@ -1087,4 +1621,4 @@ All logs are stored in tiered storage with automatic cleanup and manual manageme
 ---
 
 **Last Updated**: January 2025  
-**Version**: 0.1.0
+**Version**: 0.3.0

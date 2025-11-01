@@ -18,6 +18,9 @@ export async function startTradingService(
     console.log(`   Mode: ${config.mode || 'simulation'}`);
     const friendly = describeExchange(exchange, config.exchange?.testnet ?? true);
     if (friendly) console.log(`   Exchange: ${friendly}`);
+    if (config.exchange?.marketType) {
+      console.log(`   Market Type: ${config.exchange.marketType}`);
+    }
   } catch {
     // best-effort display only
   }

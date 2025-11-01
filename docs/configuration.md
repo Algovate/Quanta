@@ -208,13 +208,41 @@ quanta config init
 
 ### MarketType-Aware Defaults and Guards
 
-- When `exchange.marketType = spot`:
-  - Effective leverage range clamped to [1, 1]
-  - Recommended: stopLoss 3–7%, maxRisk 3–5%, maxPositions 6–10
-- When `exchange.marketType = swap|perp|perpetual`:
-  - Effective leverage range clamped to [3, 10]
-  - Recommended: stopLoss 1–2%, maxRisk 1–2%, maxPositions 1–4
-- Startup logs display the market type and effective risk parameters; out-of-band values are clamped with a warning.
+The system automatically validates and adjusts risk parameters based on `marketType` to ensure safe trading practices.
+
+**Spot Market (`marketType: "spot"`):**
+
+- **Leverage**: Clamped to `1x - 1x` (no leverage allowed)
+- **Stop Loss**: Range `3% - 7%`
+- **Max Risk**: Range `3% - 5%`
+- **Max Positions**: Range `6 - 10`
+
+**Swap/Perp Market (`marketType: "swap"`, `"perp"`, or `"perpetual"`):**
+
+- **Leverage**: Clamped to `3x - 10x` (leverage supported)
+- **Stop Loss**: Range `1% - 2%`
+- **Max Risk**: Range `1% - 2%`
+- **Max Positions**: Range `1 - 4`
+
+**Startup Validation:**
+
+At startup, the system:
+
+1. Checks all risk parameters against the allowed ranges for the selected `marketType`
+2. Automatically adjusts out-of-range values with a warning (e.g., `[risk-guard] Clamped leverage.min: 5 -> 1`)
+3. Displays a summary of all effective risk parameters:
+
+```
+[risk-guard] Clamped leverage.min: 5 -> 1 for marketType=spot
+[risk-guard] Clamped leverage.max: 40 -> 1 for marketType=spot
+[risk-guard] Risk parameters for marketType=spot:
+   Leverage: 1x - 1x
+   Stop Loss: 5.0% (range: 3.0% - 7.0%)
+   Max Risk: 5.0% (range: 3.0% - 5.0%)
+   Max Positions: 6 (range: 6 - 10)
+```
+
+**Note**: Only parameters that are adjusted will show warnings. Parameters within the allowed range will be displayed in the summary without warnings.
 
 ### Instrument Selection (OKX)
 
@@ -281,6 +309,7 @@ quanta config show
 ### Configuration Conflicts
 
 Priority order (highest to lowest):
+
 1. Command-line arguments
 2. Environment variables
 3. `config/config.json`
@@ -301,18 +330,21 @@ quanta config init
 ### Common Issues
 
 **Issue**: Values not taking effect
+
 - **Solution**: Check priority order - environment variables override config file
 - **Solution**: Restart the application after changing configuration
 
 **Issue**: Invalid JSON syntax
+
 - **Solution**: Use `quanta config validate` to check syntax
 - **Solution**: Use a JSON validator online or in your editor
 
 **Issue**: Missing required fields
+
 - **Solution**: Use `quanta config init` to create from example
 - **Solution**: Check [Configuration Guide](configuration.md) for required fields
 
 ---
 
 **Last Updated**: January 2025  
-**Version**: 0.1.0
+**Version**: 0.3.0

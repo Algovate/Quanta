@@ -1,4 +1,7 @@
 import { Command } from 'commander';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import {
   TradeCommands,
   TestCommands,
@@ -8,6 +11,19 @@ import {
   ServerCommands,
   LogCommands,
 } from './commands/index.js';
+
+// Get version from package.json
+function getVersion(): string {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const packagePath = join(__dirname, '../../package.json');
+    const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8'));
+    return packageJson.version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
 
 export class CLIApplication {
   private program: Command;
@@ -22,7 +38,7 @@ export class CLIApplication {
     this.program
       .name('quanta')
       .description('Quanta CLI - AI-powered quantitative trading system')
-      .version('0.1.0');
+      .version(getVersion());
   }
 
   private registerCommands(): void {

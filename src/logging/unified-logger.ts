@@ -20,6 +20,12 @@ import type {
   SystemSnapshot,
   AggregatedError,
   MetricsSnapshot,
+  ValidationCheck,
+  ValidationResults,
+  DecisionPath,
+  DataQualityInfo,
+  DataQualityMetrics,
+  DecisionMetrics,
 } from './types.js';
 import type { AnomalyEvent } from './anomaly-detector.js';
 
@@ -288,6 +294,35 @@ export class UnifiedLogger {
   }
 
   /**
+   * Get operation by ID
+   */
+  getOperation(operationId: string): OperationLog | null {
+    return this.operationLogger.getOperation(operationId);
+  }
+
+  /**
+   * Append a choice to existing decision path or create new one
+   */
+  appendDecisionChoice(
+    operationId: string,
+    choice: {
+      step: string;
+      decision: string;
+      reason: string;
+      confidence?: number;
+      threshold?: number;
+      factors?: Record<string, any>;
+    }
+  ): void {
+    const operation = this.getOperation(operationId);
+    const existingChoices = operation?.decisionPath?.choices || [];
+
+    this.recordDecisionPath(operationId, {
+      choices: [...existingChoices, choice],
+    });
+  }
+
+  /**
    * Get snapshot by ID
    */
   async getSnapshotById(snapshotId: string): Promise<SystemSnapshot | null> {
@@ -323,5 +358,73 @@ export class UnifiedLogger {
    */
   async cleanup(maxCycles: number = 1000): Promise<void> {
     await this.storageLayer.cleanup(maxCycles);
+  }
+
+  /**
+   * Record validation check to a stage
+   */
+  recordValidationCheck(operationId: string, stageName: string, check: ValidationCheck): void {
+    this.operationLogger.addValidationCheck(operationId, stageName, check);
+  }
+
+  /**
+   * Record data quality info to a stage
+   */
+  recordDataQuality(operationId: string, stageName: string, qualityInfo: DataQualityInfo): void {
+    this.operationLogger.addStageDataQuality(operationId, stageName, qualityInfo);
+  }
+
+  /**
+   * Record decision metrics to a stage
+   */
+  recordDecisionMetrics(operationId: string, stageName: string, metrics: DecisionMetrics): void {
+    this.operationLogger.addDecisionMetrics(operationId, stageName, metrics);
+  }
+
+  /**
+   * Record validation results to an operation
+   */
+  recordValidationResult(operationId: string, validationResults: ValidationResults): void {
+    this.operationLogger.addValidationResult(operationId, validationResults);
+  }
+
+  /**
+   * Record decision path to an operation
+   */
+  recordDecisionPath(operationId: string, decisionPath: DecisionPath): void {
+    this.operationLogger.addDecisionPath(operationId, decisionPath);
+  }
+
+  /**
+   * Record data quality metrics to an operation
+   */
+  recordOperationDataQuality(operationId: string, dataQuality: DataQualityMetrics): void {
+    this.operationLogger.addDataQuality(operationId, dataQuality);
+  }
+
+  /**
+   * Aggregate validation checks from a stage into operation-level validation results
+   */
+  aggregateValidationResults(operationId: string, stageName: string): void {
+    const operation = this.operationLogger.getOperation(operationId);
+    if (!operation) {
+      return;
+    }
+
+    const stage = operation.stages.find(s => s.stage === stageName);
+    if (!stage || !stage.validationChecks || stage.validationChecks.length === 0) {
+      return;
+    }
+
+    const allPassed = stage.validationChecks.every(check => check.passed);
+    this.recordValidationResult(operationId, {
+      passed: allPassed,
+      checks: stage.validationChecks.map(check => ({
+        check: check.name,
+        passed: check.passed,
+        reason: check.reason,
+        details: check.details,
+      })),
+    });
   }
 }

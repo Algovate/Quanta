@@ -115,7 +115,8 @@ export class TradeCommands {
     exchangeName: string,
     exchangeTestnet: boolean,
     exchangeApiKey?: string,
-    exchangeApiSecret?: string
+    exchangeApiSecret?: string,
+    marketType?: string
   ): void {
     console.log(chalk.blue('📊 Configuration:'));
     console.log(`   Mode: ${mode}`);
@@ -139,6 +140,9 @@ export class TradeCommands {
       if (exchangeName !== 'simulator') {
         console.log(`   Network: ${networkStatus}`);
       }
+    }
+    if (marketType) {
+      console.log(`   Market Type: ${marketType}`);
     }
   }
 
@@ -296,13 +300,15 @@ export class TradeCommands {
     const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
     const exchangeApiKey = updatedConfig.exchange?.apiKey;
     const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
+    const marketType = updatedConfig.exchange?.marketType;
 
     this.displayModeConfiguration(
       mode,
       exchangeName,
       exchangeTestnet,
       exchangeApiKey,
-      exchangeApiSecret
+      exchangeApiSecret,
+      marketType
     );
 
     // Validate prerequisites based on mode

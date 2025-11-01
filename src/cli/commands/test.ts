@@ -449,7 +449,7 @@ export class TestCommands {
           limit: options.limit,
         });
         successCount++;
-      } catch (error) {
+      } catch {
         console.log(chalk.red(`\n❌ ${exchangeName.toUpperCase()} test failed\n`));
         failCount++;
       }

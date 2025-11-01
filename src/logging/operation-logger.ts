@@ -15,6 +15,12 @@ import type {
   OperationStatus,
   TraceContext,
   ErrorInfo,
+  DecisionPath,
+  ValidationResults,
+  DataQualityInfo,
+  DataQualityMetrics,
+  ValidationCheck,
+  DecisionMetrics,
 } from './types.js';
 import { normalizeError } from './utils.js';
 
@@ -237,12 +243,118 @@ export class OperationLogger {
   }
 
   /**
+   * Get operation by ID
+   */
+  getOperation(operationId: string): OperationLog | null {
+    return this.activeOperations.get(operationId) || null;
+  }
+
+  /**
    * Reset logger state (for testing)
    * @internal
    */
   reset(): void {
     this.activeOperations.clear();
     this.operationHandlers = [];
+  }
+
+  /**
+   * Add validation results to an operation
+   */
+  addValidationResult(operationId: string, validationResults: ValidationResults): void {
+    const operation = this.activeOperations.get(operationId);
+    if (!operation) {
+      console.warn(`Operation ${operationId} not found for validation results`);
+      return;
+    }
+
+    operation.validationResults = validationResults;
+  }
+
+  /**
+   * Add decision path to an operation
+   */
+  addDecisionPath(operationId: string, decisionPath: DecisionPath): void {
+    const operation = this.activeOperations.get(operationId);
+    if (!operation) {
+      console.warn(`Operation ${operationId} not found for decision path`);
+      return;
+    }
+
+    operation.decisionPath = decisionPath;
+  }
+
+  /**
+   * Add data quality metrics to an operation
+   */
+  addDataQuality(operationId: string, dataQuality: DataQualityMetrics): void {
+    const operation = this.activeOperations.get(operationId);
+    if (!operation) {
+      console.warn(`Operation ${operationId} not found for data quality`);
+      return;
+    }
+
+    operation.dataQuality = dataQuality;
+  }
+
+  /**
+   * Add validation check to a stage
+   */
+  addValidationCheck(operationId: string, stageName: string, check: ValidationCheck): void {
+    const operation = this.activeOperations.get(operationId);
+    if (!operation) {
+      console.warn(`Operation ${operationId} not found for validation check`);
+      return;
+    }
+
+    const stage = operation.stages.find(s => s.stage === stageName);
+    if (!stage) {
+      console.warn(`Stage ${stageName} not found in operation ${operationId}`);
+      return;
+    }
+
+    if (!stage.validationChecks) {
+      stage.validationChecks = [];
+    }
+    stage.validationChecks.push(check);
+  }
+
+  /**
+   * Add data quality info to a stage
+   */
+  addStageDataQuality(operationId: string, stageName: string, dataQuality: DataQualityInfo): void {
+    const operation = this.activeOperations.get(operationId);
+    if (!operation) {
+      console.warn(`Operation ${operationId} not found for stage data quality`);
+      return;
+    }
+
+    const stage = operation.stages.find(s => s.stage === stageName);
+    if (!stage) {
+      console.warn(`Stage ${stageName} not found in operation ${operationId}`);
+      return;
+    }
+
+    stage.dataQuality = dataQuality;
+  }
+
+  /**
+   * Add decision metrics to a stage
+   */
+  addDecisionMetrics(operationId: string, stageName: string, metrics: DecisionMetrics): void {
+    const operation = this.activeOperations.get(operationId);
+    if (!operation) {
+      console.warn(`Operation ${operationId} not found for decision metrics`);
+      return;
+    }
+
+    const stage = operation.stages.find(s => s.stage === stageName);
+    if (!stage) {
+      console.warn(`Stage ${stageName} not found in operation ${operationId}`);
+      return;
+    }
+
+    stage.decisionMetrics = metrics;
   }
 
   /**

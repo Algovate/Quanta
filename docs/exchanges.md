@@ -180,4 +180,4 @@ quanta test exchange --exchange <exchange> --coin BTC
 ---
 
 **Last Updated**: January 2025  
-**Version**: 0.1.0
+**Version**: 0.3.0

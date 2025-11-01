@@ -38,7 +38,8 @@ Complete documentation index for the Quanta AI trading system.
   - API configuration
   - Abbreviation guide
 
-- **[Logging Guide](logging-guide.md)** (32KB)
+- **[Logging Guide](logging-guide.md)** (52KB)
+  - Core concepts (Cycle, Trace, Operation, Stage, Snapshot)
   - Operation-driven logging system
   - Operation lifecycle tracking
   - Error aggregation
@@ -46,6 +47,7 @@ Complete documentation index for the Quanta AI trading system.
   - Metrics collection
   - Query interface and CLI commands
   - Storage architecture
+  - Algorithm correctness verification
 - **[Error Handling & Resilience](error-handling.md)** (20KB)
   - Circuit breaker patterns
   - Retry strategies
@@ -86,18 +88,18 @@ Complete documentation index for the Quanta AI trading system.
 
 ## 📊 Documentation Statistics
 
-| Document              | Size      | Lines      | Purpose               |
-| --------------------- | --------- | ---------- | --------------------- |
-| README.md             | 8.0KB     | 211        | Documentation index   |
-| getting-started.md    | 4.0KB     | 113        | Quick setup           |
-| trading-guide.md      | 8.0KB     | 244        | Trading operations    |
-| configuration.md      | 8.0KB     | 290        | System setup          |
-| commands.md           | 24KB      | 888        | Command reference     |
-| concepts.md           | 28KB      | 1,293      | Concepts & algorithms |
-| exchanges.md          | 8.0KB     | 176        | Exchange support      |
-| logging-guide.md      | 32KB      | 1,074      | Logging system        |
-| error-handling.md     | 20KB      | 686        | Error handling & resilience |
-| **Total**             | **~140KB**| **4,975**  | Complete docs         |
+| Document           | Size       | Lines     | Purpose                         |
+| ------------------ | ---------- | --------- | ------------------------------- |
+| README.md          | 8.0KB      | 218       | Documentation index             |
+| getting-started.md | 4.0KB      | 126       | Quick setup                     |
+| trading-guide.md   | 8.0KB      | 252       | Trading operations              |
+| configuration.md   | 12KB       | 347       | System setup                    |
+| commands.md        | 28KB       | 1,037     | Command reference               |
+| concepts.md        | 28KB       | 1,293     | Concepts & algorithms           |
+| exchanges.md       | 8.0KB      | 183       | Exchange support                |
+| logging-guide.md   | 52KB       | 1,718     | Logging concepts + system guide |
+| error-handling.md  | 20KB       | 688       | Error handling & resilience     |
+| **Total**          | **~168KB** | **5,862** | Complete docs                   |
 
 ## 🔍 Key Topics
 
@@ -209,5 +211,5 @@ All documentation is actively maintained and continuously improved. Latest updat
 
 ---
 
-**Version**: 0.1.0  
+**Version**: 0.3.0  
 **Last Updated**: January 2025

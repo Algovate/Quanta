@@ -72,23 +72,92 @@ export class PositionMonitorService implements PositionMonitor {
     return { shouldClose: false, reason: 'Position within normal parameters' };
   }
 
-  async monitorPositions(positions: Position[], exchange: Exchange): Promise<void> {
+  async monitorPositions(
+    positions: Position[],
+    exchange: Exchange
+  ): Promise<
+    Array<{
+      symbol: string;
+      side: string;
+      decisions: Array<{
+        type:
+          | 'maintenance'
+          | 'tp1'
+          | 'breakeven'
+          | 'auto_close'
+          | 'stop_loss'
+          | 'take_profit'
+          | 'emergency';
+        action: string;
+        reason: string;
+        details?: Record<string, any>;
+      }>;
+    }>
+  > {
     // Process positions in parallel with error isolation
     const monitorPromises = positions.map(position =>
       this.monitorSinglePosition(position, exchange).catch(error => {
         this.logger.error(`Critical: Failed to monitor ${position.symbol}`, error);
-        // Could emit event for manual intervention
-        // EventBus.emit('position:monitor:failed', { position, error });
+        // Return decision info for failed monitoring
+        return {
+          symbol: position.symbol,
+          side: position.side,
+          decisions: [
+            {
+              type: 'emergency' as const,
+              action: 'monitor_failed',
+              reason: error instanceof Error ? error.message : String(error),
+            },
+          ],
+        };
       })
     );
 
-    await Promise.allSettled(monitorPromises);
+    const results = await Promise.allSettled(monitorPromises);
+    return results
+      .filter(
+        (r): r is PromiseFulfilledResult<{ symbol: string; side: string; decisions: Array<any> }> =>
+          r.status === 'fulfilled'
+      )
+      .map(r => r.value);
   }
 
   /**
    * Monitor a single position with retry logic and timeout protection
    */
-  private async monitorSinglePosition(position: Position, exchange: Exchange): Promise<void> {
+  private async monitorSinglePosition(
+    position: Position,
+    exchange: Exchange
+  ): Promise<{
+    symbol: string;
+    side: string;
+    decisions: Array<{
+      type:
+        | 'maintenance'
+        | 'tp1'
+        | 'breakeven'
+        | 'auto_close'
+        | 'stop_loss'
+        | 'take_profit'
+        | 'emergency';
+      action: string;
+      reason: string;
+      details?: Record<string, any>;
+    }>;
+  }> {
+    const decisions: Array<{
+      type:
+        | 'maintenance'
+        | 'tp1'
+        | 'breakeven'
+        | 'auto_close'
+        | 'stop_loss'
+        | 'take_profit'
+        | 'emergency';
+      action: string;
+      reason: string;
+      details?: Record<string, any>;
+    }> = [];
     const MAX_RETRIES = 3;
     const TIMEOUT_MS = 5000;
 
@@ -113,8 +182,22 @@ export class PositionMonitorService implements PositionMonitor {
         const maint = this.riskManager.checkMaintenance(position, currentPrice);
         if (maint.shouldLiquidate) {
           const reason = `Maintenance margin breached (ratio ${maint.marginRatio.toFixed(2)})`;
+          decisions.push({
+            type: 'maintenance',
+            action: 'close',
+            reason,
+            details: {
+              marginRatio: maint.marginRatio,
+              equityOnPosition: maint.equityOnPosition,
+              maintenanceMargin: maint.maintenanceMargin,
+            },
+          });
           await this.executePositionClose(position, currentPrice, reason);
-          return; // done
+          return {
+            symbol: position.symbol,
+            side: position.side,
+            decisions,
+          };
         }
 
         const key = position.symbol;
@@ -139,6 +222,21 @@ export class PositionMonitorService implements PositionMonitor {
             st.breakevenApplied = true;
             st.flatCycles = 0; // Reset flat counter on profit
             this.stateBySymbol.set(key, st);
+            decisions.push({
+              type: 'tp1',
+              action: 'partial_close_50pct',
+              reason: `1R reached (${rMultiple.toFixed(2)}), closed 50% and moved stop to breakeven`,
+              details: {
+                rMultiple,
+                closePercent: 0.5,
+                orderSuccess: result.success,
+              },
+            });
+            decisions.push({
+              type: 'breakeven',
+              action: 'move_stop',
+              reason: 'Stop moved to breakeven after TP1',
+            });
           }
         } catch (e) {
           this.logger.warn('Partial TP processing error', {
@@ -167,17 +265,37 @@ export class PositionMonitorService implements PositionMonitor {
                   `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${position.trailingStopPrice?.toFixed(2)}`
                 );
               }
+              decisions.push({
+                type: 'breakeven',
+                action: 'move_stop',
+                reason: `Flat for ${st.flatCycles} cycles, moved stop to breakeven`,
+                details: {
+                  flatCycles: st.flatCycles,
+                  rMultiple,
+                },
+              });
             }
 
             // After M cycles flat, auto-close
             if (st.flatCycles >= ORDER_EXECUTION.FLAT_CYCLES_BEFORE_AUTO_CLOSE) {
-              await this.executePositionClose(
-                position,
-                currentPrice,
-                `flat-auto-close | cycles=${st.flatCycles} r<=${ORDER_EXECUTION.FLAT_R_MULTIPLE_THRESHOLD}`
-              );
+              const reason = `flat-auto-close | cycles=${st.flatCycles} r<=${ORDER_EXECUTION.FLAT_R_MULTIPLE_THRESHOLD}`;
+              decisions.push({
+                type: 'auto_close',
+                action: 'close',
+                reason,
+                details: {
+                  flatCycles: st.flatCycles,
+                  rMultiple,
+                  threshold: ORDER_EXECUTION.FLAT_R_MULTIPLE_THRESHOLD,
+                },
+              });
+              await this.executePositionClose(position, currentPrice, reason);
               this.stateBySymbol.delete(key); // Clean up state
-              return; // Position closed, exit
+              return {
+                symbol: position.symbol,
+                side: position.side,
+                decisions,
+              };
             }
           } else {
             // Reset flat counter when position moves
@@ -194,11 +312,28 @@ export class PositionMonitorService implements PositionMonitor {
         // Check if position should be closed by stops/targets
         const { shouldClose, reason } = this.shouldClosePosition(position, currentPrice);
         if (shouldClose) {
+          let decisionType: 'stop_loss' | 'take_profit' | 'emergency' = 'stop_loss';
+          if (reason.includes('Take profit')) decisionType = 'take_profit';
+          else if (reason.includes('Emergency')) decisionType = 'emergency';
+
+          decisions.push({
+            type: decisionType,
+            action: 'close',
+            reason,
+            details: {
+              currentPrice,
+              entryPrice: position.entryPrice,
+            },
+          });
           await this.executePositionClose(position, currentPrice, reason);
           this.stateBySymbol.delete(key); // Clean up state on close
         }
 
-        return; // Success - exit retry loop
+        return {
+          symbol: position.symbol,
+          side: position.side,
+          decisions,
+        };
       } catch (error) {
         const isLastAttempt = attempt === MAX_RETRIES;
 
@@ -207,7 +342,18 @@ export class PositionMonitorService implements PositionMonitor {
             `Failed to monitor ${position.symbol} after ${MAX_RETRIES} attempts`,
             error
           );
-          throw error; // Re-throw on final attempt
+          // Return decision info for failed monitoring
+          return {
+            symbol: position.symbol,
+            side: position.side,
+            decisions: [
+              {
+                type: 'emergency' as const,
+                action: 'monitor_failed',
+                reason: error instanceof Error ? error.message : String(error),
+              },
+            ],
+          };
         }
 
         // Exponential backoff before retry

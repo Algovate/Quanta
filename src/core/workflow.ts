@@ -16,6 +16,47 @@ import { ExchangeSnapshotService } from './exchange-snapshot.js';
 import { getConfig } from '../config/settings.js';
 import { UnifiedLogger } from '../logging/index.js';
 
+// Decision information types for signal execution
+interface SignalDecisionInfo {
+  coin: string;
+  action: string;
+  validation: { passed: boolean; reason?: string };
+  sizing: {
+    passed: boolean;
+    leverage?: number;
+    suggestedSize?: number;
+    riskAmount?: number;
+    regime?: string;
+    atrAdjustment?: number;
+  };
+  execution: {
+    expectedPrice: number;
+    actualPrice?: number;
+    slippage?: number;
+    slippageAbs?: number;
+    orderId?: string;
+  };
+}
+
+// Decision information types for position monitoring
+interface PositionDecisionInfo {
+  symbol: string;
+  side: string;
+  decisions: Array<{
+    type:
+      | 'maintenance'
+      | 'tp1'
+      | 'breakeven'
+      | 'auto_close'
+      | 'stop_loss'
+      | 'take_profit'
+      | 'emergency';
+    action: string;
+    reason: string;
+    details?: Record<string, any>;
+  }>;
+}
+
 export interface SystemState {
   isRunning: boolean;
   cycleCount: number;
@@ -527,10 +568,105 @@ export class TradingWorkflow {
       this.unifiedLogger.startStage(cycleOperationId, 'monitor_positions', {
         positionsCount: positions.length,
       });
+      let positionDecisionInfos: PositionDecisionInfo[] = [];
+
       if (positions.length > 0) {
         const monitorStartTime = Date.now();
-        await this.positionMonitor.monitorPositions(positions, this.exchange);
+        positionDecisionInfos = await this.positionMonitor.monitorPositions(
+          positions,
+          this.exchange
+        );
         const monitorDuration = Date.now() - monitorStartTime;
+
+        // Build decision path for monitor_positions
+        const positionsWithDecisions = positionDecisionInfos.filter(p => p.decisions.length > 0);
+        const totalDecisions = positionDecisionInfos.reduce(
+          (sum, p) => sum + p.decisions.length,
+          0
+        );
+
+        if (totalDecisions > 0) {
+          // Group decisions by type
+          const decisionsByType: Record<string, number> = {};
+          for (const pos of positionDecisionInfos) {
+            for (const decision of pos.decisions) {
+              decisionsByType[decision.type] = (decisionsByType[decision.type] || 0) + 1;
+            }
+          }
+
+          // Build decision summary
+          const decisionParts: string[] = [];
+          if (decisionsByType['tp1']) {
+            decisionParts.push(`${decisionsByType['tp1']} TP1 (50% close)`);
+          }
+          if (decisionsByType['breakeven']) {
+            decisionParts.push(`${decisionsByType['breakeven']} breakeven`);
+          }
+          if (decisionsByType['auto_close']) {
+            decisionParts.push(`${decisionsByType['auto_close']} auto-close`);
+          }
+          if (decisionsByType['stop_loss']) {
+            decisionParts.push(`${decisionsByType['stop_loss']} stop loss`);
+          }
+          if (decisionsByType['take_profit']) {
+            decisionParts.push(`${decisionsByType['take_profit']} take profit`);
+          }
+          if (decisionsByType['maintenance']) {
+            decisionParts.push(`${decisionsByType['maintenance']} maintenance`);
+          }
+          if (decisionsByType['emergency']) {
+            decisionParts.push(`${decisionsByType['emergency']} emergency`);
+          }
+          const decision =
+            decisionParts.length > 0
+              ? `Monitored ${positions.length} positions: ${decisionParts.join(', ')}`
+              : `Monitored ${positions.length} positions: no actions`;
+
+          // Build detailed reason
+          const reasonParts: string[] = [];
+          reasonParts.push(
+            `Monitored ${positions.length} positions, ${totalDecisions} decisions made`
+          );
+
+          if (positionsWithDecisions.length > 0) {
+            reasonParts.push(`\nPositions with actions (${positionsWithDecisions.length}):`);
+            for (const pos of positionsWithDecisions.slice(0, 5)) {
+              // Top 5
+              const decisionSummary = pos.decisions.map(d => d.type).join(', ');
+              reasonParts.push(`  • ${pos.symbol} (${pos.side}): ${decisionSummary}`);
+              for (const decision of pos.decisions.slice(0, 2)) {
+                reasonParts.push(`    → ${decision.action}: ${decision.reason}`);
+              }
+            }
+            if (positionsWithDecisions.length > 5) {
+              reasonParts.push(`  ... and ${positionsWithDecisions.length - 5} more`);
+            }
+          }
+
+          const reason = reasonParts.join('\n');
+
+          // Record operation-level decision path (append to existing)
+          this.unifiedLogger.appendDecisionChoice(cycleOperationId, {
+            step: 'monitor_positions',
+            decision,
+            reason,
+            factors: {
+              positions: positionDecisionInfos,
+              summary: {
+                total: positions.length,
+                withDecisions: positionsWithDecisions.length,
+                totalDecisions,
+              },
+              decisionsByType,
+              decisionsDetail: positionDecisionInfos.map(p => ({
+                symbol: p.symbol,
+                side: p.side,
+                decisions: p.decisions,
+              })),
+            },
+          });
+        }
+
         this.unifiedLogger.completeStage(cycleOperationId, 'monitor_positions', {
           duration: monitorDuration,
         });
@@ -592,11 +728,95 @@ export class TradingWorkflow {
 
       const { marketData: allMarketData, successCount, failCount } = marketDataResult;
       const fetchMs = Date.now() - fetchStart;
+
+      // Calculate data quality metrics
+      const expectedItems = this.config.coins.length * timeframes.length;
+      const missingItems: string[] = [];
+      const gaps: Array<{
+        symbol: string;
+        timeframe: string;
+        missingFrom: number;
+        missingTo: number;
+      }> = [];
+      let latestTimestamp = 0;
+      let staleCount = 0;
+
+      for (const coin of this.config.coins) {
+        for (const timeframe of timeframes) {
+          const key = `${coin}:${timeframe}`;
+          const data = allMarketData.find(md => md.coin === coin && md.timeframe === timeframe);
+          if (!data) {
+            missingItems.push(key);
+          } else {
+            // Check for latest timestamp
+            if (data.candlesticks.length > 0) {
+              const lastCandle = data.candlesticks[data.candlesticks.length - 1];
+              if (lastCandle.timestamp > latestTimestamp) {
+                latestTimestamp = lastCandle.timestamp;
+              }
+            }
+            // Check if stale
+            if (data.isStale || (data.cacheAge && data.cacheAge > 60000)) {
+              staleCount++;
+            }
+            // Detect gaps in candlesticks
+            if (data.candlesticks.length > 1) {
+              const timeframeMs = timeframe === '3m' ? 3 * 60 * 1000 : 4 * 60 * 60 * 1000;
+              for (let i = 1; i < data.candlesticks.length; i++) {
+                const gap = data.candlesticks[i].timestamp - data.candlesticks[i - 1].timestamp;
+                if (gap > timeframeMs * 1.5) {
+                  gaps.push({
+                    symbol: `${coin}/USDT`,
+                    timeframe,
+                    missingFrom: data.candlesticks[i - 1].timestamp + timeframeMs,
+                    missingTo: data.candlesticks[i].timestamp - timeframeMs,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      const dataQuality = {
+        freshness: latestTimestamp > 0 ? Date.now() - latestTimestamp : 0,
+        isStale: staleCount > 0,
+        completeness: expectedItems > 0 ? allMarketData.length / expectedItems : 0,
+        gapsCount: gaps.length,
+      };
+
+      this.unifiedLogger.recordDataQuality(cycleOperationId, 'fetch_market_data', dataQuality);
+
+      const marketDataQuality = {
+        expectedItems,
+        actualItems: allMarketData.length,
+        missingItems: missingItems.length > 0 ? missingItems : undefined,
+        gaps: gaps.length > 0 ? gaps : undefined,
+        staleCount,
+        latestTimestamp,
+      };
+
       this.unifiedLogger.completeStage(cycleOperationId, 'fetch_market_data', {
         itemsCount: allMarketData.length,
         successCount,
         failCount,
         duration: fetchMs,
+        dataQuality: marketDataQuality,
+      });
+
+      // Record operation-level data quality metrics
+      this.unifiedLogger.recordOperationDataQuality(cycleOperationId, {
+        freshness: {
+          latestTimestamp,
+          ageMs: dataQuality.freshness,
+          isStale: dataQuality.isStale,
+        },
+        completeness: {
+          expectedItems,
+          actualItems: allMarketData.length,
+          missingItems: missingItems.length > 0 ? missingItems : undefined,
+        },
+        gaps: gaps.length > 0 ? gaps : undefined,
       });
       this.emitLog(
         'info',
@@ -679,9 +899,101 @@ export class TradingWorkflow {
         this.state.totalSignals += signals.length;
         const signalDuration = Date.now() - signalStartTime;
         this.unifiedLogger.recordAPILatency('ai.generateSignal', signalDuration);
+
+        // Calculate signal quality metrics
+        const actionCounts: Record<string, number> = {};
+        const confidenceScores: number[] = [];
+        for (const signal of signals) {
+          actionCounts[signal.action] = (actionCounts[signal.action] || 0) + 1;
+          confidenceScores.push(signal.confidence);
+        }
+        const avgConfidence =
+          confidenceScores.length > 0
+            ? confidenceScores.reduce((a, b) => a + b, 0) / confidenceScores.length
+            : 0;
+        const minConfidence = confidenceScores.length > 0 ? Math.min(...confidenceScores) : 0;
+        const maxConfidence = confidenceScores.length > 0 ? Math.max(...confidenceScores) : 0;
+
+        // Record decision metrics for signal generation
+        if (signals.length > 0) {
+          const decisionMetrics = {
+            confidence: avgConfidence,
+            threshold: 0.55, // MIN_CONFIDENCE from SIGNAL_VALIDATION
+            reasoning: `Generated ${signals.length} signals from ${allMarketData.length} market data items`,
+            factors: {
+              actionDistribution: actionCounts,
+              confidenceRange: { min: minConfidence, max: maxConfidence, avg: avgConfidence },
+              marketDataCount: allMarketData.length,
+              promptOptions: context.promptOptions,
+            },
+          };
+
+          this.unifiedLogger.recordDecisionMetrics(
+            cycleOperationId,
+            'generate_signals',
+            decisionMetrics
+          );
+
+          // Build enriched decision path with AI reasoning
+          const decision = this.buildSignalDecisionString(signals);
+          const reason = this.buildSignalDecisionReason(
+            signals,
+            allMarketData.length
+          );
+          const decisionConfidence = this.calculatePrimaryDecisionConfidence(
+            signals,
+            confidenceScores,
+            avgConfidence
+          );
+
+          // Record operation-level decision path with enriched information
+          this.unifiedLogger.recordDecisionPath(cycleOperationId, {
+            choices: [
+              {
+                step: 'generate_signals',
+                decision,
+                reason,
+                confidence: decisionConfidence,
+                threshold: 0.55,
+                factors: {
+                  signals: signals.map(s => ({
+                    coin: s.coin,
+                    action: s.action,
+                    confidence: s.confidence,
+                    reasoning: s.reasoning,
+                    entryPrice: s.entry_price,
+                    positionSize: s.position_size,
+                    stopLoss: s.stop_loss,
+                    profitTarget: s.profit_target,
+                    invalidationCondition: s.invalidation_condition,
+                  })),
+                  actionDistribution: actionCounts,
+                  confidenceRange: { min: minConfidence, max: maxConfidence, avg: avgConfidence },
+                  marketDataCount: allMarketData.length,
+                  promptOptions: context.promptOptions,
+                },
+              },
+            ],
+          });
+        }
+
         this.unifiedLogger.completeStage(cycleOperationId, 'generate_signals', {
           signalCount: signals.length,
           duration: signalDuration,
+          signalQuality: {
+            actionDistribution: actionCounts,
+            confidenceStats: {
+              min: minConfidence,
+              max: maxConfidence,
+              avg: avgConfidence,
+            },
+            aiContext: {
+              invokeCount: context.invokeCount,
+              tradableCoins: context.tradableCoins.length,
+              maxPositions: context.maxPositions,
+              promptOptions: context.promptOptions,
+            },
+          },
         });
       } catch (error) {
         signalError = error instanceof Error ? error : new Error(String(error));
@@ -729,6 +1041,18 @@ export class TradingWorkflow {
       // This ensures each signal sees the current state (positions opened by previous signals)
       let currentPositions = positions;
       let currentAccount = account;
+
+      // Start execute_signals stage BEFORE executing signals
+      // This ensures the stage exists when executeSignal tries to record validation checks
+      this.unifiedLogger.startStage(cycleOperationId, 'execute_signals', {
+        signalCount: signals.length,
+        actionableSignals: signals.filter(s => s.action !== 'HOLD').length,
+      });
+      const executeStartTime = Date.now();
+
+      // Accumulate decision information for all signals
+      const signalDecisionInfos: SignalDecisionInfo[] = [];
+
       for (const signal of signals) {
         if (!this.state.isRunning) {
           break; // Stop processing signals if workflow stopped
@@ -749,6 +1073,14 @@ export class TradingWorkflow {
             action: signal.action,
             price: currentPrice,
           });
+          // Record decision info for skipped signal
+          signalDecisionInfos.push({
+            coin: signal.coin,
+            action: signal.action,
+            validation: { passed: false, reason: 'Price unavailable' },
+            sizing: { passed: false },
+            execution: { expectedPrice: currentPrice || 0 },
+          });
           continue; // Skip this signal and continue with next
         }
 
@@ -760,6 +1092,7 @@ export class TradingWorkflow {
         const indicators = coinMarketData?.indicators;
 
         const result = await this.executeSignal(
+          cycleOperationId,
           signal,
           currentAccount,
           currentPositions,
@@ -768,6 +1101,11 @@ export class TradingWorkflow {
           atr14,
           indicators
         );
+
+        // Collect decision information
+        if (result.decisionInfo) {
+          signalDecisionInfos.push(result.decisionInfo);
+        }
 
         // Refresh positions and account after successful signal execution
         // This ensures subsequent signals see the updated state
@@ -803,18 +1141,110 @@ export class TradingWorkflow {
         totalTrades: this.state.totalTrades,
       });
 
-      // Complete signal execution stage
-      this.unifiedLogger.startStage(cycleOperationId, 'execute_signals', {
-        signalCount: signals.length,
-        actionableSignals: signals.filter(s => s.action !== 'HOLD').length,
-      });
-      const executeStartTime = Date.now();
-
       // 5.5. Refresh account and positions after executing signals using a single snapshot
       const { account: updatedAccount, positions: updatedPositions } =
         await this.snapshotService.getSnapshot();
 
       const executeDuration = Date.now() - executeStartTime;
+
+      // Build decision path for execute_signals
+      const acceptedSignals = signalDecisionInfos.filter(
+        d => d.validation.passed && d.sizing.passed
+      );
+      const rejectedValidation = signalDecisionInfos.filter(d => !d.validation.passed);
+      const rejectedSizing = signalDecisionInfos.filter(
+        d => d.validation.passed && !d.sizing.passed
+      );
+      const executedSignals = signalDecisionInfos.filter(d => d.execution.orderId);
+
+      // Build decision summary
+      const decisionParts: string[] = [];
+      if (acceptedSignals.length > 0) {
+        const byAction: Record<string, string[]> = {};
+        for (const sig of acceptedSignals) {
+          if (!byAction[sig.action]) byAction[sig.action] = [];
+          byAction[sig.action].push(sig.coin);
+        }
+        const actionSummary = Object.entries(byAction)
+          .map(([action, coins]) => `${action}: ${coins.join(', ')}`)
+          .join('; ');
+        decisionParts.push(`Accepted: ${acceptedSignals.length} (${actionSummary})`);
+      }
+      if (rejectedValidation.length > 0) {
+        const reasons = rejectedValidation
+          .map(s => `${s.coin}(${s.validation.reason || 'unknown'})`)
+          .join(', ');
+        decisionParts.push(`Rejected (validation): ${rejectedValidation.length} (${reasons})`);
+      }
+      if (rejectedSizing.length > 0) {
+        const coins = rejectedSizing.map(s => s.coin).join(', ');
+        decisionParts.push(`Rejected (sizing): ${rejectedSizing.length} (${coins})`);
+      }
+      const decision = decisionParts.length > 0 ? decisionParts.join('; ') : 'No signals processed';
+
+      // Build concise reason for decision path (detailed info in validation checks)
+      const reasonParts: string[] = [];
+      reasonParts.push(
+        `Processed ${signalDecisionInfos.length} signals, executed ${executedSignals.length} orders`
+      );
+      if (acceptedSignals.length > 0) {
+        reasonParts.push(`Accepted: ${acceptedSignals.length}`);
+      }
+      if (rejectedValidation.length > 0) {
+        reasonParts.push(`Rejected (validation): ${rejectedValidation.length}`);
+      }
+      if (rejectedSizing.length > 0) {
+        reasonParts.push(`Rejected (sizing): ${rejectedSizing.length}`);
+      }
+
+      const reason = reasonParts.join('\n');
+
+      // Record operation-level decision path (append to existing if any)
+      this.unifiedLogger.appendDecisionChoice(cycleOperationId, {
+        step: 'execute_signals',
+        decision,
+        reason,
+        factors: {
+          signals: signalDecisionInfos,
+          summary: {
+            total: signalDecisionInfos.length,
+            accepted: acceptedSignals.length,
+            rejectedValidation: rejectedValidation.length,
+            rejectedSizing: rejectedSizing.length,
+            executed: executedSignals.length,
+          },
+          validationSummary: {
+            passed: acceptedSignals.length + rejectedSizing.length,
+            failed: rejectedValidation.length,
+            reasons: rejectedValidation.map(s => ({ coin: s.coin, reason: s.validation.reason })),
+          },
+          sizingSummary: {
+            passed: acceptedSignals.length,
+            failed: rejectedSizing.length,
+            details: acceptedSignals.map(s => ({
+              coin: s.coin,
+              leverage: s.sizing.leverage,
+              size: s.sizing.suggestedSize,
+              riskAmount: s.sizing.riskAmount,
+              regime: s.sizing.regime,
+              atrAdjustment: s.sizing.atrAdjustment,
+            })),
+          },
+          executionSummary: {
+            executed: executedSignals.length,
+            details: executedSignals.map(s => ({
+              coin: s.coin,
+              expectedPrice: s.execution.expectedPrice,
+              actualPrice: s.execution.actualPrice,
+              slippage: s.execution.slippage,
+              slippageAbs: s.execution.slippageAbs,
+              orderId: s.execution.orderId,
+            })),
+          },
+        },
+      });
+
+      // Complete signal execution stage
       this.unifiedLogger.completeStage(cycleOperationId, 'execute_signals', {
         executedCount: this.state.totalTrades - tradesBefore,
         duration: executeDuration,
@@ -890,6 +1320,9 @@ export class TradingWorkflow {
         actionCounts,
       });
 
+      // Aggregate validation checks from execute_signals stage before completing operation
+      this.unifiedLogger.aggregateValidationResults(cycleOperationId, 'execute_signals');
+
       // Complete cycle operation
       this.unifiedLogger.completeStage(cycleOperationId, 'cycle_start', {
         cycleCount: this.state.cycleCount,
@@ -943,6 +1376,7 @@ export class TradingWorkflow {
    * @returns OrderResult to indicate success/failure and allow position refresh
    */
   private async executeSignal(
+    cycleOperationId: string,
     signal: TradingSignal,
     account: Account,
     positions: Position[],
@@ -950,11 +1384,87 @@ export class TradingWorkflow {
     currentPrice: number,
     atr14?: number,
     indicators?: import('../types/index.js').TechnicalIndicators
-  ): Promise<{ success: boolean; order?: { id: string }; error?: string }> {
+  ): Promise<{
+    success: boolean;
+    order?: { id: string };
+    error?: string;
+    decisionInfo?: {
+      coin: string;
+      action: string;
+      validation: { passed: boolean; reason?: string };
+      sizing: {
+        passed: boolean;
+        leverage?: number;
+        suggestedSize?: number;
+        riskAmount?: number;
+        regime?: string;
+        atrAdjustment?: number;
+      };
+      execution: {
+        expectedPrice: number;
+        actualPrice?: number;
+        slippage?: number;
+        slippageAbs?: number;
+        orderId?: string;
+      };
+    };
+  }> {
     try {
       const symbol = `${signal.coin}/USDT`;
 
-      // Get position sizing info for detailed logging
+      // Validate signal before execution
+      const validationResult = this.riskManager.validateSignal(signal, account, positions);
+
+      // Record validation check
+      this.unifiedLogger.recordValidationCheck(cycleOperationId, 'execute_signals', {
+        name: 'signal_validation',
+        passed: validationResult.valid,
+        reason: validationResult.reason,
+        details: {
+          coin: signal.coin,
+          action: signal.action,
+          confidence: signal.confidence,
+        },
+      });
+
+      if (!validationResult.valid) {
+        this.state.rejectedSignals++;
+        this.state.rejectedSignalsCycle++;
+        return {
+          success: false,
+          error: validationResult.reason || 'Signal validation failed',
+          decisionInfo: {
+            coin: signal.coin,
+            action: signal.action,
+            validation: { passed: false, reason: validationResult.reason },
+            sizing: { passed: false },
+            execution: { expectedPrice: currentPrice },
+          },
+        };
+      }
+
+      // Handle HOLD signals early - no sizing or execution validation needed
+      if (signal.action === 'HOLD') {
+        const hasPosition = positions.some(p => p.symbol === `${signal.coin}/USDT`);
+        this.emitLog(
+          'info',
+          hasPosition
+            ? `⏸️  ${signal.coin}: HOLD - monitoring existing position`
+            : `⏸️  ${signal.coin}: HOLD - no action`
+        );
+        return {
+          success: true,
+          decisionInfo: {
+            coin: signal.coin,
+            action: signal.action,
+            validation: { passed: true },
+            sizing: { passed: true },
+            execution: { expectedPrice: currentPrice },
+          },
+        };
+      }
+
+      // Get position sizing info for detailed logging (non-HOLD signals only)
       const sizing = this.riskManager.calculatePositionSizing(
         signal,
         account,
@@ -964,17 +1474,30 @@ export class TradingWorkflow {
         indicators
       );
 
-      // Handle HOLD signals
-      if (signal.action === 'HOLD') {
-        const hasPosition = positions.some(p => p.symbol === `${signal.coin}/USDT`);
-        this.emitLog(
-          'info',
-          hasPosition
-            ? `⏸️  ${signal.coin}: HOLD - monitoring existing position`
-            : `⏸️  ${signal.coin}: HOLD - no action`
-        );
-        return { success: true };
+      // Detect market regime for decision path (simplified logic)
+      let regime: 'trending' | 'ranging' | 'unknown' = 'unknown';
+      if (indicators && currentPrice > 0) {
+        // Use Bollinger Bandwidth as indicator (narrow = ranging, wide = trending)
+        const bandwidth = indicators.bollinger?.bandwidth;
+        if (bandwidth !== undefined) {
+          regime = bandwidth < 0.02 ? 'ranging' : 'trending';
+        }
       }
+
+      // Record sizing calculation check (non-HOLD signals only)
+      this.unifiedLogger.recordValidationCheck(cycleOperationId, 'execute_signals', {
+        name: 'position_sizing',
+        passed: sizing !== null,
+        reason: sizing === null ? 'Risk limit or max positions reached' : undefined,
+        details: sizing
+          ? {
+              suggestedSize: sizing.suggestedSize,
+              maxSize: sizing.maxSize,
+              riskAmount: sizing.riskAmount,
+              leverage: sizing.leverage,
+            }
+          : undefined,
+      });
 
       // Check if sizing calculation failed
       if (!sizing) {
@@ -984,7 +1507,17 @@ export class TradingWorkflow {
           'warn',
           `⚠️  ${signal.coin}: ${signal.action} signal rejected (risk limit or max positions reached)`
         );
-        return { success: false, error: 'Position sizing calculation failed' };
+        return {
+          success: false,
+          error: 'Position sizing calculation failed',
+          decisionInfo: {
+            coin: signal.coin,
+            action: signal.action,
+            validation: { passed: true },
+            sizing: { passed: false },
+            execution: { expectedPrice: currentPrice },
+          },
+        };
       }
 
       // Execute the signal
@@ -1000,6 +1533,36 @@ export class TradingWorkflow {
 
         // Use actual order execution price, not estimated ticker price
         const actualPrice = result.order.price || currentPrice;
+
+        // Calculate slippage
+        const slippage = currentPrice > 0 ? ((actualPrice - currentPrice) / currentPrice) * 100 : 0;
+        const slippageAbs = Math.abs(slippage);
+
+        // Record execution validation
+        this.unifiedLogger.recordValidationCheck(cycleOperationId, 'execute_signals', {
+          name: 'execution_price_validation',
+          passed: slippageAbs <= 5, // 5% tolerance
+          reason:
+            slippageAbs > 5 ? `Significant price deviation: ${slippage.toFixed(2)}%` : undefined,
+          threshold: 5,
+          actual: slippageAbs,
+          details: {
+            expectedPrice: currentPrice,
+            actualPrice,
+            slippage,
+            slippageAbs,
+            orderId: result.order.id,
+            realizedPnl: result.realizedPnl,
+            fees: result.fees,
+            sizing: sizing
+              ? {
+                  suggestedSize: sizing.suggestedSize,
+                  leverage: sizing.leverage,
+                  riskAmount: sizing.riskAmount,
+                }
+              : undefined,
+          },
+        });
 
         // Guard: warn if execution price deviates significantly from current ticker (possible symbol mismatch)
         try {
@@ -1054,11 +1617,52 @@ export class TradingWorkflow {
         );
       }
 
+      // Calculate ATR adjustment for decision info
+      const atrAdjustment =
+        atr14 && currentPrice > 0
+          ? (this.riskManager as any).detectRegime?.(indicators, currentPrice) === 'trending'
+            ? 1.33
+            : (this.riskManager as any).detectRegime?.(indicators, currentPrice) === 'ranging'
+              ? 0.75
+              : 1.0
+          : undefined;
+
       // Return result for caller to know if positions should be refreshed
       return {
         success: result.success,
         order: result.order,
         error: result.error,
+        decisionInfo: {
+          coin: signal.coin,
+          action: signal.action,
+          validation: { passed: true },
+          sizing: {
+            passed: true,
+            leverage: sizing.leverage,
+            suggestedSize: sizing.suggestedSize,
+            riskAmount: sizing.riskAmount,
+            regime: regime !== 'unknown' ? regime : undefined,
+            atrAdjustment,
+          },
+          execution: {
+            expectedPrice: currentPrice,
+            actualPrice:
+              result.success && result.order ? result.order.price || currentPrice : undefined,
+            slippage:
+              result.success && result.order
+                ? currentPrice > 0
+                  ? ((result.order.price || currentPrice) - currentPrice) / currentPrice
+                  : undefined
+                : undefined,
+            slippageAbs:
+              result.success && result.order
+                ? currentPrice > 0
+                  ? Math.abs(((result.order.price || currentPrice) - currentPrice) / currentPrice)
+                  : undefined
+                : undefined,
+            orderId: result.success && result.order ? result.order.id : undefined,
+          },
+        },
       };
     } catch (error) {
       this.emitLog('error', `Error executing signal for ${signal.coin}: ${error}`);
@@ -1067,6 +1671,113 @@ export class TradingWorkflow {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /**
+   * Build decision string from signals grouped by action
+   */
+  private buildSignalDecisionString(signals: TradingSignal[]): string {
+    const signalsByAction: Record<
+      string,
+      Array<{ coin: string; confidence: number }>
+    > = {};
+    
+    for (const signal of signals) {
+      if (!signalsByAction[signal.action]) {
+        signalsByAction[signal.action] = [];
+      }
+      signalsByAction[signal.action].push({
+        coin: signal.coin,
+        confidence: signal.confidence,
+      });
+    }
+
+    const decisionParts: string[] = [];
+    for (const [action, signalList] of Object.entries(signalsByAction)) {
+      const signalSummary = signalList
+        .map(s => `${s.coin}(${(s.confidence * 100).toFixed(0)}%)`)
+        .join(', ');
+      decisionParts.push(`${action}: ${signalSummary}`);
+    }
+    
+    return decisionParts.join('; ');
+  }
+
+  /**
+   * Build decision reason with AI reasoning summary
+   */
+  private buildSignalDecisionReason(
+    signals: TradingSignal[],
+    marketDataCount: number
+  ): string {
+    const reasonParts: string[] = [
+      `Generated ${signals.length} signals from ${marketDataCount} market data items`,
+    ];
+
+    const reasoningSummary = this.extractAIReasoningSummary(signals);
+    if (reasoningSummary) {
+      reasonParts.push(`Key reasoning: ${reasoningSummary}`);
+    }
+
+    return reasonParts.join('\n');
+  }
+
+  /**
+   * Extract AI reasoning summary from primary signals (non-HOLD signals have priority)
+   */
+  private extractAIReasoningSummary(
+    signals: TradingSignal[],
+    maxLength: number = 150
+  ): string | null {
+    const primarySignals = signals.filter(s => s.action !== 'HOLD');
+    const reasoningSource = primarySignals.length > 0 ? primarySignals : signals;
+
+    // Select the highest confidence signal's reasoning
+    const bestSignal = reasoningSource.sort(
+      (a, b) => b.confidence - a.confidence
+    )[0];
+
+    if (!bestSignal?.reasoning) {
+      return null;
+    }
+
+    // Extract key reasoning (first maxLength characters or until sentence end)
+    let reasoningSummary = bestSignal.reasoning.trim();
+    if (reasoningSummary.length > maxLength) {
+      // Try to cut at sentence boundary
+      const sentenceEnd = reasoningSummary.substring(0, maxLength).lastIndexOf('.');
+      if (sentenceEnd > maxLength * 0.67) {
+        // Only cut at sentence if it's reasonably far into the text (2/3 of maxLength)
+        reasoningSummary = reasoningSummary.substring(0, sentenceEnd + 1);
+      } else {
+        reasoningSummary = reasoningSummary.substring(0, maxLength) + '...';
+      }
+    }
+
+    return reasoningSummary;
+  }
+
+  /**
+   * Calculate confidence for primary decisions (non-HOLD signals)
+   * Uses primary signals' confidence if available, otherwise uses average
+   */
+  private calculatePrimaryDecisionConfidence(
+    signals: TradingSignal[],
+    _allConfidenceScores: number[],
+    overallAvgConfidence: number
+  ): number {
+    const primarySignals = signals.filter(s => s.action !== 'HOLD');
+    
+    if (primarySignals.length === 0) {
+      // If only HOLD signals, use overall average
+      return overallAvgConfidence;
+    }
+
+    // Calculate average confidence of primary signals
+    const primaryConfidences = primarySignals.map(s => s.confidence);
+    return (
+      primaryConfidences.reduce((a, b) => a + b, 0) / primaryConfidences.length
+    );
   }
 
   private updatePerformanceMetrics(account: Account, aggregates: PositionAggregates): void {

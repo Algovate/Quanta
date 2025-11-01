@@ -14,6 +14,69 @@ export interface TraceContext {
   parentOperationId?: string; // For nested operations
 }
 
+export interface DecisionPath {
+  choices: Array<{
+    step: string;
+    decision: string;
+    reason: string;
+    confidence?: number;
+    threshold?: number;
+    factors?: Record<string, any>; // Additional detailed information (signals, reasoning, etc.)
+  }>;
+}
+
+export interface ValidationResults {
+  passed: boolean;
+  checks: Array<{
+    check: string;
+    passed: boolean;
+    reason?: string;
+    details?: Record<string, any>;
+  }>;
+}
+
+export interface DataQualityMetrics {
+  freshness: {
+    latestTimestamp: number;
+    ageMs: number;
+    isStale: boolean;
+  };
+  completeness: {
+    expectedItems: number;
+    actualItems: number;
+    missingItems?: string[];
+  };
+  gaps?: Array<{
+    symbol: string;
+    timeframe: string;
+    missingFrom: number;
+    missingTo: number;
+  }>;
+}
+
+export interface DataQualityInfo {
+  freshness: number; // Age in ms
+  isStale: boolean;
+  completeness: number; // 0-1 ratio
+  gapsCount: number;
+}
+
+export interface ValidationCheck {
+  name: string;
+  passed: boolean;
+  reason?: string;
+  threshold?: number;
+  actual?: number;
+  details?: Record<string, any>;
+}
+
+export interface DecisionMetrics {
+  confidence: number;
+  threshold: number;
+  reasoning?: string;
+  factors?: Record<string, any>;
+}
+
 export interface OperationStage {
   stage: string;
   startTime: number;
@@ -24,6 +87,9 @@ export interface OperationStage {
   output?: Record<string, any>;
   error?: ErrorInfo;
   metadata?: Record<string, any>;
+  dataQuality?: DataQualityInfo;
+  validationChecks?: ValidationCheck[];
+  decisionMetrics?: DecisionMetrics;
 }
 
 export interface ErrorInfo {
@@ -61,6 +127,9 @@ export interface OperationLog {
     systemState?: Record<string, any>;
   };
   tags?: string[];
+  decisionPath?: DecisionPath;
+  validationResults?: ValidationResults;
+  dataQuality?: DataQualityMetrics;
 }
 
 export interface SystemSnapshot {

@@ -125,8 +125,8 @@ export class StorageLayer {
         INSERT OR REPLACE INTO operations (
           operationId, traceId, cycleId, operationType, symbol, parentOperationId,
           startTime, endTime, status, duration, input, output, error,
-          stages, metrics, context, tags, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          stages, metrics, context, tags, decisionPath, validationResults, dataQuality, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       stmt.run(
@@ -147,6 +147,9 @@ export class StorageLayer {
         JSON.stringify(operation.metrics),
         operation.context ? JSON.stringify(operation.context) : null,
         operation.tags ? JSON.stringify(operation.tags) : null,
+        operation.decisionPath ? JSON.stringify(operation.decisionPath) : null,
+        operation.validationResults ? JSON.stringify(operation.validationResults) : null,
+        operation.dataQuality ? JSON.stringify(operation.dataQuality) : null,
         Date.now()
       );
 
@@ -242,6 +245,9 @@ export class StorageLayer {
         metrics TEXT NOT NULL,
         context TEXT,
         tags TEXT,
+        decisionPath TEXT,
+        validationResults TEXT,
+        dataQuality TEXT,
         createdAt INTEGER NOT NULL
       );
 
@@ -253,6 +259,52 @@ export class StorageLayer {
       CREATE INDEX IF NOT EXISTS idx_startTime ON operations(startTime);
       CREATE INDEX IF NOT EXISTS idx_parentOperationId ON operations(parentOperationId);
     `);
+
+    // Migrate existing tables: add missing columns if they don't exist
+    this.migrateL1Tables();
+  }
+
+  /**
+   * Migrate L1 database tables to add new columns
+   */
+  private migrateL1Tables(): void {
+    if (!this.l1Database) {
+      return;
+    }
+
+    try {
+      // Check if table exists
+      const tableInfo = this.l1Database
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='operations'")
+        .get();
+
+      if (!tableInfo) {
+        return; // Table doesn't exist, will be created by CREATE TABLE IF NOT EXISTS
+      }
+
+      // Get existing columns
+      const columns = this.l1Database.prepare('PRAGMA table_info(operations)').all() as Array<{
+        name: string;
+      }>;
+
+      const columnNames = new Set(columns.map(col => col.name));
+
+      // Add missing columns
+      if (!columnNames.has('decisionPath')) {
+        this.l1Database.exec('ALTER TABLE operations ADD COLUMN decisionPath TEXT');
+      }
+
+      if (!columnNames.has('validationResults')) {
+        this.l1Database.exec('ALTER TABLE operations ADD COLUMN validationResults TEXT');
+      }
+
+      if (!columnNames.has('dataQuality')) {
+        this.l1Database.exec('ALTER TABLE operations ADD COLUMN dataQuality TEXT');
+      }
+    } catch (error) {
+      console.error('Failed to migrate L1 tables:', error);
+      // Continue execution - migration failures are not critical
+    }
   }
 
   /**
@@ -315,6 +367,7 @@ export class StorageLayer {
     options: {
       cycleId?: number;
       traceId?: string;
+      operationId?: string;
       operationType?: string;
       status?: string;
       symbol?: string;
@@ -343,8 +396,15 @@ export class StorageLayer {
       }
 
       if (options.traceId) {
-        query += ' AND traceId = ?';
-        params.push(options.traceId);
+        // Support partial match using LIKE for SQLite
+        query += ' AND traceId LIKE ?';
+        params.push(`${options.traceId}%`);
+      }
+
+      if (options.operationId) {
+        // Support partial match using LIKE for SQLite
+        query += ' AND operationId LIKE ?';
+        params.push(`${options.operationId}%`);
       }
 
       if (options.operationType) {
@@ -403,6 +463,9 @@ export class StorageLayer {
         metrics: string;
         context: string | null;
         tags: string | null;
+        decisionPath: string | null;
+        validationResults: string | null;
+        dataQuality: string | null;
         createdAt: number;
       }>;
 
@@ -424,6 +487,9 @@ export class StorageLayer {
         metrics: JSON.parse(row.metrics),
         context: row.context ? JSON.parse(row.context) : undefined,
         tags: row.tags ? JSON.parse(row.tags) : undefined,
+        decisionPath: row.decisionPath ? JSON.parse(row.decisionPath) : undefined,
+        validationResults: row.validationResults ? JSON.parse(row.validationResults) : undefined,
+        dataQuality: row.dataQuality ? JSON.parse(row.dataQuality) : undefined,
       }));
     } catch (error) {
       console.error('Failed to query operations from L1:', error);
@@ -604,6 +670,63 @@ export class StorageLayer {
   }
 
   /**
+   * List all snapshots from storage
+   */
+  async listSnapshots(): Promise<
+    Array<{ snapshotId: string; timestamp: number; cycleId: number }>
+  > {
+    if (!fs.existsSync(this.config.l2Directory)) {
+      return [];
+    }
+
+    try {
+      const files = await fs.promises.readdir(this.config.l2Directory);
+      const snapshots: Array<{ snapshotId: string; timestamp: number; cycleId: number }> = [];
+
+      for (const file of files) {
+        if (!file.startsWith('snapshot-')) continue;
+
+        // Remove .json or .json.gz extension
+        const snapshotId = file.replace(/^snapshot-/, '').replace(/\.json(\.gz)?$/, '');
+
+        try {
+          const snapshot = await this.getSnapshotById(snapshotId);
+          if (snapshot) {
+            snapshots.push({
+              snapshotId: snapshot.snapshotId,
+              timestamp: snapshot.timestamp,
+              cycleId: snapshot.cycleId,
+            });
+          }
+        } catch {
+          // Skip corrupted snapshots
+          continue;
+        }
+      }
+
+      // Sort by timestamp descending (newest first)
+      snapshots.sort((a, b) => b.timestamp - a.timestamp);
+      return snapshots;
+    } catch (error) {
+      console.error('Error listing snapshots:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get latest snapshot from storage
+   */
+  async getLatestSnapshot(): Promise<SystemSnapshot | null> {
+    const snapshots = await this.listSnapshots();
+    if (snapshots.length === 0) {
+      return null;
+    }
+
+    // Get the most recent snapshot
+    return await this.getSnapshotById(snapshots[0].snapshotId);
+  }
+
+  /**
    * Get operations in time range
    */
   async getOperationsInTimeRange(startTime: number, endTime: number): Promise<OperationLog[]> {
@@ -777,10 +900,7 @@ export class StorageLayer {
   /**
    * Get cleanup preview (dry-run)
    */
-  async getCleanupPreview(options: {
-    maxCycles?: number;
-    keepDays?: number;
-  }): Promise<{
+  async getCleanupPreview(options: { maxCycles?: number; keepDays?: number }): Promise<{
     l1CyclesToClean: number[];
     l2CyclesToClean: number[];
     l3CyclesToClean: number[];
@@ -803,7 +923,7 @@ export class StorageLayer {
           const oldCycles = new Set(oldOps.map(op => op.cycleId));
           l1CyclesToClean.push(...oldCycles);
           estimatedOperationsToClean += oldOps.length;
-        } catch (error) {
+        } catch {
           // Ignore errors
         }
       }
@@ -822,7 +942,7 @@ export class StorageLayer {
               estimatedOperationsToClean += files.filter(f => f.endsWith('.json')).length;
             }
           }
-        } catch (error) {
+        } catch {
           // Ignore errors
         }
       }
@@ -839,7 +959,7 @@ export class StorageLayer {
               l3CyclesToClean.push(parseInt(dir.replace('cycle-', ''), 10));
             }
           }
-        } catch (error) {
+        } catch {
           // Ignore errors
         }
       }
@@ -865,7 +985,7 @@ export class StorageLayer {
               estimatedOperationsToClean += files.filter(f => f.endsWith('.json')).length;
             }
           }
-        } catch (error) {
+        } catch {
           // Ignore errors
         }
       }
@@ -927,7 +1047,7 @@ export class StorageLayer {
       try {
         const l1Count = await this.getL1OperationCount();
         totalOperations += l1Count;
-      } catch (error) {
+      } catch {
         // Ignore errors
       }
     }

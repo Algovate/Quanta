@@ -129,7 +129,6 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 - 📖 [Getting Started](docs/getting-started.md)
 - 🎯 [Trading Guide](docs/trading-guide.md)
 - 🔧 [Configuration](docs/configuration.md)
-- 🧪 [Testing &amp; Simulation](docs/testing-simulation.md)
 - 📚 [Command Reference](docs/commands.md)
 - 💡 [Core Concepts](docs/concepts.md)
 - 🏦 [Supported Exchanges](docs/exchanges.md)

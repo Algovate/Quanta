@@ -72,15 +72,33 @@ export function createWorkflowDeps(
   };
   // Emit warnings when clamping altered user-provided values
   if (bands) {
-    const warn = (name: string, prev: number, next: number) => {
-      if (prev !== next)
-        console.warn(`[risk-guard] Clamped ${name}: ${prev} -> ${next} for marketType=${mt}`);
+    const formatPercent = (val: number, isPercent: boolean) => {
+      if (isPercent) return `${(val * 100).toFixed(1)}%`;
+      return val.toString();
+    };
+    const warn = (name: string, prev: number, next: number, isPercent = false) => {
+      if (prev !== next) {
+        console.warn(
+          `[risk-guard] Clamped ${name}: ${formatPercent(prev, isPercent)} -> ${formatPercent(next, isPercent)} for marketType=${mt}`
+        );
+      }
     };
     warn('leverage.min', userLevMin, effLevMin);
     warn('leverage.max', userLevMax, effLevMax);
-    warn('stopLoss', userSL, effSL);
-    warn('maxRisk', userRisk, effRisk);
+    warn('stopLoss', userSL, effSL, true);
+    warn('maxRisk', userRisk, effRisk, true);
     warn('maxPositions', userMaxPos, effMaxPos);
+
+    // Show summary of all parameters after validation
+    console.log(`[risk-guard] Risk parameters for marketType=${mt}:`);
+    console.log(`   Leverage: ${effLevMin}x - ${effLevMax}x`);
+    console.log(
+      `   Stop Loss: ${(effSL * 100).toFixed(1)}% (range: ${(bands.slMin * 100).toFixed(1)}% - ${(bands.slMax * 100).toFixed(1)}%)`
+    );
+    console.log(
+      `   Max Risk: ${(effRisk * 100).toFixed(1)}% (range: ${(bands.riskMin * 100).toFixed(1)}% - ${(bands.riskMax * 100).toFixed(1)}%)`
+    );
+    console.log(`   Max Positions: ${effMaxPos} (range: ${bands.posMin} - ${bands.posMax})`);
   }
   return { marketProvider, aiClient, workflowConfig };
 }

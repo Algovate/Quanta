@@ -47,8 +47,30 @@ quanta trade start --mode live --coins BTC
 
 **Startup Output:**
 
-- Logs show `MarketType` and effective risk parameters (leverage min/max, stopLoss, maxRisk, maxPositions).
-- If provided values exceed safe bands for the detected market type, they are clamped and a warning is printed.
+Configuration display includes:
+
+```
+📊 Configuration:
+   Mode: paper
+   Exchange: Paper (OKX, testnet)
+   Market Type: spot
+```
+
+Risk parameter validation:
+
+- Shows warnings for parameters that are adjusted (e.g., `[risk-guard] Clamped leverage.min: 5 -> 1`)
+- Displays a summary of all effective risk parameters with their allowed ranges:
+
+```
+[risk-guard] Risk parameters for marketType=spot:
+   Leverage: 1x - 1x
+   Stop Loss: 5.0% (range: 3.0% - 7.0%)
+   Max Risk: 5.0% (range: 3.0% - 5.0%)
+   Max Positions: 6 (range: 6 - 10)
+```
+
+- Parameters within the allowed range are shown without warnings
+- Only adjusted parameters show warning messages
 
 ---
 
@@ -497,11 +519,13 @@ Options:
   --type <type>          Filter by operation type (e.g., signal_generation, order_execution)
   --status <status>      Filter by status (running|completed|failed|cancelled)
   --symbol <symbol>      Filter by symbol (e.g., BTC/USDT)
-  --trace-id <id>        Filter by trace ID
-  --operation-id <id>    Filter by operation ID
+  --trace-id <id>        Filter by trace ID (supports partial match)
+  --operation-id <id>    Filter by operation ID (supports partial match)
   --limit <limit>        Limit number of results (default: 50)
   --offset <offset>      Offset for pagination (default: 0)
   --format <format>      Output format (table|json, default: table)
+  --verbose              Show detailed information including errors and stages
+  --detail               Show full operation details (same as --verbose)
 ```
 
 **Examples:**
@@ -530,21 +554,115 @@ quanta log query --format json
 
 # Pagination
 quanta log query --limit 20 --offset 0
+
+# Partial match for IDs (use truncated IDs from table)
+quanta log query --operation-id e42b844d
+quanta log query --trace-id trace-10
+
+# Detailed view with all stages and information
+quanta log query --verbose
+quanta log query --detail
+
+# JSON format for full details
+quanta log query --format json
 ```
 
 **Output Format:**
+
+Table format (default):
 
 ```
 📋 Operations Query Results
 Found 25 operations
 
-┌────────────┬─────────────┬──────────┬──────────┬─────────────┬────────────┐
-│ Operation  │ Type        │ Status   │ Symbol   │ Duration    │ Time       │
-├────────────┼─────────────┼──────────┼──────────┼─────────────┼────────────┤
-│ abc123...  │ signal_gen  │ SUCCESS  │ BTC/USDT │ 1.2s        │ 10:30:15   │
-│ def456...  │ order_exec  │ FAILED   │ ETH/USDT │ 0.5s        │ 10:30:20   │
-└────────────┴─────────────┴──────────┴──────────┴─────────────┴────────────┘
+┌──────────────┬──────────┬──────────────┬─────────────────┬────────────┬────────────┬──────────────┬────────────┐
+│ Operation    │ Cycle    │ Trace        │ Type            │ Status     │ Symbol     │ Duration     │ Time       │
+├──────────────┼──────────┼──────────────┼─────────────────┼────────────┼────────────┼──────────────┼────────────┤
+│ e42b844d-... │ 10       │ trace-10-... │ trading_cycle   │ completed  │ -          │ 12.73s       │ 14:24:33   │
+│ 1a4b7175-... │ 9        │ trace-9-1... │ trading_cycle   │ completed  │ -          │ 20.29s       │ 14:21:33   │
+└──────────────┴──────────┴──────────────┴─────────────────┴────────────┴────────────┴──────────────┴────────────┘
 ```
+
+Detailed format (`--verbose` or `--detail`):
+
+```
+📋 Operation 1/25
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔹 Basic Information:
+   ID: 456468a4-4faf-463f-bef0-3a0577b9fb13
+   Type: trading_cycle
+   Status: completed
+   Cycle ID: 2
+   Trace ID: trace-2-1761976833581
+
+⏱️  Timing:
+   Start: 14:00:33 (2025-11-01T06:00:33.581Z)
+   End: 14:00:45 (2025-11-01T06:00:45.504Z)
+   Duration: 11.92s
+
+📊 Stages:
+   Total: 7
+   ✓ cycle_start (11.92s)
+   ✓ fetch_account (1ms)
+   ✓ monitor_positions
+   ✓ fetch_market_data (1.30s)
+   ✓ generate_signals (10.62s)
+   ✓ execute_signals
+   ✓ create_snapshot
+
+🛤️  Decision Path:
+   signal_generation: ACCEPTED
+      └─ Generated 3 signals from 6 market data items
+      └─ Confidence: 67.5%
+
+✅ Validation Results:
+   Overall: PASSED
+   ✓ signal_validation
+   ✓ position_sizing
+   ✓ execution_price_validation
+      └─ Actual: 0.15%, Threshold: 5%
+
+📊 Data Quality:
+   Freshness: 1.30s
+   Stale: No
+   Completeness: 100.0% (6/6)
+   Gaps: 0
+```
+
+**Algorithm Correctness Information:**
+
+When using `--verbose` or `--detail`, the output includes detailed algorithm correctness information. For a complete guide, see [Algorithm Correctness Verification](logging-guide.md#algorithm-correctness-verification).
+
+- **🛤️ Decision Path**: Step-by-step decisions made during the operation, including reasons and confidence levels
+- **✅ Validation Results**: All risk checks and validation tests performed, showing which checks passed/failed and why
+- **📊 Data Quality**: Data freshness, completeness, and gaps in input data used by algorithms
+- **🔍 Validation Checks** (per stage): Stage-level validation checks (e.g., `signal_validation`, `position_sizing`, `execution_price_validation`)
+- **📊 Data Quality** (per stage): Per-stage data quality metrics
+- **🎯 Decision Metrics** (per stage): Decision-making metrics including confidence, threshold, and reasoning
+
+**Examples for Algorithm Correctness:**
+
+```bash
+# View decision process for signal generation
+quanta log query --type trading_cycle --verbose | grep -A 20 "Decision Metrics"
+
+# View validation results (including rejection reasons)
+quanta log query --status failed --verbose | grep -A 15 "Validation Results"
+
+# View data quality metrics
+quanta log query --verbose | grep -A 10 "Data Quality"
+
+# JSON format for complete correctness data
+quanta log query --format json | jq '.operations[0] | {decisionPath, validationResults, dataQuality}'
+
+# Find operations with data quality issues
+quanta log query --format json | jq '.operations[] | select(.dataQuality.freshness.isStale == true)'
+
+# Find validation failures
+quanta log query --format json | jq '.operations[] | select(.validationResults.passed == false)'
+```
+
+**Note:** Operation ID and Trace ID support partial matching. You can use truncated IDs from the table (e.g., `e42b844d` instead of the full UUID).
 
 ---
 
@@ -625,18 +743,27 @@ quanta log trace trace-42-1234567890 --format json
 **Output Format:**
 
 ```
-🔍 Operation Trace
-Trace ID: trace-42-1234567890 | Cycle ID: 42
+🔍 Trace Details
+Trace ID: trace-2-1761976833581
 
-Overall Status: COMPLETED | Duration: 2.5s
+📋 Trace Info:
+   Trace ID: trace-2-1761976833581
+   Cycle ID: 2
+   Status: completed
+   Duration: 11.92s
+   Operations: 1
 
-Operations in Trace:
-┌────────────┬─────────────┬──────────┬──────────┬─────────────┬────────────┐
-│ Operation  │ Type        │ Status   │ Symbol   │ Duration    │ Time       │
-├────────────┼─────────────┼──────────┼──────────┼─────────────┼────────────┤
-│ op1-abc... │ signal_gen  │ SUCCESS  │ BTC/USDT │ 1.2s        │ 10:30:15   │
-│ op2-def... │ order_exec  │ SUCCESS  │ BTC/USDT │ 0.8s        │ 10:30:16   │
-└────────────┴─────────────┴──────────┴──────────┴─────────────┴────────────┘
+🌳 Root Operation:
+   Operation ID: 456468a4-...
+   Type: trading_cycle
+   Status: completed
+
+📝 Operations in Trace:
+┌──────────────┬──────────┬──────────────┬─────────────────┬────────────┬────────────┬──────────────┬────────────┐
+│ Operation    │ Cycle    │ Trace        │ Type            │ Status     │ Symbol     │ Duration     │ Time       │
+├──────────────┼──────────┼──────────────┼─────────────────┼────────────┼────────────┼──────────────┼────────────┤
+│ 456468a4-... │ 2        │ trace-2-1... │ trading_cycle   │ completed  │ -          │ 11.92s       │ 14:00:33   │
+└──────────────┴──────────┴──────────────┴─────────────────┴────────────┴────────────┴──────────────┴────────────┘
 ```
 
 ---
@@ -670,21 +797,21 @@ quanta log search "signal" --format json
 **Output Format:**
 
 ```
-🔎 Search Results for "API timeout"
+🔍 Search Results for "API timeout"
 Found 12 operations
 
-┌────────────┬─────────────┬──────────┬──────────┬─────────────┬────────────┐
-│ Operation  │ Type        │ Status   │ Symbol   │ Duration    │ Time       │
-├────────────┼─────────────┼──────────┼──────────┼─────────────┼────────────┤
-│ ...        │ order_exec  │ FAILED   │ ETH/USDT │ 5.0s        │ 10:30:20   │
-└────────────┴─────────────┴──────────┴──────────┴─────────────┴────────────┘
+┌──────────────┬──────────┬──────────────┬─────────────────┬────────────┬────────────┬──────────────┬────────────┐
+│ Operation    │ Cycle    │ Trace        │ Type            │ Status     │ Symbol     │ Duration     │ Time       │
+├──────────────┼──────────┼──────────────┼─────────────────┼────────────┼────────────┼──────────────┼────────────┤
+│ ...          │ 5        │ trace-5-... │ order_exec      │ failed     │ ETH/USDT   │ 5.0s         │ 10:30:20   │
+└──────────────┴──────────┴──────────────┴─────────────────┴────────────┴────────────┴──────────────┴────────────┘
 ```
 
 ---
 
 ### `log snapshot [snapshot-id]` - Show Snapshot
 
-Display system snapshot details. Shows latest snapshot if snapshot-id is not provided.
+Display system snapshot details. Shows latest snapshot if snapshot-id is not provided. The command first tries to get the latest snapshot from memory (if workflow is running), then falls back to storage layer if no snapshot is found in memory.
 
 ```bash
 quanta log snapshot [snapshot-id] [options]
@@ -696,40 +823,40 @@ Options:
 **Examples:**
 
 ```bash
-# View latest snapshot
+# View latest snapshot (from memory or storage)
 quanta log snapshot
 
-# View specific snapshot
-quanta log snapshot snapshot-abc123
+# View specific snapshot by ID
+quanta log snapshot a9129f1f-5a5f-4ce5-af3c-8ac3b6905899
 
 # JSON output
 quanta log snapshot --format json
+quanta log snapshot <snapshot-id> --format json
 ```
+
+**Note:** Snapshots are automatically created at the end of each trading cycle. They are stored in the L2 storage layer and can be retrieved even after the workflow has stopped.
 
 **Output Format:**
 
 ```
 📸 System Snapshot
-Timestamp: 10:30:00 | Cycle: 42
+Snapshot ID: a9129f1f-5a5f-4ce5-af3c-8ac3b6905899
+
+⏰ Timestamp:
+   14:48:44
+   Cycle ID: 18
 
 💰 Account:
-   Equity: $10000.00
-   Balance: $9500.00
-   Margin Used: $500.00
-   Available Margin: $9500.00
+   Equity: $9978.88
+   Balance: $9978.88
+   Margin Used: $0.00
+   Available Margin: $9978.88
 
 📊 Positions:
-   BTC/USDT LONG: 0.1 @ $45000.00 | P&L: $50.00
-   ETH/USDT SHORT: 0.5 @ $3000.00 | P&L: -$25.00
+   No open positions
 
-📈 System Metrics:
-   uptime: 3600
-   errorRate: 0.05
-   avgCycleTime: 2.5
-   memoryUsage: {"heapUsed":52428800,"heapTotal":104857600,"rss":125829120}
-
-❌ Error Summary:
-   ApiError: {"totalCount":3,"affectedSymbols":["BTC/USDT"]}
+💻 System Metrics:
+   Memory: 75MB / 77MB (RSS: 228MB)
 ```
 
 ---
@@ -907,4 +1034,4 @@ For more details, see [Error Handling & Resilience](error-handling.md#health-che
 ---
 
 **Last Updated**: January 2025  
-**Version**: 0.1.0
+**Version**: 0.3.0

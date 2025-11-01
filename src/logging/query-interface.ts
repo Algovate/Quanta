@@ -89,6 +89,7 @@ export class QueryInterface {
     const l1Options: {
       cycleId?: number;
       traceId?: string;
+      operationId?: string;
       operationType?: string;
       status?: string;
       symbol?: string;
@@ -103,6 +104,9 @@ export class QueryInterface {
     }
     if (options.traceId) {
       l1Options.traceId = options.traceId;
+    }
+    if (options.operationId) {
+      l1Options.operationId = options.operationId;
     }
     if (options.operationType) {
       l1Options.operationType = options.operationType;
@@ -159,10 +163,17 @@ export class QueryInterface {
       operations = operations.filter(op => op.symbol === options.symbol);
     }
     if (options.traceId) {
-      operations = operations.filter(op => op.traceId === options.traceId);
+      // Support partial match for trace ID
+      operations = operations.filter(
+        op => op.traceId === options.traceId || op.traceId.startsWith(options.traceId)
+      );
     }
     if (options.operationId) {
-      operations = operations.filter(op => op.operationId === options.operationId);
+      // Support partial match for operation ID
+      operations = operations.filter(
+        op =>
+          op.operationId === options.operationId || op.operationId.startsWith(options.operationId)
+      );
     }
 
     // Sort
@@ -184,9 +195,10 @@ export class QueryInterface {
     });
 
     // Pagination
-    const offset = options.offset || 0;
-    const limit = options.limit || 100;
+    const offset = options.offset ?? 0;
+    const limit = options.limit ?? 100;
     const total = operations.length;
+    // Create a new array for pagination to avoid modifying the original
     const paginated = operations.slice(offset, offset + limit);
     const hasMore = offset + limit < total;
 
