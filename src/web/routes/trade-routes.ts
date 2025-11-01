@@ -1,18 +1,17 @@
 import { Router, Request, Response } from 'express';
-import { Logger } from '../../utils/logger.js';
 import {
   getPositionsService,
   getAccountService,
   closePositionService,
   placeOrderService,
 } from '../api-service.js';
-
-const logger = Logger.getInstance('TradeRoutes');
+import { sendErrorResponse, validateRequiredFields } from '../utils/error-handler.js';
+import type { TradingManager } from '../trading-manager.js';
 
 /**
  * Register trade-related routes
  */
-export function registerTradeRoutes(router: Router, tradingManager: any): void {
+export function registerTradeRoutes(router: Router, tradingManager: TradingManager): void {
   // Get positions
   router.get('/api/positions', async (_req: Request, res: Response) => {
     try {
@@ -24,8 +23,7 @@ export function registerTradeRoutes(router: Router, tradingManager: any): void {
       const positions = await getPositionsService(tradingManager);
       res.json(positions);
     } catch (error) {
-      logger.error('Error getting positions', error);
-      res.status(500).json({ error: 'Failed to get positions' });
+      sendErrorResponse(res, error, 'Failed to get positions', 500);
     }
   });
 
@@ -40,39 +38,58 @@ export function registerTradeRoutes(router: Router, tradingManager: any): void {
       const account = await getAccountService(tradingManager);
       res.json(account);
     } catch (error) {
-      logger.error('Error getting account', error);
-      res.status(500).json({ error: 'Failed to get account' });
+      sendErrorResponse(res, error, 'Failed to get account', 500);
     }
   });
 
   // Close position (by symbol and side)
   router.post('/api/position/close', async (req: Request, res: Response) => {
     try {
-      const { symbol, side } = req.body || {};
-      if (!symbol || !side) {
+      interface ClosePositionBody extends Record<string, unknown> {
+        symbol: string;
+        side: 'long' | 'short';
+      }
+
+      if (!validateRequiredFields<ClosePositionBody>(req.body, ['symbol', 'side'])) {
         return res.status(400).json({ error: 'Missing symbol or side' });
       }
 
+      const { symbol, side } = req.body as ClosePositionBody;
+
       const workflow = tradingManager.getWorkflow();
-      if (!workflow) return res.status(400).json({ error: 'Trading workflow is not running' });
+      if (!workflow) {
+        return res.status(400).json({ error: 'Trading workflow is not running' });
+      }
 
       try {
         const order = await closePositionService(tradingManager, { symbol, side });
         res.json({ success: true, order });
       } catch (e) {
-        return res.status(404).json({ error: e instanceof Error ? e.message : 'Not found' });
+        const statusCode = e instanceof Error && e.message.includes('not found') ? 404 : 400;
+        sendErrorResponse(res, e, 'Failed to close position', statusCode);
       }
     } catch (error) {
-      logger.error('Error closing position', error);
-      res.status(500).json({ error: 'Failed to close position' });
+      sendErrorResponse(res, error, 'Failed to close position', 500);
     }
   });
 
   // Place manual order
   router.post('/api/order', async (req: Request, res: Response) => {
     try {
-      const { symbol, side, amount, price, leverage } = req.body || {};
-      if (!symbol || !side || !amount || (side !== 'buy' && side !== 'sell')) {
+      interface PlaceOrderBody extends Record<string, unknown> {
+        symbol: string;
+        side: 'buy' | 'sell';
+        amount: number;
+        price?: number;
+        leverage?: number;
+      }
+
+      const body = req.body as PlaceOrderBody;
+
+      if (
+        !validateRequiredFields<PlaceOrderBody>(body, ['symbol', 'side', 'amount']) ||
+        (body.side !== 'buy' && body.side !== 'sell')
+      ) {
         return res.status(400).json({ error: 'Invalid order payload' });
       }
 
@@ -86,16 +103,15 @@ export function registerTradeRoutes(router: Router, tradingManager: any): void {
       }
 
       const order = await placeOrderService(tradingManager, {
-        symbol,
-        side,
-        amount: Number(amount),
-        price: price ? Number(price) : undefined,
-        leverage: leverage ? Number(leverage) : undefined,
+        symbol: body.symbol,
+        side: body.side,
+        amount: Number(body.amount),
+        price: body.price ? Number(body.price) : undefined,
+        leverage: body.leverage ? Number(body.leverage) : undefined,
       });
       res.json({ success: true, order });
     } catch (error) {
-      logger.error('Error placing order', error);
-      res.status(500).json({ error: 'Failed to place order' });
+      sendErrorResponse(res, error, 'Failed to place order', 500);
     }
   });
 }

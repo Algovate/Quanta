@@ -13,6 +13,7 @@ import {
   registerMarketRoutes,
   registerBacktestRoutes,
 } from './routes/index.js';
+import { createPriceCache, createKlineCache } from './utils/cache.js';
 
 const logger = Logger.getInstance('Server');
 
@@ -24,22 +25,9 @@ export class APIServer {
   private healthCheckService: HealthCheckService;
   private clients: Set<WebSocket> = new Set();
   private heartbeatInterval?: NodeJS.Timeout;
-  // lightweight in-memory caches (stored on tradingManager for access by routes)
-  private priceCache = new Map<string, { price: number; ts: number }>();
-  private klineCache = new Map<
-    string,
-    {
-      candle: {
-        timestamp: number;
-        open: number;
-        high: number;
-        low: number;
-        close: number;
-        volume: number;
-      };
-      ts: number;
-    }
-  >();
+  // Lightweight in-memory caches (stored on tradingManager for access by routes)
+  private readonly priceCache = createPriceCache();
+  private readonly klineCache = createKlineCache();
 
   constructor(port: number = 3001) {
     this.app = express();

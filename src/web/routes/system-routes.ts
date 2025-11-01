@@ -1,13 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { Logger } from '../../utils/logger.js';
 import { startTradingService } from '../api-service.js';
-
-const logger = Logger.getInstance('SystemRoutes');
+import { sendErrorResponse } from '../utils/error-handler.js';
+import type { TradingManager } from '../trading-manager.js';
 
 /**
  * Register system-related routes (status, start, stop, pause)
  */
-export function registerSystemRoutes(router: Router, tradingManager: any): void {
+export function registerSystemRoutes(router: Router, tradingManager: TradingManager): void {
   // Get system status
   router.get('/api/status', async (_req: Request, res: Response) => {
     try {
@@ -29,8 +28,7 @@ export function registerSystemRoutes(router: Router, tradingManager: any): void 
         positions,
       });
     } catch (error) {
-      logger.error('Error getting status', error);
-      res.status(500).json({ error: 'Failed to get status' });
+      sendErrorResponse(res, error, 'Failed to get status', 500);
     }
   });
 
@@ -42,8 +40,7 @@ export function registerSystemRoutes(router: Router, tradingManager: any): void 
 
       res.json({ success: true, message: 'Trading started' });
     } catch (error) {
-      logger.error('Error starting trade', error);
-      res.status(500).json({ error: 'Failed to start trading' });
+      sendErrorResponse(res, error, 'Failed to start trading', 500);
     }
   });
 
@@ -53,8 +50,7 @@ export function registerSystemRoutes(router: Router, tradingManager: any): void 
       await tradingManager.stop();
       res.json({ success: true, message: 'Trading stopped' });
     } catch (error) {
-      logger.error('Error stopping trade', error);
-      res.status(500).json({ error: 'Failed to stop trading' });
+      sendErrorResponse(res, error, 'Failed to stop trading', 500);
     }
   });
 
@@ -64,8 +60,7 @@ export function registerSystemRoutes(router: Router, tradingManager: any): void 
       await tradingManager.pause();
       res.json({ success: true, message: 'Trading paused' });
     } catch (error) {
-      logger.error('Error pausing trade', error);
-      res.status(500).json({ error: 'Failed to pause trading' });
+      sendErrorResponse(res, error, 'Failed to pause trading', 500);
     }
   });
 }

@@ -3,112 +3,91 @@ import { Logger } from '../../utils/logger.js';
 import { getConfig } from '../../config/settings.js';
 import { createDataSourceManager } from '../../core/data-source-manager.js';
 import type { Exchange } from '../../exchange/types.js';
+import { sendErrorResponse, validateRequiredQuery } from '../utils/error-handler.js';
+import { parseSymbolsQuery, normalizeSymbolForExchange } from '../utils/symbol-normalization.js';
+import { isPriceCacheValid, isKlineCacheValid, type KlineCacheEntry } from '../utils/cache.js';
+import type { TradingManager } from '../trading-manager.js';
 
 const logger = Logger.getInstance('MarketRoutes');
 
 /**
  * Register market data routes
  */
-export function registerMarketRoutes(router: Router, tradingManager: any): void {
+export function registerMarketRoutes(router: Router, tradingManager: TradingManager): void {
   // Market summary: current price and latest kline for symbols
   router.get('/api/market/summary', async (req: Request, res: Response) => {
     try {
-      const symbolsParam = String(req.query.symbols || '').trim();
-      const interval = (req.query.interval as string) || '1m';
-      const symbols = symbolsParam
-        ? symbolsParam
-            .split(',')
-            .map(s => decodeURIComponent(s.trim()))
-            .filter(Boolean)
-        : [];
-
-      if (!symbols.length) {
+      if (!validateRequiredQuery(req.query, ['symbols'])) {
         return res.status(400).json({ error: 'Missing symbols query param' });
       }
 
+      const symbols = parseSymbolsQuery(req.query);
+      if (symbols.length === 0) {
+        return res.status(400).json({ error: 'Invalid or empty symbols query param' });
+      }
+
+      const interval = (req.query.interval as string) || '1m';
       const exchange = await resolveExchange(tradingManager);
       const now = Date.now();
       const PRICE_TTL_MS = 1000;
       const KLINE_TTL_MS = 5000;
 
-      // Create caches if they don't exist
-      if (!tradingManager._priceCache) {
-        tradingManager._priceCache = new Map<string, { price: number; ts: number }>();
-      }
-      if (!tradingManager._klineCache) {
-        tradingManager._klineCache = new Map<
-          string,
-          {
-            candle: {
-              timestamp: number;
-              open: number;
-              high: number;
-              low: number;
-              close: number;
-              volume: number;
-            };
-            ts: number;
-          }
-        >();
+      // Ensure caches exist
+      if (!tradingManager._priceCache || !tradingManager._klineCache) {
+        return res.status(500).json({ error: 'Cache not initialized' });
       }
 
       const results = await Promise.all(
         symbols.map(async symbol => {
-          const exchangeName = exchange.getExchangeName?.() || '';
-          const sym = normalizeSymbolForExchange(exchangeName, symbol);
-
+          const sym = normalizeSymbolForExchange(exchange, symbol);
           let price: number | undefined = undefined;
-          let candle = null;
+          let candle: KlineCacheEntry['candle'] | null = null;
 
           try {
-            // price with cache - validate cached price before using
-            const priceEntry = tradingManager._priceCache.get(sym);
-            if (priceEntry && now - priceEntry.ts < PRICE_TTL_MS) {
-              // Validate cached price before using
-              if (priceEntry.price > 0 && isFinite(priceEntry.price)) {
-                price = priceEntry.price;
-              } else {
-                // Invalid cached price - remove it and fetch fresh
-                tradingManager._priceCache.delete(sym);
+            // Check price cache
+            const priceEntry = tradingManager._priceCache!.get(sym);
+            if (isPriceCacheValid(priceEntry, PRICE_TTL_MS, now)) {
+              price = priceEntry!.price;
+            } else {
+              // Invalid or expired cache - remove it
+              if (priceEntry) {
+                tradingManager._priceCache!.delete(sym);
               }
-            }
 
-            // Fetch fresh price if not cached or invalid
-            if (price === undefined) {
+              // Fetch fresh price
               try {
                 const ticker = await exchange.getTicker(sym);
-                // Only cache valid prices
                 if (ticker.price > 0 && isFinite(ticker.price)) {
                   price = ticker.price;
-                  tradingManager._priceCache.set(sym, { price, ts: now });
+                  tradingManager._priceCache!.set(sym, { price, ts: now });
                 } else {
                   logger.warn(`Invalid price from ticker for ${sym}: ${ticker.price}`);
                 }
               } catch (tickerError) {
                 logger.error(`Error fetching ticker for ${sym}:`, tickerError);
-                // Don't set price to 0 - leave undefined, return null for this symbol
               }
             }
 
-            // latest kline with cache
+            // Check kline cache
             const kKey = `${sym}_${interval}`;
-            const klineEntry = tradingManager._klineCache.get(kKey);
-            if (klineEntry && now - klineEntry.ts < KLINE_TTL_MS) {
-              candle = klineEntry.candle;
+            const klineEntry = tradingManager._klineCache!.get(kKey);
+            if (isKlineCacheValid(klineEntry, KLINE_TTL_MS, now)) {
+              candle = klineEntry!.candle;
             } else {
+              // Fetch fresh kline
               try {
                 const candles = await exchange.getCandlesticks(sym, interval, 1);
                 const last = candles && candles.length ? candles[candles.length - 1] : null;
-                candle = last || null;
-                if (candle) tradingManager._klineCache.set(kKey, { candle, ts: now });
+                if (last) {
+                  candle = last;
+                  tradingManager._klineCache!.set(kKey, { candle: last, ts: now });
+                }
               } catch (klineError) {
                 logger.error(`Error fetching candlesticks for ${sym}:`, klineError);
-                // Don't fail completely - just skip this symbol's kline
               }
             }
           } catch (error) {
             logger.error(`Error fetching data for ${sym}:`, error);
-            // Don't return zeros - return undefined/null to indicate failure
           }
 
           return {
@@ -130,33 +109,22 @@ export function registerMarketRoutes(router: Router, tradingManager: any): void 
 
       res.json({ data: results, interval, updatedAt: Date.now() });
     } catch (error) {
-      logger.error('Error getting market summary', error);
-      res.status(500).json({ error: 'Failed to get market summary' });
+      sendErrorResponse(res, error, 'Failed to get market summary', 500);
     }
   });
 }
 
 /**
- * Resolve exchange instance from workflow or config
+ * Resolves exchange instance from workflow or creates a new one from config
  */
-async function resolveExchange(tradingManager: any): Promise<Exchange> {
+async function resolveExchange(tradingManager: TradingManager): Promise<Exchange> {
   const workflow = tradingManager.getWorkflow();
-  if (workflow) return workflow.getExchange();
+  if (workflow) {
+    return workflow.getExchange();
+  }
+
+  // Fallback: create exchange from config
   const config = getConfig();
   const dsm = createDataSourceManager(config);
   return dsm.getExchange();
-}
-
-/**
- * Normalize symbol format for exchange-specific requirements
- */
-function normalizeSymbolForExchange(exchangeName: string, symbol: string): string {
-  const s = symbol.toUpperCase();
-  if (exchangeName === 'okx') {
-    // OKX futures/swap often require ":USDT" suffix, e.g., BTC/USDT:USDT
-    if (s.endsWith('/USDT') && !s.includes(':USDT')) {
-      return `${s}:USDT`;
-    }
-  }
-  return s;
 }
