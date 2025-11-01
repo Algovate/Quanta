@@ -119,6 +119,11 @@ export class TradingWorkflow {
   private barDrivenEnabled: boolean = false;
   private barUnsubscribe?: () => void;
   private unifiedLogger: UnifiedLogger;
+  // Optional getter to retrieve custom exit plans
+  private getCustomExitPlans?: (
+    symbol: string,
+    side: 'long' | 'short'
+  ) => { stopLoss?: number; takeProfit?: number };
 
   constructor(
     exchange: Exchange,
@@ -172,6 +177,21 @@ export class TradingWorkflow {
 
   public getConfig(): WorkflowConfig {
     return { ...this.config };
+  }
+
+  /**
+   * Set a getter function to retrieve custom exit plans for positions
+   */
+  public setCustomExitPlansGetter(
+    getter: (
+      symbol: string,
+      side: 'long' | 'short'
+    ) => {
+      stopLoss?: number;
+      takeProfit?: number;
+    }
+  ): void {
+    this.getCustomExitPlans = getter;
   }
 
   /**
@@ -571,9 +591,21 @@ export class TradingWorkflow {
       let positionDecisionInfos: PositionDecisionInfo[] = [];
 
       if (positions.length > 0) {
+        // Enrich positions with custom exit plans if getter is available
+        const enrichedPositions = this.getCustomExitPlans
+          ? positions.map(p => {
+              const customPlan = this.getCustomExitPlans!(p.symbol, p.side);
+              return {
+                ...p,
+                customStopLoss: customPlan.stopLoss,
+                customTakeProfit: customPlan.takeProfit,
+              };
+            })
+          : positions;
+
         const monitorStartTime = Date.now();
         positionDecisionInfos = await this.positionMonitor.monitorPositions(
-          positions,
+          enrichedPositions,
           this.exchange
         );
         const monitorDuration = Date.now() - monitorStartTime;

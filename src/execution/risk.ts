@@ -663,12 +663,20 @@ export class RiskManager {
   }
 
   checkStopLoss(position: Position, currentPrice: number): boolean {
-    const stopLossPrice = this.calculateStopLoss(position, position.entryPrice);
+    // Use custom stop loss if set, otherwise use calculated default
+    const stopLossPrice =
+      position.customStopLoss !== undefined
+        ? position.customStopLoss
+        : this.calculateStopLoss(position, position.entryPrice);
     return this.checkExitCondition(position, currentPrice, stopLossPrice, 'stop');
   }
 
   checkTakeProfit(position: Position, currentPrice: number): boolean {
-    const takeProfitPrice = this.calculateTakeProfit(position, position.entryPrice);
+    // Use custom take profit if set, otherwise use calculated default
+    const takeProfitPrice =
+      position.customTakeProfit !== undefined
+        ? position.customTakeProfit
+        : this.calculateTakeProfit(position, position.entryPrice);
     return this.checkExitCondition(position, currentPrice, takeProfitPrice, 'profit');
   }
 

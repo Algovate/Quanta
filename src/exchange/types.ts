@@ -33,8 +33,13 @@ export const PositionSchema = z.object({
   markPrice: z.number(),
   unrealizedPnl: z.number(),
   marginUsed: z.number(),
+  notional: z.number(),
   leverage: z.number(),
   timestamp: z.number(),
+  trailingStopPrice: z.number().optional(),
+  peakPrice: z.number().optional(),
+  customStopLoss: z.number().optional(),
+  customTakeProfit: z.number().optional(),
 });
 
 // Trading signal from AI

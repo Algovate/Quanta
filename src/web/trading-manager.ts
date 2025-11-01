@@ -45,6 +45,8 @@ export class TradingManager extends EventEmitter {
   private exchange?: Exchange;
   private marketDataProvider?: MarketDataProvider;
   private aiAgent?: OpenRouterClient;
+  // Custom exit plans storage (position key -> exit plan)
+  private customExitPlans: Map<string, { stopLoss?: number; takeProfit?: number }> = new Map();
 
   private constructor() {
     super();
@@ -143,6 +145,9 @@ export class TradingManager extends EventEmitter {
 
     this.workflow = new TradingWorkflow(exchange, marketDataProvider, aiAgent, config);
 
+    // Set up custom exit plans getter
+    this.workflow.setCustomExitPlansGetter((symbol, side) => this.getCustomExitPlan(symbol, side));
+
     // Wrap the workflow methods to emit events
     this.setupEventEmitters();
 
@@ -231,8 +236,18 @@ export class TradingManager extends EventEmitter {
           const account = await exchange.getAccount();
           const positions = await exchange.getPositions();
 
+          // Enrich positions with custom exit plans
+          const enrichedPositions = positions.map(p => {
+            const customPlan = this.getCustomExitPlan(p.symbol, p.side);
+            return {
+              ...p,
+              customStopLoss: customPlan.stopLoss,
+              customTakeProfit: customPlan.takeProfit,
+            };
+          });
+
           this.emit('account:update', account);
-          this.emit('position:update', positions);
+          this.emit('position:update', enrichedPositions);
 
           // Store equity snapshot
           if (account && account.equity !== undefined && account.timestamp) {
@@ -256,20 +271,21 @@ export class TradingManager extends EventEmitter {
             try {
               const pm = await maybePM.getPortfolioMetrics();
               // Derive additional portfolio quality metrics from current positions
-              const avgLev = positions.length
-                ? positions.reduce((sum, p) => sum + (p.leverage || 0), 0) / positions.length
+              const avgLev = enrichedPositions.length
+                ? enrichedPositions.reduce((sum, p) => sum + (p.leverage || 0), 0) /
+                  enrichedPositions.length
                 : 0;
               // Simple correlation/diversification proxies aligned with PositionMonitorService
-              const sides = positions.map(p => p.side);
+              const sides = enrichedPositions.map(p => p.side);
               const allSameSide = sides.length > 0 && sides.every(side => side === sides[0]);
               let correlationScore = allSameSide ? 0.8 : 0.3;
               correlationScore = Math.min(
                 1,
-                correlationScore * (positions.length > 0 ? 3 / positions.length : 1)
+                correlationScore * (enrichedPositions.length > 0 ? 3 / enrichedPositions.length : 1)
               );
-              const uniqueSymbols = new Set(positions.map(p => p.symbol)).size;
+              const uniqueSymbols = new Set(enrichedPositions.map(p => p.symbol)).size;
               const diversificationBase =
-                positions.length > 1 ? uniqueSymbols / positions.length : 1;
+                enrichedPositions.length > 1 ? uniqueSymbols / enrichedPositions.length : 1;
               const diversificationScore = allSameSide
                 ? diversificationBase * 0.7
                 : diversificationBase;
@@ -300,7 +316,7 @@ export class TradingManager extends EventEmitter {
               // Compute exposure by symbol (unlevered)
               const exposureBySymbol: Record<string, number> = {};
               let totalExposure = 0;
-              for (const p of positions) {
+              for (const p of enrichedPositions) {
                 // Validate markPrice before calculating exposure
                 // Only include positions with valid prices in exposure calculation
                 const validPrice = p.markPrice > 0 && isFinite(p.markPrice) ? p.markPrice : 0;
@@ -311,19 +327,20 @@ export class TradingManager extends EventEmitter {
               const leverage = account.equity > 0 ? totalExposure / account.equity : 0;
 
               // Derive additional portfolio quality metrics from current positions
-              const avgLev = positions.length
-                ? positions.reduce((sum, p) => sum + (p.leverage || 0), 0) / positions.length
+              const avgLev = enrichedPositions.length
+                ? enrichedPositions.reduce((sum, p) => sum + (p.leverage || 0), 0) /
+                  enrichedPositions.length
                 : 0;
-              const sides = positions.map(p => p.side);
+              const sides = enrichedPositions.map(p => p.side);
               const allSameSide = sides.length > 0 && sides.every(side => side === sides[0]);
               let correlationScore = allSameSide ? 0.8 : 0.3;
               correlationScore = Math.min(
                 1,
-                correlationScore * (positions.length > 0 ? 3 / positions.length : 1)
+                correlationScore * (enrichedPositions.length > 0 ? 3 / enrichedPositions.length : 1)
               );
-              const uniqueSymbols = new Set(positions.map(p => p.symbol)).size;
+              const uniqueSymbols = new Set(enrichedPositions.map(p => p.symbol)).size;
               const diversificationBase =
-                positions.length > 1 ? uniqueSymbols / positions.length : 1;
+                enrichedPositions.length > 1 ? uniqueSymbols / enrichedPositions.length : 1;
               const diversificationScore = allSameSide
                 ? diversificationBase * 0.7
                 : diversificationBase;
@@ -343,7 +360,10 @@ export class TradingManager extends EventEmitter {
               };
               if (risk.marginRatio > 0.5) risk.flags.push('High margin usage');
               // Approximate unrealized PnL sum for drawdown flag when pm unavailable
-              const totalUnrealizedPnl = positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0);
+              const totalUnrealizedPnl = enrichedPositions.reduce(
+                (s, p) => s + (p.unrealizedPnl || 0),
+                0
+              );
               if (account.equity > 0 && totalUnrealizedPnl < -account.equity * 0.05) {
                 risk.flags.push('Drawdown > 5%');
               }
@@ -461,6 +481,34 @@ export class TradingManager extends EventEmitter {
   // Risk snapshot
   getRisk(): RiskSnapshot | null {
     return this.latestRisk;
+  }
+
+  // Custom exit plans management
+  setCustomExitPlan(
+    symbol: string,
+    side: 'long' | 'short',
+    stopLoss?: number,
+    takeProfit?: number
+  ): void {
+    const key = `${symbol}:${side}`;
+    if (stopLoss === undefined && takeProfit === undefined) {
+      this.customExitPlans.delete(key);
+      this.logger.info(`Cleared custom exit plan for ${key}`);
+    } else {
+      this.customExitPlans.set(key, { stopLoss, takeProfit });
+      this.logger.info(`Set custom exit plan for ${key}: SL=${stopLoss}, TP=${takeProfit}`);
+    }
+  }
+
+  getCustomExitPlan(
+    symbol: string,
+    side: 'long' | 'short'
+  ): {
+    stopLoss?: number;
+    takeProfit?: number;
+  } {
+    const key = `${symbol}:${side}`;
+    return this.customExitPlans.get(key) || {};
   }
 
   stopIntervals(): void {

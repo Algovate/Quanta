@@ -2,36 +2,13 @@ import { Router, Request, Response } from 'express';
 import type * as ccxt from 'ccxt';
 import { Logger } from '../../utils/logger.js';
 import { getConfig } from '../../config/settings.js';
-import { createDataSourceManager } from '../../core/data-source-manager.js';
 import { TradingManager } from '../trading-manager.js';
 import type { Exchange } from '../../exchange/types.js';
+import { resolveExchange, isNonCCXTExchange } from '../utils/exchange-utils.js';
+import { normalizeSymbolParam } from '../utils/symbol-normalization.js';
+import { parseQueryLimit } from '../utils/error-handler.js';
 
 const logger = Logger.getInstance('DataRoutes');
-
-/**
- * Resolve exchange instance from workflow or config
- */
-async function resolveExchange(tradingManager: any): Promise<Exchange> {
-  const workflow = tradingManager.getWorkflow();
-  if (workflow) return workflow.getExchange();
-  const config = getConfig();
-  const dsm = createDataSourceManager(config);
-  return dsm.getExchange();
-}
-
-/**
- * Normalize symbol format for exchange-specific requirements
- */
-function normalizeSymbolForExchange(exchangeName: string, symbol: string): string {
-  const s = symbol.toUpperCase();
-  if (exchangeName === 'okx') {
-    // OKX futures/swap often require ":USDT" suffix, e.g., BTC/USDT:USDT
-    if (s.endsWith('/USDT') && !s.includes(':USDT')) {
-      return `${s}:USDT`;
-    }
-  }
-  return s;
-}
 
 /**
  * Check if exchange has underlying CCXT instance and access it
@@ -90,7 +67,7 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
   // Signals (recent)
   router.get('/api/signals', (req: Request, res: Response) => {
     try {
-      const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit || '50'), 10)));
+      const limit = parseQueryLimit(req.query.limit, 50, 1, 200);
       const items = tradingManager.getSignals(limit) || [];
       res.json(items);
     } catch (error) {
@@ -102,7 +79,7 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
   // Orders (recent)
   router.get('/api/orders', (req: Request, res: Response) => {
     try {
-      const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit || '50'), 10)));
+      const limit = parseQueryLimit(req.query.limit, 50, 1, 200);
       const items = tradingManager.getOrders(limit) || [];
       res.json(items);
     } catch (error) {
@@ -125,7 +102,7 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
   // Equity history
   router.get('/api/equity/history', (req: Request, res: Response) => {
     try {
-      const limit = Math.max(1, Math.min(1000, parseInt(String(req.query.limit || '500'), 10)));
+      const limit = parseQueryLimit(req.query.limit, 500, 1, 1000);
       const items = tradingManager.getEquityHistory(limit) || [];
       res.json(items);
     } catch (error) {
@@ -139,19 +116,13 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
     try {
       const { symbol } = req.params;
       const timeframe = (req.query.timeframe as string) || '1h';
-      const limit = Math.max(1, Math.min(1000, parseInt(String(req.query.limit || '100'), 10)));
+      const limit = parseQueryLimit(req.query.limit, 100, 1, 1000);
 
       // Resolve exchange from workflow or config (allows klines even when not trading)
       const exchange = await resolveExchange(tradingManager);
 
-      // Normalize symbol: convert ETHUSDT -> ETH/USDT, BTCUSDT -> BTC/USDT, etc.
-      let normalizedSymbol = symbol.includes('/')
-        ? symbol
-        : symbol.replace(/([A-Z]+)(USDT)/, '$1/$2');
-
-      // Further normalize for exchange-specific requirements
-      const exchangeName = exchange.getExchangeName?.() || '';
-      normalizedSymbol = normalizeSymbolForExchange(exchangeName, normalizedSymbol);
+      // Normalize symbol
+      const normalizedSymbol = normalizeSymbolParam(symbol, exchange);
 
       const candlesticks = await exchange.getCandlesticks(normalizedSymbol, timeframe, limit);
 
@@ -171,18 +142,14 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
   router.get('/api/depth/:symbol', async (req: Request, res: Response) => {
     try {
       const { symbol } = req.params;
-      const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit || '20'), 10)));
+      const limit = parseQueryLimit(req.query.limit, 20, 1, 100);
 
       // Resolve exchange from workflow or config
       const exchange = await resolveExchange(tradingManager);
       const exchangeName = exchange.getExchangeName();
 
       // Check if exchange is simulator/paper/backtest (don't support order book)
-      if (
-        exchangeName === 'simulator' ||
-        exchangeName.startsWith('paper(') ||
-        exchangeName === 'backtest'
-      ) {
+      if (isNonCCXTExchange(exchangeName)) {
         return res.json({
           bids: [],
           asks: [],
@@ -200,11 +167,8 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
         });
       }
 
-      // Normalize symbol format
-      let normalizedSymbol = symbol.includes('/')
-        ? symbol
-        : symbol.replace(/([A-Z]+)(USDT)/, '$1/$2');
-      normalizedSymbol = normalizeSymbolForExchange(exchangeName, normalizedSymbol);
+      // Normalize symbol
+      const normalizedSymbol = normalizeSymbolParam(symbol, exchange);
 
       // Load markets if needed
       await ccxtExchange.loadMarkets();
@@ -229,7 +193,7 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
   router.get('/api/trades/:symbol', async (req: Request, res: Response) => {
     try {
       const { symbol } = req.params;
-      const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit || '50'), 10)));
+      const limit = parseQueryLimit(req.query.limit, 50, 1, 100);
       const since = req.query.since ? parseInt(String(req.query.since), 10) : undefined;
 
       // Resolve exchange from workflow or config
@@ -237,11 +201,7 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
       const exchangeName = exchange.getExchangeName();
 
       // Check if exchange is simulator/paper/backtest (don't support trades)
-      if (
-        exchangeName === 'simulator' ||
-        exchangeName.startsWith('paper(') ||
-        exchangeName === 'backtest'
-      ) {
+      if (isNonCCXTExchange(exchangeName)) {
         return res.json([]);
       }
 
@@ -251,11 +211,8 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
         return res.json([]);
       }
 
-      // Normalize symbol format
-      let normalizedSymbol = symbol.includes('/')
-        ? symbol
-        : symbol.replace(/([A-Z]+)(USDT)/, '$1/$2');
-      normalizedSymbol = normalizeSymbolForExchange(exchangeName, normalizedSymbol);
+      // Normalize symbol
+      const normalizedSymbol = normalizeSymbolParam(symbol, exchange);
 
       // Load markets if needed
       await ccxtExchange.loadMarkets();

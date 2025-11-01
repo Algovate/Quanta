@@ -76,3 +76,27 @@ export function validateRequiredQuery(
 
   return fields.every(field => field in query && query[field as string] != null);
 }
+
+/**
+ * Parses and validates a numeric query parameter with min/max bounds
+ * @param value - The query parameter value
+ * @param defaultVal - Default value if not provided or invalid
+ * @param min - Minimum allowed value
+ * @param max - Maximum allowed value
+ * @returns The parsed and validated number
+ */
+export function parseQueryLimit(
+  value: unknown,
+  defaultVal: number,
+  min: number,
+  max: number
+): number {
+  if (value === undefined || value === null) {
+    return defaultVal;
+  }
+  const parsed = parseInt(String(value), 10);
+  if (isNaN(parsed)) {
+    return defaultVal;
+  }
+  return Math.max(min, Math.min(max, parsed));
+}

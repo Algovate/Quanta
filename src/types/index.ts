@@ -149,6 +149,8 @@ export interface Position {
   timestamp: number;
   trailingStopPrice?: number; // Dynamic trailing stop price
   peakPrice?: number; // Highest price seen (for trailing stops)
+  customStopLoss?: number; // Custom stop loss price set by user
+  customTakeProfit?: number; // Custom take profit price set by user
 }
 
 export interface Order {

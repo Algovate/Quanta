@@ -1,11 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { Logger } from '../../utils/logger.js';
 import { getConfig } from '../../config/settings.js';
-import { createDataSourceManager } from '../../core/data-source-manager.js';
-import type { Exchange } from '../../exchange/types.js';
 import { sendErrorResponse, validateRequiredQuery } from '../utils/error-handler.js';
 import { parseSymbolsQuery, normalizeSymbolForExchange } from '../utils/symbol-normalization.js';
 import { isPriceCacheValid, isKlineCacheValid, type KlineCacheEntry } from '../utils/cache.js';
+import { resolveExchange } from '../utils/exchange-utils.js';
 import type { TradingManager } from '../trading-manager.js';
 
 const logger = Logger.getInstance('MarketRoutes');
@@ -28,6 +27,13 @@ export function registerMarketRoutes(router: Router, tradingManager: TradingMana
 
       const interval = (req.query.interval as string) || '1m';
       const exchange = await resolveExchange(tradingManager);
+      const config = getConfig();
+      const marketType = config.exchange?.marketType as
+        | 'spot'
+        | 'swap'
+        | 'perp'
+        | 'perpetual'
+        | undefined;
       const now = Date.now();
       const PRICE_TTL_MS = 1000;
       const KLINE_TTL_MS = 5000;
@@ -39,7 +45,7 @@ export function registerMarketRoutes(router: Router, tradingManager: TradingMana
 
       const results = await Promise.all(
         symbols.map(async symbol => {
-          const sym = normalizeSymbolForExchange(exchange, symbol);
+          const sym = normalizeSymbolForExchange(exchange, symbol, marketType);
           let price: number | undefined = undefined;
           let candle: KlineCacheEntry['candle'] | null = null;
 
@@ -112,19 +118,4 @@ export function registerMarketRoutes(router: Router, tradingManager: TradingMana
       sendErrorResponse(res, error, 'Failed to get market summary', 500);
     }
   });
-}
-
-/**
- * Resolves exchange instance from workflow or creates a new one from config
- */
-async function resolveExchange(tradingManager: TradingManager): Promise<Exchange> {
-  const workflow = tradingManager.getWorkflow();
-  if (workflow) {
-    return workflow.getExchange();
-  }
-
-  // Fallback: create exchange from config
-  const config = getConfig();
-  const dsm = createDataSourceManager(config);
-  return dsm.getExchange();
 }

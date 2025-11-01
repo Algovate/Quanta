@@ -114,4 +114,28 @@ export function registerTradeRoutes(router: Router, tradingManager: TradingManag
       sendErrorResponse(res, error, 'Failed to place order', 500);
     }
   });
+
+  // Update exit plan for a position
+  router.post('/api/position/exit-plan', async (req: Request, res: Response) => {
+    try {
+      interface ExitPlanBody extends Record<string, unknown> {
+        symbol: string;
+        side: 'long' | 'short';
+        stopLoss?: number;
+        takeProfit?: number;
+      }
+
+      if (!validateRequiredFields<ExitPlanBody>(req.body, ['symbol', 'side'])) {
+        return res.status(400).json({ error: 'Missing symbol or side' });
+      }
+
+      const { symbol, side, stopLoss, takeProfit } = req.body as ExitPlanBody;
+
+      tradingManager.setCustomExitPlan(symbol, side, stopLoss, takeProfit);
+
+      res.json({ success: true });
+    } catch (error) {
+      sendErrorResponse(res, error, 'Failed to update exit plan', 500);
+    }
+  });
 }
