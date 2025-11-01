@@ -1,6 +1,6 @@
 # Logging System Guide
 
-Complete guide to Quanta's new operation-driven logging system.
+Complete guide to Quanta's operation-driven logging system.
 
 ## Overview
 
@@ -14,9 +14,9 @@ Quanta uses a sophisticated **operation-driven logging system** that tracks the 
 - **Real-time Metrics**: Collect and monitor performance metrics during runtime
 - **Intelligent Sampling**: Dynamically adjust logging detail based on system health
 - **Anomaly Detection**: Automatically detect and respond to unusual system patterns
-- **Tiered Storage**: Efficient multi-level storage (memory → hot → warm → cold)
+- **Tiered Storage**: Efficient multi-level storage (memory → hot → warm → cold) with SQLite for fast queries
 - **Query Interface**: Powerful CLI and programmatic query capabilities
-- **Backward Compatibility**: Works alongside existing logger for gradual migration
+- **Log Cleanup**: Manual cleanup commands to manage storage space
 
 ## Architecture
 
@@ -48,6 +48,19 @@ Quanta uses a sophisticated **operation-driven logging system** that tracks the 
 └───────────────────┘
 ```
 
+### Component Responsibilities
+
+- **UnifiedLogger**: Main facade coordinating all logging components
+- **OperationLogger**: Tracks operation lifecycles with stages and context
+- **ErrorAggregator**: Groups similar errors and calculates severity
+- **MetricsCollector**: Collects performance metrics (latency, duration, resource usage)
+- **StateSnapshotService**: Captures periodic system state snapshots
+- **Sampler**: Dynamically adjusts logging detail based on system health
+- **AnomalyDetector**: Detects unusual patterns (error spikes, performance degradation)
+- **StorageLayer**: Manages tiered storage (L0: memory, L1: SQLite, L2: files, L3: archive)
+- **StorageOptimizer**: Batches writes for efficient I/O
+- **QueryInterface**: Provides query and analysis capabilities
+
 ## Quick Start
 
 ### Basic Usage
@@ -76,7 +89,7 @@ logger.startStage(operationId, 'fetch_market_data');
 logger.completeStage(operationId, 'fetch_market_data', { candles: 100 });
 
 // Record metrics
-logger.recordMetric('api_latency', 150, { endpoint: '/api/ticker' });
+logger.recordAPILatency('/api/ticker', 150);
 
 // Complete operation
 logger.completeOperation(operationId, 'completed', {
@@ -148,9 +161,11 @@ Errors are automatically captured and aggregated.
 ```typescript
 try {
   await riskyOperation();
+  logger.completeOperation(operationId, 'completed', result);
 } catch (error) {
   // Error is automatically captured in the operation log
   logger.completeOperation(operationId, 'failed', undefined, error);
+  throw error; // Re-throw if needed
 }
 ```
 
@@ -172,7 +187,7 @@ logger.completeOperation(operationId, 'cancelled');
 
 ## Error Aggregation
 
-The system automatically groups similar errors to reduce noise.
+The system automatically groups similar errors to reduce noise and identify patterns.
 
 ### Features
 
@@ -204,9 +219,22 @@ Each aggregated error includes:
 }
 ```
 
+### Accessing Aggregated Errors
+
+```typescript
+// Get all aggregated errors
+const errors = logger.getAggregatedErrors();
+
+// Filter by severity
+const criticalErrors = errors.filter(e => e.severity === 'critical');
+
+// Check error trends
+const increasingErrors = errors.filter(e => e.trend === 'increasing');
+```
+
 ## System Snapshots
 
-Periodic snapshots capture the complete system state.
+Periodic snapshots capture the complete system state for post-mortem analysis.
 
 ### Snapshot Content
 
@@ -252,14 +280,16 @@ const snapshot = logger.createSnapshot(cycleId, {
 });
 ```
 
+Snapshots are automatically stored and can be retrieved later for analysis.
+
 ## Metrics Collection
 
-Real-time metrics are collected automatically.
+Real-time metrics are collected automatically during runtime.
 
 ### Recorded Metrics
 
-- **Operation Times**: Duration of each operation type
-- **API Latencies**: Response times for API calls (percentiles)
+- **Operation Times**: Duration of each operation type (automatic)
+- **API Latencies**: Response times for API calls (percentiles: p50, p75, p90, p95, p99)
 - **Error Rates**: Errors per cycle, error types
 - **Resource Usage**: CPU, memory usage
 - **Business Metrics**: Signal generation success, order execution rates
@@ -268,47 +298,68 @@ Real-time metrics are collected automatically.
 
 ```typescript
 // Record API latency
-logger.recordMetric('api_latency', 150, {
-  endpoint: '/api/ticker',
-  method: 'GET',
-});
+logger.recordAPILatency('/api/ticker', 150);
 
-// Record operation time (automatic)
-// Metrics are recorded when operations complete
+// Record cycle execution time
+logger.recordCycleTime(cycleId, 2500);
 
-// Record signal generation
-logger.recordMetric('signal_generation', 1, {
-  success: true,
-  signalCount: 3,
-});
+// Record error directly
+logger.recordError(error, { cycleId, symbol: 'BTC/USDT' });
+```
+
+### Accessing Metrics
+
+```typescript
+// Get metrics snapshot
+const metrics = logger.getMetricsSnapshot(cycleId);
+
+// Get error rate
+const errorRate = logger.getErrorRate();
+
+// Metrics include:
+// - operationTimes: Record<string, number[]> (durations)
+// - apiLatencies: Record<string, number[]> (latencies)
+// - errorCounts: Record<string, number> (errors per type)
+// - resourceUsage: { cpu, memory }
 ```
 
 ## Intelligent Sampling
 
-The system dynamically adjusts logging detail based on system health.
+The system dynamically adjusts logging detail based on system health to balance observability with performance.
 
 ### Sampling States
 
-- **Normal**: Standard sampling rate (default: 100%)
-- **Warning**: Increased sampling (150%)
-- **Critical**: Maximum sampling (200%)
+- **Normal**: Standard sampling rate (100% for operations, 0% for debug)
+- **Warning**: Increased sampling (150% for operations, 50% for debug)
+- **Critical**: Maximum sampling (200% for operations, 100% for debug)
 
 ### Sampling Factors
 
 - Error rate thresholds
 - Performance degradation
 - Anomaly detection triggers
-- Manual override
+- Manual state override
+
+### Checking Sampling State
+
+```typescript
+// Get current state
+const state = logger.getSamplingState(); // 'normal' | 'warning' | 'critical'
+
+// Check if should log
+const shouldLog = logger.shouldLog('debug', false); // false in normal state
+const shouldLogError = logger.shouldLog('debug', true); // true (errors always logged)
+```
 
 ## Anomaly Detection
 
-Automatic detection of unusual patterns.
+Automatic detection of unusual patterns to help identify issues early.
 
 ### Detected Anomalies
 
-- **Error Rate Spike**: Sudden increase in error frequency
-- **Performance Degradation**: Unusual latency increases
-- **Memory Leak**: Continuously increasing memory usage
+- **Error Rate Spike**: Sudden increase in error frequency (>10% threshold)
+- **Performance Degradation**: Unusual latency increases (>2x threshold)
+- **Memory Leak**: Continuously increasing memory usage (>5% per cycle)
 - **API Timeout Pattern**: Repeated timeouts from same endpoint
 
 ### Anomaly Response
@@ -317,33 +368,83 @@ When anomalies are detected, the system can:
 
 - Increase sampling rate automatically
 - Force immediate snapshot creation
-- Trigger alerts (console warnings)
+- Trigger console warnings
 - Store additional diagnostic information
+
+### Checking Anomalies
+
+```typescript
+// Check for anomalies
+const anomalies = logger.checkAnomalies();
+
+// Anomalies include:
+// - type: 'error_rate_spike' | 'performance_degradation' | 'memory_leak' | 'api_timeout'
+// - severity: 'low' | 'medium' | 'high' | 'critical'
+// - message: string
+// - metrics: Record<string, any>
+```
 
 ## Storage Architecture
 
 ### Tiered Storage
 
+The logging system uses a four-tier storage architecture:
+
 ```
 L0: In-Memory Cache
   └─ Active operations, recent metrics (fast access)
+  └─ Max size: 1000 operations (default)
+  └─ Location: Memory (lost on restart)
 
-L1: Hot Storage (SQLite - planned)
-  └─ Recent cycles, frequently accessed data
+L1: Hot Storage (SQLite - implemented)
+  └─ Recent cycles, full operation records, queryable via SQL
+  └─ Uses better-sqlite3 for high-performance synchronous queries
+  └─ Max cycles: 1000 (default)
+  └─ Location: logs/l1-operations.db
+  └─ Automatic cleanup when exceeding l1MaxCycles (moves to L2)
 
 L2: Warm Storage (File System)
+  └─ Historical cycles, full operation records
   └─ Organized by cycle: logs/l2-history/cycle-{id}/
+  └─ Each operation: {operationId}.json
+  └─ Max cycles: 10000 (default)
 
 L3: Cold Storage (Compressed Archive)
-  └─ Old cycles, compressed: logs/l3-archive/cycle-{id}.json.gz
+  └─ Old cycles, compressed with gzip
+  └─ Location: logs/l3-archive/cycle-{id}.json.gz
+  └─ Long-term retention
 ```
+
+### Data Flow
+
+1. **Write Flow**: Operations → L0 → L1 (if L0 full, batch move to L1)
+2. **L1 Cleanup**: When L1 exceeds max cycles → Move oldest cycles to L2
+3. **L2 Archive**: When L2 exceeds max cycles → Move oldest cycles to L3 (compressed)
+4. **Query Flow**: Query → L0 → L1 → L2 → L3 (merged and deduplicated)
 
 ### Storage Optimization
 
-- **Batch Writes**: Operations and snapshots are batched for efficient I/O
+- **Batch Writes**: Operations and snapshots are batched for efficient I/O via StorageOptimizer
 - **Async Processing**: Storage operations don't block execution
-- **Automatic Cleanup**: Old data is archived automatically
-- **Compression**: L3 storage uses gzip compression
+- **SQLite WAL Mode**: L1 uses Write-Ahead Logging for better concurrency
+- **Automatic Cleanup**: Old data is archived automatically (L1 → L2 → L3)
+- **Manual Cleanup**: Use `quanta log cleanup` command to manually manage storage
+- **Compression**: L3 storage uses gzip compression to save space
+- **Indexed Queries**: L1 database has indexes on cycleId, traceId, operationType, status, symbol, and startTime for fast queries
+
+### Storage Configuration
+
+```typescript
+const LOGGING_CONSTANTS = {
+  STORAGE: {
+    DEFAULT_LOG_DIR: './logs',
+    L0_MAX_SIZE: 1000,        // Max operations in memory
+    L1_MAX_CYCLES: 1000,      // Max cycles in SQLite
+    L2_DIR: 'l2-history',     // L2 directory name
+    L3_DIR: 'l3-archive',      // L3 directory name
+  },
+};
+```
 
 ## Query Interface
 
@@ -436,12 +537,52 @@ quanta log snapshot --format json
 quanta log storage
 ```
 
+Output:
+
+```
+💾 Storage Statistics
+Log storage layer information
+
+📦 Storage Layers:
+   L0 (Hot Cache): 50 operations
+   L1 (Warm): 5 cycles
+   L2 (Cold): 20 cycles
+   L3 (Archive): 10 cycles
+   Total Operations: 5000
+```
+
+#### Cleanup
+
+```bash
+# Preview cleanup (dry-run)
+quanta log cleanup --dry-run
+
+# Cleanup: keep only last 500 cycles (archives older to L3)
+quanta log cleanup --max-cycles 500
+
+# Cleanup: keep only logs from last 7 days (permanently deletes older)
+quanta log cleanup --keep-days 7
+
+# Cleanup with force (no confirmation)
+quanta log cleanup --keep-days 7 --force
+
+# Default cleanup (keeps 1000 most recent cycles)
+quanta log cleanup
+```
+
+**Cleanup Strategies:**
+
+1. **By Cycle Count** (`--max-cycles`): Archives older cycles to L3 (data still accessible but compressed)
+2. **By Days** (`--keep-days`): Permanently deletes old data from all storage layers (L1, L2, L3)
+
 ### Programmatic API
 
 ```typescript
 import { QueryInterface } from '../logging/index.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 const query = QueryInterface.getInstance();
+const logger = UnifiedLogger.getInstance();
 
 // Query operations
 const result = await query.queryOperations({
@@ -457,13 +598,19 @@ const stats = await query.getStatistics({
   operationType: 'order_execution',
 });
 
-// Search
+// Search operations
 const searchResults = await query.searchOperations('timeout', {
   limit: 20,
 });
 
-// Get trace
+// Get complete trace
 const trace = await query.getTrace('trace-42-1234567890');
+
+// Get operations by cycle
+const cycleOps = await logger.getOperationsByCycle(42);
+
+// Get snapshot
+const snapshot = await logger.getSnapshotById('snapshot-abc123');
 ```
 
 ## Integration with Workflow
@@ -497,7 +644,21 @@ async executeCycle() {
     const signals = await this.generateSignals();
     this.unifiedLogger.completeStage(cycleOpId, 'generate_signals', { signalCount: signals.length });
 
-    // ... more stages ...
+    // Record API latency
+    const startTime = Date.now();
+    const marketData = await this.exchange.getMarketData();
+    this.unifiedLogger.recordAPILatency('/api/market-data', Date.now() - startTime);
+
+    // Execute signals (stage)
+    this.unifiedLogger.startStage(cycleOpId, 'execute_signals');
+    const orders = await this.executeSignals(signals);
+    this.unifiedLogger.completeStage(cycleOpId, 'execute_signals', { ordersPlaced: orders.length });
+
+    // Create snapshot
+    const snapshot = this.unifiedLogger.createSnapshot(
+      this.state.cycleCount,
+      { account, positions, circuitBreakers, recentOperations }
+    );
 
     // Complete cycle
     this.unifiedLogger.completeOperation(cycleOpId, 'completed', {
@@ -600,62 +761,80 @@ const stats = await query.getStatistics({
 });
 ```
 
+### 7. Monitor Storage Usage
+
+```typescript
+// ✅ Good: Regular cleanup
+await logger.cleanup(1000); // Keep last 1000 cycles
+
+// Or use CLI
+// quanta log cleanup --max-cycles 1000
+```
+
 ## Configuration
 
 ### Storage Configuration
 
+Default storage configuration:
+
 ```typescript
-// In unified-logger initialization
-const storageConfig = {
-  l0MaxSize: 1000, // Max operations in memory
-  l1MaxCycles: 10, // Max cycles in hot storage
-  l2RetentionDays: 7, // Days to keep in warm storage
-  l3RetentionDays: 30, // Days to keep in cold storage
-  snapshotInterval: 60000, // Snapshot interval (ms)
+const LOGGING_CONSTANTS = {
+  STORAGE: {
+    DEFAULT_LOG_DIR: './logs',
+    L0_MAX_SIZE: 1000,        // Max operations in memory
+    L1_MAX_CYCLES: 1000,      // Max cycles in SQLite (hot storage)
+    L2_DIR: 'l2-history',    // L2 directory name
+    L3_DIR: 'l3-archive',      // L3 directory name
+  },
 };
 ```
+
+### Manual Cleanup
+
+You can manually clean up old logs using the CLI:
+
+```bash
+# Preview what would be cleaned
+quanta log cleanup --dry-run
+
+# Keep only last 500 cycles (archives older to L3)
+quanta log cleanup --max-cycles 500
+
+# Keep only logs from last 7 days (permanently deletes older)
+quanta log cleanup --keep-days 7
+
+# Force cleanup without confirmation
+quanta log cleanup --keep-days 7 --force
+```
+
+**Cleanup Strategies:**
+
+1. **By Cycle Count** (`--max-cycles`): Archives older cycles to L3 (data still accessible but compressed)
+2. **By Days** (`--keep-days`): Permanently deletes old data from all storage layers (L1, L2, L3)
 
 ### Sampling Configuration
 
 ```typescript
-const samplingConfig = {
-  normalRate: 1.0, // 100% in normal state
-  warningRate: 1.5, // 150% in warning state
-  criticalRate: 2.0, // 200% in critical state
+const LOGGING_CONSTANTS = {
+  SAMPLING: {
+    NORMAL_RATE: 1.0,    // 100% in normal state
+    WARNING_RATE: 1.5,   // 150% in warning state
+    CRITICAL_RATE: 2.0,  // 200% in critical state
+  },
 };
 ```
 
 ### Anomaly Detection Thresholds
 
 ```typescript
-const anomalyThresholds = {
-  errorRateSpike: 0.1, // 10% error rate threshold
-  latencyDegradation: 2.0, // 2x latency increase
-  memoryLeakRate: 0.05, // 5% memory increase per cycle
+const LOGGING_CONSTANTS = {
+  ANOMALY: {
+    ERROR_RATE_SPIKE: 0.1,        // 10% error rate threshold
+    LATENCY_DEGRADATION: 2.0,      // 2x latency increase
+    MEMORY_LEAK_RATE: 0.05,        // 5% memory increase per cycle
+  },
 };
 ```
-
-## Migration from Old Logger
-
-The new logging system works alongside the existing logger.
-
-### Coexistence
-
-```typescript
-// Old logger (still works)
-import { Logger } from '../utils/logger.js';
-const logger = Logger.getInstance('Module');
-
-// New logger (for operation tracking)
-import { UnifiedLogger } from '../logging/index.js';
-const unifiedLogger = UnifiedLogger.getInstance();
-```
-
-### Gradual Migration
-
-1. **Phase 1**: Use both loggers (current state)
-2. **Phase 2**: Migrate operation tracking to UnifiedLogger
-3. **Phase 3**: Migrate all logging to UnifiedLogger (future)
 
 ## Troubleshooting
 
@@ -663,29 +842,38 @@ const unifiedLogger = UnifiedLogger.getInstance();
 
 - Check if `logger.initialize()` was called
 - Verify operations are being started and completed
-- Check storage layer for errors
+- Check storage layer for errors (L1 database initialization)
 - Verify cycle IDs match
+- Check L1 database is accessible: `ls logs/l1-operations.db`
 
 ### High Memory Usage
 
-- Reduce L0 cache size
-- Enable automatic cleanup
-- Archive old cycles manually
+- Reduce L0 cache size (L0_MAX_SIZE)
+- Enable automatic cleanup (L1 → L2 → L3)
+- Archive old cycles manually: `quanta log cleanup --max-cycles 500`
 - Reduce snapshot frequency
 
 ### Slow Queries
 
 - Use filters to narrow results
-- Enable query result caching
-- Consider archiving old data
+- Query result caching is enabled by default (60s TTL)
+- Consider archiving old data to L3
 - Use pagination for large result sets
+- L1 SQLite indexes should speed up queries
 
 ### Missing Snapshots
 
-- Check snapshot interval configuration
-- Verify snapshot creation is being called
+- Check snapshot creation is being called
+- Verify snapshot is stored: `quanta log snapshot`
 - Check storage layer permissions
 - Review error logs
+
+### L1 Database Issues
+
+- Check database file exists: `ls logs/l1-operations.db`
+- Verify database is initialized (automatic on first query)
+- Check for database corruption (SQLite will log errors)
+- Fallback: System automatically falls back to L2 file storage if L1 fails
 
 ## Examples
 
@@ -740,6 +928,11 @@ console.log('Errors by symbol:', errorsBySymbol);
 // Get full trace for investigation
 const trace = await query.getTrace(failedOps.operations[0].traceId);
 console.log('Full trace:', trace);
+
+// Get aggregated errors
+const aggregatedErrors = logger.getAggregatedErrors();
+const criticalErrors = aggregatedErrors.filter(e => e.severity === 'critical');
+console.log('Critical errors:', criticalErrors);
 ```
 
 ### Performance Analysis Example
@@ -760,6 +953,26 @@ const cycle2Stats = await query.getStatistics({ cycleId: 2 });
 
 console.log(`Cycle 1 avg: ${cycle1Stats.averageDuration}ms`);
 console.log(`Cycle 2 avg: ${cycle2Stats.averageDuration}ms`);
+
+// Get metrics snapshot
+const metrics = logger.getMetricsSnapshot(cycleId);
+console.log('API latencies:', metrics.apiLatencies);
+console.log('Error rate:', logger.getErrorRate());
+```
+
+### Storage Management Example
+
+```typescript
+// Check storage stats
+const storage = StorageLayer.getInstance();
+const stats = await storage.getStats();
+console.log(`L0: ${stats.l0Size} ops, L1: ${stats.l1Cycles} cycles`);
+
+// Manual cleanup
+await logger.cleanup(500); // Keep last 500 cycles
+
+// Or cleanup by days
+await storage.cleanupByDays(7); // Keep last 7 days
 ```
 
 ## Advanced Usage
@@ -774,14 +987,29 @@ logger.recordMetric('custom_metric', value, {
 });
 ```
 
+**Note**: The UnifiedLogger uses `recordAPILatency` and `recordCycleTime` methods. For custom metrics, use MetricsCollector directly:
+
+```typescript
+import { MetricsCollector } from '../logging/index.js';
+
+const metrics = MetricsCollector.getInstance();
+metrics.recordMetric('custom_metric', value, {
+  category: 'trading',
+  metadata: { extra: 'data' },
+});
+```
+
 ### Nested Operations
 
 ```typescript
 // Parent operation
 const parentOpId = logger.startOperation(traceContext, 'cycle_execution', {});
 
-// Child operation
-const childTraceContext = logger.createNestedContext(parentOpId);
+// Child operation (manual nesting via trace context)
+const childTraceContext = {
+  traceId: parentOpId, // Use parent operation ID as trace
+  cycleId: cycleId,
+};
 const childOpId = logger.startOperation(childTraceContext, 'signal_generation', {});
 
 // Complete child
@@ -791,19 +1019,72 @@ logger.completeOperation(childOpId, 'completed', {});
 logger.completeOperation(parentOpId, 'completed', {});
 ```
 
-### Tags and Context
+### Monitoring Anomalies
 
 ```typescript
-// Add tags
-logger.addTags(operationId, 'trading', 'high-priority', 'experimental');
+// Check for anomalies periodically
+setInterval(() => {
+  const anomalies = logger.checkAnomalies();
+  if (anomalies.length > 0) {
+    console.warn('Anomalies detected:', anomalies);
+    
+    // Force snapshot on critical anomalies
+    const criticalAnomalies = anomalies.filter(a => a.severity === 'critical');
+    if (criticalAnomalies.length > 0) {
+      // Create emergency snapshot
+      const snapshot = logger.createSnapshot(cycleId, snapshotData);
+    }
+  }
+}, 60000); // Check every minute
+```
 
-// Update context
-logger.updateOperationContext(operationId, {
-  accountState: { equity: 10000 },
-  marketState: { volatility: 'high' },
+### Query Optimization
+
+```typescript
+// Use specific filters to improve performance
+const result = await query.queryOperations({
+  cycleId: 42,              // Use cycle ID for fast L1 lookup
+  operationType: 'order_execution', // Filter by type
+  status: 'failed',         // Filter by status
+  limit: 50,                // Limit results
 });
+
+// Use pagination for large datasets
+let offset = 0;
+const pageSize = 100;
+let hasMore = true;
+
+while (hasMore) {
+  const page = await query.queryOperations({
+    cycleId: 42,
+    limit: pageSize,
+    offset,
+  });
+  
+  // Process page
+  processOperations(page.operations);
+  
+  hasMore = page.hasMore;
+  offset += pageSize;
+}
 ```
 
 ---
 
-**Note**: This new logging system is designed for production use and provides comprehensive observability for the Quanta trading system. For basic logging needs, the existing `Logger` class is still available and works alongside the new system.
+## Summary
+
+This logging system is designed for production use and provides comprehensive observability for the Quanta trading system. Key features:
+
+- ✅ **Operation-driven tracking** - Complete lifecycle visibility
+- ✅ **Intelligent error aggregation** - Reduced noise, better insights
+- ✅ **System snapshots** - Post-mortem analysis capability
+- ✅ **Tiered storage** - Efficient data management (L0 → L1 → L2 → L3)
+- ✅ **Powerful query interface** - CLI and programmatic access
+- ✅ **Automatic cleanup** - Storage management with manual overrides
+
+All logs are stored in tiered storage with automatic cleanup and manual management via CLI commands. The system scales efficiently from development to production environments.
+
+---
+
+**Last Updated**: January 2025  
+**Version**: 0.1.0

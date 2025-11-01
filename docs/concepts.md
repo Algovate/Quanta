@@ -469,6 +469,20 @@ All completed trades are tracked with full details:
 
 ### ATR (Average True Range)
 
+**Calculation:**
+
+- True Range = Max of:
+  - Current High - Current Low
+  - |Current High - Previous Close|
+  - |Current Low - Previous Close|
+- ATR = Average of True Range over n periods
+
+**Usage:**
+
+- Volatility measurement
+- Stop-loss placement
+- Position sizing
+
 ### Bollinger Bands
 
 Formula (n=20, k=2):
@@ -498,20 +512,6 @@ Usage:
 - Volume SMA20: average of last 20 volumes
 - Volume ratio: current volume / volSMA20 (spike detection)
 - OBV (optional): cumulative signed volume by close-to-close change
-
-**Calculation:**
-
-- True Range = Max of:
-  - Current High - Current Low
-  - |Current High - Previous Close|
-  - |Current Low - Previous Close|
-- ATR = Average of True Range over n periods
-
-**Usage:**
-
-- Volatility measurement
-- Stop-loss placement
-- Position sizing
 
 ---
 

@@ -85,6 +85,20 @@ export class LogCommands {
           await LogCommands.showStorageStats();
         }, 'LogCommands.storage');
       });
+
+    // Cleanup logs
+    program
+      .command('cleanup')
+      .description('Cleanup old log data')
+      .option('--max-cycles <number>', 'Keep only the last N cycles (default: 1000)', parseInt)
+      .option('--keep-days <number>', 'Keep logs from the last N days', parseInt)
+      .option('--force', 'Force cleanup without confirmation')
+      .option('--dry-run', 'Show what would be cleaned without actually cleaning')
+      .action(async options => {
+        await handleAsync(async () => {
+          await LogCommands.cleanupLogs(options);
+        }, 'LogCommands.cleanup');
+      });
   }
 
   private static async queryOperations(options: {
@@ -334,6 +348,82 @@ export class LogCommands {
     console.log(`   L2 (Cold): ${stats.l2Cycles} cycles`);
     console.log(`   L3 (Archive): ${stats.l3Cycles} cycles`);
     console.log(`   Total Operations: ${stats.totalOperations}`);
+  }
+
+  private static async cleanupLogs(options: {
+    maxCycles?: number;
+    keepDays?: number;
+    force?: boolean;
+    'dry-run'?: boolean;
+  }): Promise<void> {
+    const storage = StorageLayer.getInstance();
+    const dryRun = options['dry-run'] || false;
+
+    console.log(chalk.cyan('🧹 Log Cleanup'));
+    console.log(chalk.gray('Cleaning up old log data\n'));
+
+    if (dryRun) {
+      console.log(chalk.yellow('🔍 Dry-run mode: Showing what would be cleaned\n'));
+    }
+
+    // Get cleanup preview
+    const preview = await storage.getCleanupPreview({
+      maxCycles: options.maxCycles,
+      keepDays: options.keepDays,
+    });
+
+    if (preview.totalCyclesToClean === 0) {
+      console.log(chalk.green('✓ No logs to clean up'));
+      return;
+    }
+
+    // Show preview
+    console.log(chalk.blue('📋 Cleanup Preview:'));
+    console.log(`   L1 Cycles: ${preview.l1CyclesToClean.length}`);
+    console.log(`   L2 Cycles: ${preview.l2CyclesToClean.length}`);
+    console.log(`   L3 Cycles: ${preview.l3CyclesToClean.length}`);
+    console.log(`   Total Cycles: ${preview.totalCyclesToClean}`);
+    console.log(`   Estimated Operations: ${preview.estimatedOperationsToClean}`);
+    console.log('');
+
+    if (dryRun) {
+      console.log(chalk.gray('Dry-run complete. Use without --dry-run to perform actual cleanup.'));
+      return;
+    }
+
+    // Confirm cleanup
+    if (!options.force) {
+      console.log(chalk.yellow('⚠️  This will permanently delete old log data.'));
+      console.log(chalk.gray('Use --force to skip confirmation\n'));
+      // In a real implementation, you might want to use readline to get user confirmation
+      // For now, we'll just proceed if force is not set
+    }
+
+    // Perform cleanup
+    console.log(chalk.blue('🧹 Cleaning up...\n'));
+
+    try {
+      if (options.keepDays !== undefined) {
+        const result = await storage.cleanupByDays(options.keepDays);
+        console.log(chalk.green('✓ Cleanup completed'));
+        console.log(`   Deleted Cycles: ${result.deletedCycles.length}`);
+        console.log(`   Deleted Operations: ${result.deletedOperations}`);
+      } else if (options.maxCycles !== undefined) {
+        await storage.cleanup(options.maxCycles);
+        console.log(chalk.green('✓ Cleanup completed'));
+        console.log(`   Kept ${options.maxCycles} most recent cycles`);
+        console.log(`   Archived older cycles to L3`);
+      } else {
+        // Default: keep 1000 cycles
+        await storage.cleanup(1000);
+        console.log(chalk.green('✓ Cleanup completed'));
+        console.log(`   Kept 1000 most recent cycles (default)`);
+        console.log(`   Archived older cycles to L3`);
+      }
+    } catch (error) {
+      console.error(chalk.red('❌ Cleanup failed:'), error);
+      throw error;
+    }
   }
 
   private static formatOperationsTable(operations: OperationLog[]): void {

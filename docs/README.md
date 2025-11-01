@@ -6,14 +6,14 @@ Complete documentation index for the Quanta AI trading system.
 
 ### 🚀 Getting Started
 
-- **[Getting Started](getting-started.md)** (2.8KB)
+- **[Getting Started](getting-started.md)** (4.0KB)
   - Installation steps
   - Quick start guide
   - First simulation
 
 ### 📈 Trading
 
-- **[Trading Guide](trading-guide.md)** (4.9KB)
+- **[Trading Guide](trading-guide.md)** (8.0KB)
   - Trading modes (simulation/paper/live)
   - Trading lifecycle
   - Risk management
@@ -21,32 +21,24 @@ Complete documentation index for the Quanta AI trading system.
 
 ### ⚙️ Configuration
 
-- **[Configuration Guide](configuration.md)** (3.7KB)
+- **[Configuration Guide](configuration.md)** (8.0KB)
   - Configuration files
   - Environment variables
   - CLI configuration
   - Settings examples
 
-### 🧪 Testing & Simulation
-
-- **[Testing & Simulation](testing-simulation.md)** (5.0KB)
-  - Simulation modes
-  - Testing commands
-  - Examples and output
-  - Troubleshooting
-
 ### 📚 Reference
 
-- **[Command Reference](commands.md)** (7.5KB)
+- **[Command Reference](commands.md)** (24KB)
   - Complete command documentation
   - All sub-commands
   - Options and examples
-- **[Supported Exchanges](exchanges.md)** (4.2KB)
+- **[Supported Exchanges](exchanges.md)** (8.0KB)
   - Exchange list and features
   - API configuration
   - Abbreviation guide
 
-- **[Logging Guide](logging-guide.md)** (15KB+)
+- **[Logging Guide](logging-guide.md)** (32KB)
   - Operation-driven logging system
   - Operation lifecycle tracking
   - Error aggregation
@@ -54,10 +46,15 @@ Complete documentation index for the Quanta AI trading system.
   - Metrics collection
   - Query interface and CLI commands
   - Storage architecture
+- **[Error Handling & Resilience](error-handling.md)** (20KB)
+  - Circuit breaker patterns
+  - Retry strategies
+  - Error recovery mechanisms
+  - Resilience best practices
 
 ### 💡 Concepts & Terminology
 
-- **[Core Concepts](concepts.md)** (23KB) ⭐ COMPREHENSIVE
+- **[Core Concepts](concepts.md)** (28KB) ⭐ COMPREHENSIVE
   - Complete architecture
   - Trading modes (detailed)
   - Technical indicators
@@ -72,8 +69,7 @@ Complete documentation index for the Quanta AI trading system.
 ### For New Users
 
 1. Start with [Getting Started](getting-started.md)
-2. Run a [simulation](testing-simulation.md)
-3. Understand [core concepts](concepts.md)
+2. Understand [core concepts](concepts.md)
 
 ### For Traders
 
@@ -87,21 +83,21 @@ Complete documentation index for the Quanta AI trading system.
 2. Understand [architecture](concepts.md#architecture)
 3. Review [algorithms](concepts.md#algorithms)
 4. Learn [logging system](logging-guide.md) for debugging and analysis
-5. Read [testing guide](testing-simulation.md) for test structure and running tests
 
 ## 📊 Documentation Statistics
 
 | Document              | Size      | Lines      | Purpose               |
 | --------------------- | --------- | ---------- | --------------------- |
-| getting-started.md    | 2.8KB     | ~114       | Quick setup           |
-| trading-guide.md      | 4.9KB     | ~215       | Trading operations    |
-| configuration.md      | 3.7KB     | ~205       | System setup          |
-| testing-simulation.md | 5.0KB     | ~302       | Testing guide         |
-| commands.md           | 7.5KB     | ~374       | Command reference     |
-| concepts.md           | 23KB      | ~1097      | Concepts & algorithms |
-| exchanges.md          | 4.2KB     | ~161       | Exchange support      |
-| logging-guide.md      | 15KB+     | ~800+      | Logging system        |
-| **Total**             | **~66KB** | **~3,069** | Complete docs         |
+| README.md             | 8.0KB     | 211        | Documentation index   |
+| getting-started.md    | 4.0KB     | 113        | Quick setup           |
+| trading-guide.md      | 8.0KB     | 244        | Trading operations    |
+| configuration.md      | 8.0KB     | 290        | System setup          |
+| commands.md           | 24KB      | 888        | Command reference     |
+| concepts.md           | 28KB      | 1,293      | Concepts & algorithms |
+| exchanges.md          | 8.0KB     | 176        | Exchange support      |
+| logging-guide.md      | 32KB      | 1,074      | Logging system        |
+| error-handling.md     | 20KB      | 686        | Error handling & resilience |
+| **Total**             | **~140KB**| **4,975**  | Complete docs         |
 
 ## 🔍 Key Topics
 
@@ -151,7 +147,7 @@ Complete documentation index for the Quanta AI trading system.
 ```
 1. Getting Started
    ↓
-2. Run first simulation
+2. Configure API keys and settings
    ↓
 3. Read Trading Guide
    ↓
@@ -174,12 +170,12 @@ Complete documentation index for the Quanta AI trading system.
 
 - **New to trading?** Start with [Getting Started](getting-started.md) and [Concepts](concepts.md)
 - **Setting up?** Follow [Configuration Guide](configuration.md)
-- **Testing strategies?** Use [Testing & Simulation](testing-simulation.md)
 - **Ready to trade?** Read [Trading Guide](trading-guide.md)
 - **Need quick reference?** Check [Commands](commands.md)
 - **Configuring exchanges?** See [Supported Exchanges](exchanges.md)
 - **Understanding concepts?** Study [Concepts](concepts.md)
 - **Debugging?** Read [Logging Guide](logging-guide.md)
+- **Troubleshooting errors?** See [Error Handling & Resilience](error-handling.md)
 
 ## 🎓 Concepts Document Highlights
 
@@ -196,7 +192,7 @@ The comprehensive concepts document provides:
 
 ## 🔄 Documentation Updates
 
-All documentation is actively maintained. Latest updates:
+All documentation is actively maintained and continuously improved. Latest updates:
 
 - ✅ Added comprehensive Trading Modes section
 - ✅ Expanded glossary (50+ terms)
@@ -205,12 +201,11 @@ All documentation is actively maintained. Latest updates:
 - ✅ Improved risk management section with formulas
 - ✅ Streamlined documentation structure
 - ✅ Added exchanges support guide
-- ✅ Integrated logging guide
-- ✅ Added operation-driven logging system
+- ✅ Integrated logging guide with operation-driven logging system
 - ✅ Added log query CLI commands
 - ✅ Enhanced logging with error aggregation and snapshots
-- ✅ Separated tests from source code (tests/ directory)
-- ✅ Added comprehensive test structure documentation
+- ✅ Added error handling and resilience documentation
+- ✅ Updated all documentation statistics and links
 
 ---
 

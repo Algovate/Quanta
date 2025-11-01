@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import { gzip, gunzip } from 'zlib';
 import { promisify } from 'util';
+import Database from 'better-sqlite3';
 import type { OperationLog, SystemSnapshot, AggregatedError, MetricsSnapshot } from './types.js';
 import { LOGGING_CONSTANTS } from './utils.js';
 
@@ -37,7 +38,7 @@ export class StorageLayer {
   private l0Cache: OperationLog[] = [];
 
   // L1: SQLite database (recent cycles)
-  private l1Database: any; // SQLite database instance (for future use)
+  private l1Database: Database.Database | null = null;
   private l1Initialized: boolean = false;
 
   private constructor() {
@@ -113,8 +114,55 @@ export class StorageLayer {
       await this.initializeL1();
     }
 
-    // For now, use simple JSON file storage (SQLite can be added later)
-    // Store operations by cycle ID
+    // If database initialization failed, fallback to file storage
+    if (!this.l1Database) {
+      await this.storeInL2Fallback(operation);
+      return;
+    }
+
+    try {
+      const stmt = this.l1Database.prepare(`
+        INSERT OR REPLACE INTO operations (
+          operationId, traceId, cycleId, operationType, symbol, parentOperationId,
+          startTime, endTime, status, duration, input, output, error,
+          stages, metrics, context, tags, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      stmt.run(
+        operation.operationId,
+        operation.traceId,
+        operation.cycleId,
+        operation.operationType,
+        operation.symbol || null,
+        operation.parentOperationId || null,
+        operation.startTime,
+        operation.endTime || null,
+        operation.status,
+        operation.metrics.duration,
+        JSON.stringify(operation.input),
+        operation.output ? JSON.stringify(operation.output) : null,
+        operation.error ? JSON.stringify(operation.error) : null,
+        JSON.stringify(operation.stages),
+        JSON.stringify(operation.metrics),
+        operation.context ? JSON.stringify(operation.context) : null,
+        operation.tags ? JSON.stringify(operation.tags) : null,
+        Date.now()
+      );
+
+      // Cleanup old cycles if needed
+      await this.cleanupOldL1Cycles();
+    } catch (error) {
+      console.error('Failed to store operation in L1:', error);
+      // Fallback to file storage
+      await this.storeInL2Fallback(operation);
+    }
+  }
+
+  /**
+   * Fallback to L2 file storage if L1 fails
+   */
+  private async storeInL2Fallback(operation: OperationLog): Promise<void> {
     const cycleDir = path.join(this.config.l2Directory, `cycle-${operation.cycleId}`);
     if (!fs.existsSync(cycleDir)) {
       fs.mkdirSync(cycleDir, { recursive: true });
@@ -137,9 +185,74 @@ export class StorageLayer {
    * Initialize L1 database
    */
   private async initializeL1(): Promise<void> {
-    // TODO: Initialize SQLite database if needed
-    // For now, use file-based storage
-    this.l1Initialized = true;
+    if (this.l1Initialized) {
+      return;
+    }
+
+    try {
+      // Ensure directory exists
+      const dbDir = path.dirname(this.config.l1DatabasePath);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+
+      // Open database
+      this.l1Database = new Database(this.config.l1DatabasePath);
+
+      // Enable WAL mode for better concurrency
+      this.l1Database.pragma('journal_mode = WAL');
+
+      // Create tables
+      this.createL1Tables();
+
+      this.l1Initialized = true;
+    } catch (error) {
+      console.error('Failed to initialize L1 database:', error);
+      // Fallback to file-based storage if database initialization fails
+      this.l1Initialized = false;
+      this.l1Database = null;
+    }
+  }
+
+  /**
+   * Create L1 database tables
+   */
+  private createL1Tables(): void {
+    if (!this.l1Database) {
+      return;
+    }
+
+    // Create operations table
+    this.l1Database.exec(`
+      CREATE TABLE IF NOT EXISTS operations (
+        operationId TEXT PRIMARY KEY,
+        traceId TEXT NOT NULL,
+        cycleId INTEGER NOT NULL,
+        operationType TEXT NOT NULL,
+        symbol TEXT,
+        parentOperationId TEXT,
+        startTime INTEGER NOT NULL,
+        endTime INTEGER,
+        status TEXT NOT NULL,
+        duration INTEGER NOT NULL,
+        input TEXT NOT NULL,
+        output TEXT,
+        error TEXT,
+        stages TEXT NOT NULL,
+        metrics TEXT NOT NULL,
+        context TEXT,
+        tags TEXT,
+        createdAt INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_cycleId ON operations(cycleId);
+      CREATE INDEX IF NOT EXISTS idx_traceId ON operations(traceId);
+      CREATE INDEX IF NOT EXISTS idx_operationType ON operations(operationType);
+      CREATE INDEX IF NOT EXISTS idx_status ON operations(status);
+      CREATE INDEX IF NOT EXISTS idx_symbol ON operations(symbol);
+      CREATE INDEX IF NOT EXISTS idx_startTime ON operations(startTime);
+      CREATE INDEX IF NOT EXISTS idx_parentOperationId ON operations(parentOperationId);
+    `);
   }
 
   /**
@@ -196,31 +309,268 @@ export class StorageLayer {
   }
 
   /**
+   * Get operations from L1 (SQLite)
+   */
+  async getOperationsFromL1(
+    options: {
+      cycleId?: number;
+      traceId?: string;
+      operationType?: string;
+      status?: string;
+      symbol?: string;
+      startTime?: number;
+      endTime?: number;
+      limit?: number;
+      offset?: number;
+    } = {}
+  ): Promise<OperationLog[]> {
+    // Initialize L1 database if not already initialized
+    if (!this.l1Initialized) {
+      await this.initializeL1();
+    }
+
+    if (!this.l1Database || !this.l1Initialized) {
+      return [];
+    }
+
+    try {
+      let query = 'SELECT * FROM operations WHERE 1=1';
+      const params: any[] = [];
+
+      if (options.cycleId !== undefined) {
+        query += ' AND cycleId = ?';
+        params.push(options.cycleId);
+      }
+
+      if (options.traceId) {
+        query += ' AND traceId = ?';
+        params.push(options.traceId);
+      }
+
+      if (options.operationType) {
+        query += ' AND operationType = ?';
+        params.push(options.operationType);
+      }
+
+      if (options.status) {
+        query += ' AND status = ?';
+        params.push(options.status);
+      }
+
+      if (options.symbol) {
+        query += ' AND symbol = ?';
+        params.push(options.symbol);
+      }
+
+      if (options.startTime !== undefined) {
+        query += ' AND startTime >= ?';
+        params.push(options.startTime);
+      }
+
+      if (options.endTime !== undefined) {
+        query += ' AND startTime <= ?';
+        params.push(options.endTime);
+      }
+
+      query += ' ORDER BY startTime DESC';
+
+      if (options.limit !== undefined) {
+        query += ' LIMIT ?';
+        params.push(options.limit);
+      }
+
+      if (options.offset !== undefined) {
+        query += ' OFFSET ?';
+        params.push(options.offset);
+      }
+
+      const stmt = this.l1Database.prepare(query);
+      const rows = stmt.all(...params) as Array<{
+        operationId: string;
+        traceId: string;
+        cycleId: number;
+        operationType: string;
+        symbol: string | null;
+        parentOperationId: string | null;
+        startTime: number;
+        endTime: number | null;
+        status: string;
+        duration: number;
+        input: string;
+        output: string | null;
+        error: string | null;
+        stages: string;
+        metrics: string;
+        context: string | null;
+        tags: string | null;
+        createdAt: number;
+      }>;
+
+      // Deserialize JSON fields
+      return rows.map(row => ({
+        operationId: row.operationId,
+        traceId: row.traceId,
+        cycleId: row.cycleId,
+        operationType: row.operationType,
+        symbol: row.symbol || undefined,
+        parentOperationId: row.parentOperationId || undefined,
+        startTime: row.startTime,
+        endTime: row.endTime || undefined,
+        status: row.status as OperationLog['status'],
+        input: JSON.parse(row.input),
+        output: row.output ? JSON.parse(row.output) : undefined,
+        error: row.error ? JSON.parse(row.error) : undefined,
+        stages: JSON.parse(row.stages),
+        metrics: JSON.parse(row.metrics),
+        context: row.context ? JSON.parse(row.context) : undefined,
+        tags: row.tags ? JSON.parse(row.tags) : undefined,
+      }));
+    } catch (error) {
+      console.error('Failed to query operations from L1:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get count of operations in L1
+   */
+  async getL1OperationCount(
+    options: {
+      cycleId?: number;
+      traceId?: string;
+      operationType?: string;
+      status?: string;
+      symbol?: string;
+    } = {}
+  ): Promise<number> {
+    // Initialize L1 database if not already initialized
+    if (!this.l1Initialized) {
+      await this.initializeL1();
+    }
+
+    if (!this.l1Database || !this.l1Initialized) {
+      return 0;
+    }
+
+    try {
+      let query = 'SELECT COUNT(*) as count FROM operations WHERE 1=1';
+      const params: any[] = [];
+
+      if (options.cycleId !== undefined) {
+        query += ' AND cycleId = ?';
+        params.push(options.cycleId);
+      }
+
+      if (options.traceId) {
+        query += ' AND traceId = ?';
+        params.push(options.traceId);
+      }
+
+      if (options.operationType) {
+        query += ' AND operationType = ?';
+        params.push(options.operationType);
+      }
+
+      if (options.status) {
+        query += ' AND status = ?';
+        params.push(options.status);
+      }
+
+      if (options.symbol) {
+        query += ' AND symbol = ?';
+        params.push(options.symbol);
+      }
+
+      const stmt = this.l1Database.prepare(query);
+      const result = stmt.get(...params) as { count: number };
+      return result?.count || 0;
+    } catch (error) {
+      console.error('Failed to count operations in L1:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get unique cycle IDs from L1
+   */
+  async getL1CycleIds(): Promise<number[]> {
+    // Initialize L1 database if not already initialized
+    if (!this.l1Initialized) {
+      await this.initializeL1();
+    }
+
+    if (!this.l1Database || !this.l1Initialized) {
+      return [];
+    }
+
+    try {
+      const stmt = this.l1Database.prepare(
+        'SELECT DISTINCT cycleId FROM operations ORDER BY cycleId DESC'
+      );
+      const rows = stmt.all() as Array<{ cycleId: number }>;
+      return rows.map(row => row.cycleId);
+    } catch (error) {
+      console.error('Failed to get cycle IDs from L1:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Cleanup old L1 cycles
+   */
+  private async cleanupOldL1Cycles(): Promise<void> {
+    if (!this.l1Database || !this.l1Initialized) {
+      return;
+    }
+
+    try {
+      // Get cycle IDs from L1
+      const cycleIds = await this.getL1CycleIds();
+
+      if (cycleIds.length <= this.config.l1MaxCycles) {
+        return;
+      }
+
+      // Archive cycles that exceed L1MaxCycles
+      const cyclesToArchive = cycleIds.slice(0, cycleIds.length - this.config.l1MaxCycles);
+
+      for (const cycleId of cyclesToArchive) {
+        // Move operations from L1 to L2
+        const ops = await this.getOperationsFromL1({ cycleId, limit: 10000 });
+
+        // Store to L2
+        for (const op of ops) {
+          await this.storeInL2Fallback(op);
+        }
+
+        // Delete from L1
+        if (this.l1Database) {
+          const deleteStmt = this.l1Database.prepare('DELETE FROM operations WHERE cycleId = ?');
+          deleteStmt.run(cycleId);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to cleanup old L1 cycles:', error);
+    }
+  }
+
+  /**
    * Get operations by cycle ID
    */
   async getOperationsByCycle(cycleId: number): Promise<OperationLog[]> {
     // First check L0
     const l0Ops = this.l0Cache.filter(op => op.cycleId === cycleId);
 
-    // Then check L1/L2
-    const cycleDir = path.join(this.config.l2Directory, `cycle-${cycleId}`);
-    if (!fs.existsSync(cycleDir)) {
-      return l0Ops;
+    // Then check L1
+    const l1Ops = await this.getOperationsFromL1({ cycleId, limit: 10000 });
+
+    // Combine and deduplicate by operationId
+    const opsMap = new Map<string, OperationLog>();
+    for (const op of [...l0Ops, ...l1Ops]) {
+      opsMap.set(op.operationId, op);
     }
 
-    const files = await fs.promises.readdir(cycleDir);
-    const operations: OperationLog[] = [];
-
-    for (const file of files) {
-      if (file.endsWith('.json')) {
-        const filePath = path.join(cycleDir, file);
-        const content = await fs.promises.readFile(filePath, 'utf-8');
-        operations.push(JSON.parse(content));
-      }
-    }
-
-    // Combine L0 and L1/L2 operations
-    const allOps = [...l0Ops, ...operations];
+    const allOps = Array.from(opsMap.values());
 
     // Sort by start time
     return allOps.sort((a, b) => a.startTime - b.startTime);
@@ -260,9 +610,16 @@ export class StorageLayer {
     // Get from L0
     const l0Ops = this.l0Cache.filter(op => op.startTime >= startTime && op.startTime <= endTime);
 
-    // TODO: Query L1/L2 for additional operations
-    // For now, return L0 operations
-    return l0Ops;
+    // Get from L1
+    const l1Ops = await this.getOperationsFromL1({ startTime, endTime, limit: 10000 });
+
+    // Combine and deduplicate by operationId
+    const opsMap = new Map<string, OperationLog>();
+    for (const op of [...l0Ops, ...l1Ops]) {
+      opsMap.set(op.operationId, op);
+    }
+
+    return Array.from(opsMap.values()).sort((a, b) => a.startTime - b.startTime);
   }
 
   /**
@@ -296,7 +653,16 @@ export class StorageLayer {
    * Cleanup old data
    */
   async cleanup(maxCycles: number): Promise<void> {
-    // List all cycle directories
+    // Cleanup L1 first
+    if (this.l1Database && this.l1Initialized) {
+      await this.cleanupOldL1Cycles();
+    }
+
+    // List all cycle directories in L2
+    if (!fs.existsSync(this.config.l2Directory)) {
+      return;
+    }
+
     const cycleDirs = await fs.promises.readdir(this.config.l2Directory);
     const cycleIds = cycleDirs
       .filter(dir => dir.startsWith('cycle-'))
@@ -309,6 +675,209 @@ export class StorageLayer {
     for (const cycleId of cyclesToArchive) {
       await this.archiveToL3(cycleId);
     }
+  }
+
+  /**
+   * Cleanup logs older than specified days
+   */
+  async cleanupByDays(keepDays: number): Promise<{
+    deletedCycles: number[];
+    deletedOperations: number;
+  }> {
+    const cutoffTime = Date.now() - keepDays * 24 * 60 * 60 * 1000;
+    const deletedCycles: number[] = [];
+    let deletedOperations = 0;
+
+    // Cleanup L1: Delete operations older than cutoff
+    if (this.l1Database && this.l1Initialized) {
+      try {
+        const deleteStmt = this.l1Database.prepare('DELETE FROM operations WHERE startTime < ?');
+        const result = deleteStmt.run(cutoffTime);
+        deletedOperations += result.changes || 0;
+
+        // Get cycles with no operations left
+        const cycleIds = await this.getL1CycleIds();
+        for (const cycleId of cycleIds) {
+          const count = await this.getL1OperationCount({ cycleId });
+          if (count === 0) {
+            deletedCycles.push(cycleId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to cleanup L1 by days:', error);
+      }
+    }
+
+    // Cleanup L2: Delete cycle directories older than cutoff
+    if (fs.existsSync(this.config.l2Directory)) {
+      try {
+        const cycleDirs = await fs.promises.readdir(this.config.l2Directory);
+        for (const dir of cycleDirs) {
+          if (!dir.startsWith('cycle-')) continue;
+
+          const cycleId = parseInt(dir.replace('cycle-', ''), 10);
+          if (isNaN(cycleId)) continue;
+
+          const cycleDir = path.join(this.config.l2Directory, dir);
+          const files = await fs.promises.readdir(cycleDir);
+
+          // Check if any file is older than cutoff
+          let shouldDelete = true;
+          for (const file of files) {
+            const filePath = path.join(cycleDir, file);
+            const stats = await fs.promises.stat(filePath);
+            if (stats.mtime.getTime() >= cutoffTime) {
+              shouldDelete = false;
+              break;
+            }
+          }
+
+          if (shouldDelete) {
+            // Count operations before deleting
+            for (const file of files) {
+              if (file.endsWith('.json')) {
+                deletedOperations++;
+              }
+            }
+
+            await fs.promises.rm(cycleDir, { recursive: true });
+            deletedCycles.push(cycleId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to cleanup L2 by days:', error);
+      }
+    }
+
+    // Cleanup L3: Delete archive directories older than cutoff
+    if (fs.existsSync(this.config.l3Directory)) {
+      try {
+        const archiveDirs = await fs.promises.readdir(this.config.l3Directory);
+        for (const dir of archiveDirs) {
+          if (!dir.startsWith('cycle-')) continue;
+
+          const cycleId = parseInt(dir.replace('cycle-', ''), 10);
+          if (isNaN(cycleId)) continue;
+
+          const archiveDir = path.join(this.config.l3Directory, dir);
+          const stats = await fs.promises.stat(archiveDir);
+          if (stats.mtime.getTime() < cutoffTime) {
+            await fs.promises.rm(archiveDir, { recursive: true });
+            deletedCycles.push(cycleId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to cleanup L3 by days:', error);
+      }
+    }
+
+    return { deletedCycles, deletedOperations };
+  }
+
+  /**
+   * Get cleanup preview (dry-run)
+   */
+  async getCleanupPreview(options: {
+    maxCycles?: number;
+    keepDays?: number;
+  }): Promise<{
+    l1CyclesToClean: number[];
+    l2CyclesToClean: number[];
+    l3CyclesToClean: number[];
+    totalCyclesToClean: number;
+    estimatedOperationsToClean: number;
+  }> {
+    const l1CyclesToClean: number[] = [];
+    const l2CyclesToClean: number[] = [];
+    const l3CyclesToClean: number[] = [];
+    let estimatedOperationsToClean = 0;
+
+    if (options.keepDays !== undefined) {
+      const cutoffTime = Date.now() - options.keepDays * 24 * 60 * 60 * 1000;
+
+      // Check L1
+      if (this.l1Database && this.l1Initialized) {
+        try {
+          const allOps = await this.getOperationsFromL1({ limit: 100000 });
+          const oldOps = allOps.filter(op => op.startTime < cutoffTime);
+          const oldCycles = new Set(oldOps.map(op => op.cycleId));
+          l1CyclesToClean.push(...oldCycles);
+          estimatedOperationsToClean += oldOps.length;
+        } catch (error) {
+          // Ignore errors
+        }
+      }
+
+      // Check L2
+      if (fs.existsSync(this.config.l2Directory)) {
+        try {
+          const cycleDirs = await fs.promises.readdir(this.config.l2Directory);
+          for (const dir of cycleDirs) {
+            if (!dir.startsWith('cycle-')) continue;
+            const cycleDir = path.join(this.config.l2Directory, dir);
+            const stats = await fs.promises.stat(cycleDir);
+            if (stats.mtime.getTime() < cutoffTime) {
+              l2CyclesToClean.push(parseInt(dir.replace('cycle-', ''), 10));
+              const files = await fs.promises.readdir(cycleDir);
+              estimatedOperationsToClean += files.filter(f => f.endsWith('.json')).length;
+            }
+          }
+        } catch (error) {
+          // Ignore errors
+        }
+      }
+
+      // Check L3
+      if (fs.existsSync(this.config.l3Directory)) {
+        try {
+          const archiveDirs = await fs.promises.readdir(this.config.l3Directory);
+          for (const dir of archiveDirs) {
+            if (!dir.startsWith('cycle-')) continue;
+            const archiveDir = path.join(this.config.l3Directory, dir);
+            const stats = await fs.promises.stat(archiveDir);
+            if (stats.mtime.getTime() < cutoffTime) {
+              l3CyclesToClean.push(parseInt(dir.replace('cycle-', ''), 10));
+            }
+          }
+        } catch (error) {
+          // Ignore errors
+        }
+      }
+    } else if (options.maxCycles !== undefined) {
+      // Cleanup by max cycles (L2 only)
+      if (fs.existsSync(this.config.l2Directory)) {
+        try {
+          const cycleDirs = await fs.promises.readdir(this.config.l2Directory);
+          const cycleIds = cycleDirs
+            .filter(dir => dir.startsWith('cycle-'))
+            .map(dir => parseInt(dir.replace('cycle-', ''), 10))
+            .filter(id => !isNaN(id))
+            .sort((a, b) => a - b);
+
+          const cyclesToArchive = cycleIds.slice(0, cycleIds.length - options.maxCycles);
+          l2CyclesToClean.push(...cyclesToArchive);
+
+          // Count operations
+          for (const cycleId of cyclesToArchive) {
+            const cycleDir = path.join(this.config.l2Directory, `cycle-${cycleId}`);
+            if (fs.existsSync(cycleDir)) {
+              const files = await fs.promises.readdir(cycleDir);
+              estimatedOperationsToClean += files.filter(f => f.endsWith('.json')).length;
+            }
+          }
+        } catch (error) {
+          // Ignore errors
+        }
+      }
+    }
+
+    return {
+      l1CyclesToClean,
+      l2CyclesToClean,
+      l3CyclesToClean,
+      totalCyclesToClean: l1CyclesToClean.length + l2CyclesToClean.length + l3CyclesToClean.length,
+      estimatedOperationsToClean,
+    };
   }
 
   /**
@@ -341,12 +910,34 @@ export class StorageLayer {
       console.error('Error calculating storage stats:', error);
     }
 
+    // Count L1 cycles
+    let l1Cycles = 0;
+    if (this.l1Database && this.l1Initialized) {
+      try {
+        const cycleIds = await this.getL1CycleIds();
+        l1Cycles = cycleIds.length;
+      } catch (error) {
+        console.error('Failed to count L1 cycles:', error);
+      }
+    }
+
+    // Count total operations
+    let totalOperations = this.l0Cache.length;
+    if (this.l1Database && this.l1Initialized) {
+      try {
+        const l1Count = await this.getL1OperationCount();
+        totalOperations += l1Count;
+      } catch (error) {
+        // Ignore errors
+      }
+    }
+
     return {
       l0Size: this.l0Cache.length,
-      l1Cycles: 0, // TODO: Count from database when implemented
+      l1Cycles,
       l2Cycles,
       l3Cycles,
-      totalOperations: this.l0Cache.length,
+      totalOperations,
     };
   }
 
@@ -366,9 +957,20 @@ export class StorageLayer {
   }
 
   /**
-   * Get L1 database (for future use)
+   * Get L1 database (for testing/debugging)
    */
-  getL1Database(): any {
+  getL1Database(): Database.Database | null {
     return this.l1Database;
+  }
+
+  /**
+   * Close L1 database connection
+   */
+  closeL1Database(): void {
+    if (this.l1Database) {
+      this.l1Database.close();
+      this.l1Database = null;
+      this.l1Initialized = false;
+    }
   }
 }

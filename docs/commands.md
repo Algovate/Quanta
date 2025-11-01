@@ -11,7 +11,8 @@ quanta
 ├── config     Configuration management (6 sub-commands)
 ├── simulate   Simulation and demonstration (1 sub-command)
 ├── server     Web server for trading UI (3 sub-commands)
-└── log        Log query and analysis (6 sub-commands)
+├── log        Log query and analysis (7 sub-commands)
+└── help       Show help information
 ```
 
 ## Trading Commands
@@ -757,17 +758,91 @@ quanta log storage --format json
 **Output Format:**
 
 ```
-🗄️  Storage Statistics
-Current log storage usage
+💾 Storage Statistics
+Log storage layer information
 
 📦 Storage Layers:
-   L0 (In-memory Cache): 50 operations
-   L1 (Warm Storage): 5 cycles (SQLite - planned)
-   L2 (Cold Storage): 20 cycles (Filesystem)
-   L3 (Archive Storage): 10 cycles (Compressed)
-
-   Total Operations Stored: 5000
+   L0 (Hot Cache): 50 operations
+   L1 (Warm): 5 cycles
+   L2 (Cold): 20 cycles
+   L3 (Archive): 10 cycles
+   Total Operations: 5000
 ```
+
+---
+
+### `log cleanup` - Cleanup Old Logs
+
+Clean up old log data to free up storage space.
+
+```bash
+quanta log cleanup [options]
+
+Options:
+  --max-cycles <number>    Keep only the last N cycles (default: 1000)
+  --keep-days <number>     Keep logs from the last N days
+  --force                   Force cleanup without confirmation
+  --dry-run                 Show what would be cleaned without actually cleaning
+```
+
+**Examples:**
+
+```bash
+# Preview cleanup (dry-run)
+quanta log cleanup --dry-run
+
+# Cleanup: keep only last 500 cycles
+quanta log cleanup --max-cycles 500
+
+# Cleanup: keep only logs from last 7 days
+quanta log cleanup --keep-days 7
+
+# Cleanup with force (no confirmation)
+quanta log cleanup --keep-days 7 --force
+
+# Default cleanup (keeps 1000 most recent cycles)
+quanta log cleanup
+```
+
+**Output Format:**
+
+```
+🧹 Log Cleanup
+Cleaning up old log data
+
+📋 Cleanup Preview:
+   L1 Cycles: 0
+   L2 Cycles: 25
+   L3 Cycles: 0
+   Total Cycles: 25
+   Estimated Operations: 1250
+
+🧹 Cleaning up...
+
+✓ Cleanup completed
+   Deleted Cycles: 25
+   Deleted Operations: 1250
+```
+
+**Cleanup Strategies:**
+
+1. **By Cycle Count** (`--max-cycles`):
+   - Keeps the most recent N cycles
+   - Moves older cycles from L2 to L3 (archive)
+   - Default: 1000 cycles
+
+2. **By Days** (`--keep-days`):
+   - Deletes logs older than N days
+   - Checks all storage layers (L1, L2, L3)
+   - Permanently deletes old data (doesn't archive)
+
+**Notes:**
+
+- Use `--dry-run` to preview what will be cleaned before actual cleanup
+- `--force` skips confirmation prompts (useful for automation)
+- Cleanup by days permanently deletes data (cannot be recovered)
+- Cleanup by cycles archives data to L3 (can still be accessed, but compressed)
+- L0 (memory cache) is automatically managed and doesn't need manual cleanup
 
 ---
 
@@ -801,14 +876,35 @@ quanta log snapshot
 
 ## API Endpoints (for QuantaWeb)
 
-- `GET /health` — health check
-- `GET /api/status` — system status
-- `GET /api/klines/:symbol?timeframe=1h&limit=100` — candlesticks
-- `GET /api/market/summary?symbols=BTC%2FUSDT,ETH%2FUSDT&interval=1m` — current prices and latest kline per symbol
+The Quanta server provides RESTful API endpoints for the web interface:
 
-Run the server:
+### Health & Status
+
+- `GET /health` — Quick health check (synchronous, fast)
+- `GET /health/detailed` — Comprehensive health check with component status
+- `GET /api/status` — System status and configuration
+
+### Market Data
+
+- `GET /api/klines/:symbol?timeframe=1h&limit=100` — Fetch candlesticks for a symbol
+- `GET /api/market/summary?symbols=BTC%2FUSDT,ETH%2FUSDT&interval=1m` — Current prices and latest kline per symbol
+
+### Running the Server
 
 ```bash
+# Start the API server
+quanta server start
+
+# Or use npm script
 npm run api:dev
-# API: http://localhost:3001
+
+# Server will be available at:
+# http://localhost:3001
 ```
+
+For more details, see [Error Handling & Resilience](error-handling.md#health-check-endpoints) documentation.
+
+---
+
+**Last Updated**: January 2025  
+**Version**: 0.1.0

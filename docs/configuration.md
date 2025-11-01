@@ -273,9 +273,18 @@ quanta config validate
 
 # Check environment variables
 env | grep -E "(AI_|EXCHANGE_|TRADING_)"
+
+# Show effective configuration (includes env overrides)
+quanta config show
 ```
 
 ### Configuration Conflicts
+
+Priority order (highest to lowest):
+1. Command-line arguments
+2. Environment variables
+3. `config/config.json`
+4. Default values
 
 ```bash
 # Clear environment overrides
@@ -288,3 +297,22 @@ quanta config show
 quanta config reset
 quanta config init
 ```
+
+### Common Issues
+
+**Issue**: Values not taking effect
+- **Solution**: Check priority order - environment variables override config file
+- **Solution**: Restart the application after changing configuration
+
+**Issue**: Invalid JSON syntax
+- **Solution**: Use `quanta config validate` to check syntax
+- **Solution**: Use a JSON validator online or in your editor
+
+**Issue**: Missing required fields
+- **Solution**: Use `quanta config init` to create from example
+- **Solution**: Check [Configuration Guide](configuration.md) for required fields
+
+---
+
+**Last Updated**: January 2025  
+**Version**: 0.1.0

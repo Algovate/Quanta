@@ -672,6 +672,8 @@ readinessProbe:
 
 ## Future Enhancements
 
+Potential improvements for future versions:
+
 1. **Rate Limiting**: Token bucket algorithm for API calls
 2. **Metrics Collection**: Prometheus-compatible metrics endpoint
 3. **Adaptive Retry**: Dynamic retry config based on error patterns

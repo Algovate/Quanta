@@ -16,7 +16,7 @@ npm install
 npm run build
 ```
 
-> **Note**: Paper trading mode recommended for testing with real market data
+> **Note**: For testing with real market data without financial risk, use paper trading mode. For learning the system mechanics, start with simulation mode.
 
 ## Quick Start
 
@@ -110,5 +110,17 @@ quanta trade start --mode live --coins BTC,ETH
 
 - 📖 [Read the Trading Guide](trading-guide.md) - Complete trading operations
 - 🔧 [Configure the System](configuration.md) - Advanced configuration
-- 🧪 [Learn Testing](testing-simulation.md) - Strategy testing
 - 💡 [Study Concepts](concepts.md) - Deep dive into algorithms
+- 📚 [Browse Full Documentation](README.md) - Complete documentation index
+
+## Important Notes
+
+- **Always test in simulation mode first** to understand the system mechanics
+- **Use paper trading mode** to validate strategies with real market data
+- **Only use live mode** after thorough testing and with proper risk management
+- **Never trade with money you can't afford to lose**
+
+---
+
+**Last Updated**: January 2025  
+**Version**: 0.1.0

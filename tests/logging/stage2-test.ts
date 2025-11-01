@@ -93,15 +93,37 @@ async function testStorageLayer() {
   const l0Ops = storage.getOperationsFromL0(10);
   assert.ok(l0Ops.length > 0, 'Should have operations in L0');
 
-  // Test retrieval by cycle
+  // Test L1 SQLite database
+  const l1Ops = await storage.getOperationsFromL1({ cycleId: 1, limit: 10 });
+  assert.ok(Array.isArray(l1Ops), 'Should return array from L1');
+  if (l1Ops.length > 0) {
+    assert.ok(l1Ops[0].operationId === 'test-op-1', 'Should retrieve stored operation from L1');
+  }
+
+  // Test L1 count
+  const l1Count = await storage.getL1OperationCount({ cycleId: 1 });
+  assert.ok(typeof l1Count === 'number', 'Should return count from L1');
+  assert.ok(l1Count >= 0, 'L1 count should be non-negative');
+
+  // Test L1 cycle IDs
+  const l1CycleIds = await storage.getL1CycleIds();
+  assert.ok(Array.isArray(l1CycleIds), 'Should return array of cycle IDs from L1');
+
+  // Test retrieval by cycle (should include L1 data)
   const opsByCycle = await storage.getOperationsByCycle(1);
   assert.ok(Array.isArray(opsByCycle), 'Should return array of operations');
+  assert.ok(opsByCycle.length > 0, 'Should have operations from L0 or L1');
 
-  // Test stats
+  // Test stats (should include L1 data)
   const stats = await storage.getStats();
   assert.ok(stats.l0Size >= 0, 'Should have L0 stats');
+  assert.ok(stats.l1Cycles >= 0, 'Should have L1 cycle count');
+  assert.ok(stats.totalOperations >= 0, 'Should have total operations count');
 
   console.log('✓ StorageLayer tests passed');
+  console.log(`  - L0 size: ${stats.l0Size}`);
+  console.log(`  - L1 cycles: ${stats.l1Cycles}`);
+  console.log(`  - Total operations: ${stats.totalOperations}`);
 }
 
 async function testUnifiedLogger() {

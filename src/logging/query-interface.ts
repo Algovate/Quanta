@@ -85,6 +85,60 @@ export class QueryInterface {
     // Get from L0 cache first
     let operations = this.storageLayer.getOperationsFromL0(10000);
 
+    // Get from L1 database
+    const l1Options: {
+      cycleId?: number;
+      traceId?: string;
+      operationType?: string;
+      status?: string;
+      symbol?: string;
+      startTime?: number;
+      endTime?: number;
+      limit?: number;
+      offset?: number;
+    } = {};
+
+    if (options.cycleId !== undefined) {
+      l1Options.cycleId = options.cycleId;
+    }
+    if (options.traceId) {
+      l1Options.traceId = options.traceId;
+    }
+    if (options.operationType) {
+      l1Options.operationType = options.operationType;
+    }
+    if (options.status) {
+      l1Options.status = options.status;
+    }
+    if (options.symbol) {
+      l1Options.symbol = options.symbol;
+    }
+    if (options.startTime !== undefined) {
+      l1Options.startTime = options.startTime;
+    }
+    if (options.endTime !== undefined) {
+      l1Options.endTime = options.endTime;
+    }
+
+    // Get more from L1 if needed (but don't use offset/limit here as we'll handle pagination later)
+    const l1Ops = await this.storageLayer.getOperationsFromL1({
+      ...l1Options,
+      limit: 10000, // Get a large batch
+    });
+
+    // Combine L0 and L1, deduplicate by operationId
+    const opsMap = new Map<string, OperationLog>();
+    for (const op of operations) {
+      opsMap.set(op.operationId, op);
+    }
+    for (const op of l1Ops) {
+      if (!opsMap.has(op.operationId)) {
+        opsMap.set(op.operationId, op);
+      }
+    }
+
+    operations = Array.from(opsMap.values());
+
     // Apply filters
     if (options.startTime) {
       operations = operations.filter(op => op.startTime >= options.startTime!);

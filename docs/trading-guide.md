@@ -137,11 +137,12 @@ Notes:
 
 Quanta automatically implements risk controls:
 
-- **Position Sizing**: Maximum 5% risk per trade
-- **Stop Loss**: 5% default
-- **Take Profit**: 6% default
-- **Max Positions**: 6 concurrent positions
-- **Leverage**: 5x to 40x (configurable)
+- **Position Sizing**: Maximum 5% risk per trade, 30% of available capital per position
+- **Stop Loss**: 5% default (configurable)
+- **Take Profit**: 6% default (2x stop-loss)
+- **Max Positions**: 6 concurrent positions (configurable)
+- **Leverage**: 5x to 40x for derivatives, 1x for spot (configurable)
+- **Capital Reserve**: Maintains 40% reserve for additional positions
 
 ## Best Practices
 
@@ -242,4 +243,10 @@ For more advanced topics, refer to:
 
 - [Core Concepts](concepts.md) - Complete trading concepts and algorithms
 - [Configuration Guide](configuration.md) - Advanced configuration options
-- [Testing & Simulation](testing-simulation.md) - Strategy testing and validation
+- [Error Handling & Resilience](error-handling.md) - System resilience patterns
+- [Logging Guide](logging-guide.md) - Operation tracking and analysis
+
+---
+
+**Last Updated**: January 2025  
+**Version**: 0.1.0

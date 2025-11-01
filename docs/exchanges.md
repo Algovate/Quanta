@@ -135,9 +135,10 @@ All exchanges support:
 
 ### Position Sizing
 
-- Maximum position size: 20% of available capital per trade
-- Risk-based sizing: Based on stop-loss percentage
-- Leverage: Configurable (default: 1x for simulation)
+- Maximum position size: 30% of available trading capital per trade
+- Risk-based sizing: Based on stop-loss percentage and account equity
+- Minimum position: 1% of equity or $200 (whichever is greater)
+- Leverage: Configurable (default: 1x for spot, 5-40x for derivatives)
 
 ### Risk Management
 
@@ -174,3 +175,9 @@ quanta test exchange --exchange <exchange> --coin BTC
 - Check internet connection
 - Verify API endpoint accessibility
 - Review rate limits
+- Check firewall settings if using VPN or proxy
+
+---
+
+**Last Updated**: January 2025  
+**Version**: 0.1.0
