@@ -190,7 +190,7 @@ export class TradeCommands {
       .command('start')
       .description('Start AI trading system')
       .option('-m, --mode <mode>', 'Trading mode: live, simulation, paper')
-      .option('-c, --coins <coins>', 'Comma-separated list of coins', 'BTC,ETH,SOL')
+      .option('-c, --coins <coins>', 'Comma-separated list of coins (overrides config)')
       .action(async options => {
         await handleAsync(async () => {
           await TradeCommands.startTrading(options);
@@ -200,7 +200,7 @@ export class TradeCommands {
     program
       .command('backtest')
       .description('Run backtest with historical data')
-      .option('-c, --coins <coins>', 'Comma-separated list of coins', 'BTC,ETH,SOL')
+      .option('-c, --coins <coins>', 'Comma-separated list of coins (overrides config)')
       .option('-s, --start <date>', 'Start date (YYYY-MM-DD)')
       .option('-e, --end <date>', 'End date (YYYY-MM-DD)')
       .option('--initial-balance <amount>', 'Initial balance', '10000')
@@ -261,12 +261,15 @@ export class TradeCommands {
       });
   }
 
-  private static async startTrading(options: { mode: string; coins: string }): Promise<void> {
-    const coins = options.coins.split(',').map((c: string) => c.trim());
-
-    // Get mode from CLI or config file
+  private static async startTrading(options: { mode?: string; coins?: string }): Promise<void> {
+    // Get mode and config first
     const config = getConfig();
     const mode = options.mode || config.mode || 'simulation';
+    
+    // Use CLI coins if explicitly provided, otherwise use config
+    const coins = options.coins
+      ? options.coins.split(',').map((c: string) => c.trim())
+      : config.trading.coins;
 
     // Validate mode parameter
     const validModes = ['live', 'simulation', 'paper'];
@@ -342,7 +345,7 @@ export class TradeCommands {
   }
 
   private static async runBacktest(options: {
-    coins: string;
+    coins?: string;
     start: string;
     end: string;
     initialBalance: string;
@@ -372,7 +375,11 @@ export class TradeCommands {
     console.log(chalk.cyan('📈 Quanta Backtest'));
     console.log(chalk.gray('Historical strategy validation\n'));
 
-    const coins = options.coins.split(',').map((c: string) => c.trim().toUpperCase());
+    // Get config for default coins
+    const config = getConfig();
+    const coins = options.coins
+      ? options.coins.split(',').map((c: string) => c.trim().toUpperCase())
+      : config.trading.coins;
 
     // Derive default 4-month span when dates are missing
     const now = new Date();

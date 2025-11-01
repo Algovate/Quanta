@@ -418,8 +418,6 @@ function loadConfigFromFile(): Partial<Config> {
 }
 
 function parseEnvConfig(): Partial<Config> {
-  const coins = process.env.TRADING_COINS?.split(',').map(c => c.trim()) || ['BTC', 'ETH', 'SOL'];
-
   return {
     mode: (process.env.EXCHANGE_MODE as 'live' | 'simulation' | 'paper') || 'simulation',
     exchange: {
@@ -464,7 +462,7 @@ function parseEnvConfig(): Partial<Config> {
       },
     },
     trading: {
-      coins,
+      ...(process.env.TRADING_COINS && { coins: process.env.TRADING_COINS.split(',').map(c => c.trim()) }),
       cyclePeriod: parseIntegerEnv(process.env.CYCLE_PERIOD, 180000),
       maxPositions: parseIntegerEnv(process.env.MAX_POSITIONS, 6),
       leverageRange: [
