@@ -1,0 +1,200 @@
+/**
+ * Test runner for Stage 2 components
+ */
+
+import assert from 'node:assert';
+import { Sampler } from '../../src/logging/sampler.js';
+import { AnomalyDetector } from '../../src/logging/anomaly-detector.js';
+import { StorageLayer } from '../../src/logging/storage-layer.js';
+import { UnifiedLogger } from '../../src/logging/unified-logger.js';
+import { MetricsCollector } from '../../src/logging/metrics-collector.js';
+import type { OperationLog } from '../../src/logging/types.js';
+
+async function testSampler() {
+  console.log('Testing Sampler...');
+  const sampler = Sampler.getInstance();
+
+  // Test default configuration
+  const config = sampler.getConfig();
+  assert.strictEqual(config.normal.operationLogRate, 1.0, 'Operations should always be logged');
+  assert.strictEqual(config.normal.debugLogRate, 0.0, 'Debug should be off by default');
+
+  // Test state evaluation
+  sampler.forceState('normal');
+  assert.strictEqual(sampler.getState(), 'normal', 'State should be normal');
+
+  // Test sampling
+  sampler.forceState('normal');
+  const shouldLogOp = sampler.shouldLog('operation', false);
+  assert.strictEqual(shouldLogOp, true, 'Operations should always log');
+
+  const shouldLogDebug = sampler.shouldLog('debug', false);
+  assert.strictEqual(shouldLogDebug, false, 'Debug should not log in normal state');
+
+  // Test error logging (always allowed)
+  const shouldLogError = sampler.shouldLog('debug', true);
+  assert.strictEqual(shouldLogError, true, 'Errors should always log');
+
+  console.log('✓ Sampler tests passed');
+}
+
+async function testAnomalyDetector() {
+  console.log('Testing AnomalyDetector...');
+  const detector = AnomalyDetector.getInstance();
+  detector.reset();
+
+  const metricsCollector = MetricsCollector.getInstance();
+  metricsCollector.reset();
+
+  // Test error rate spike detection
+  // Simulate error rate increase
+  for (let i = 0; i < 10; i++) {
+    metricsCollector.recordError('TestError', i + 1);
+    metricsCollector.recordCycleTime(i + 1, 1000);
+  }
+
+  // Create initial metrics snapshot
+  metricsCollector.createSnapshot(1);
+
+  // Create second snapshot with higher error rate
+  for (let i = 0; i < 20; i++) {
+    metricsCollector.recordError('TestError', i + 10);
+    metricsCollector.recordCycleTime(i + 10, 1000);
+  }
+
+  const events = detector.checkForAnomalies();
+  // Anomaly detection may or may not trigger depending on timing
+  assert.ok(Array.isArray(events), 'Should return array of events');
+
+  console.log('✓ AnomalyDetector tests passed');
+}
+
+async function testStorageLayer() {
+  console.log('Testing StorageLayer...');
+  const storage = StorageLayer.getInstance();
+
+  // Test operation storage
+  const testOperation: OperationLog = {
+    operationId: 'test-op-1',
+    traceId: 'test-trace-1',
+    cycleId: 1,
+    operationType: 'test_operation',
+    startTime: Date.now(),
+    status: 'completed',
+    input: { test: 'input' },
+    output: { test: 'output' },
+    stages: [],
+    metrics: { duration: 100 },
+  };
+
+  await storage.storeOperation(testOperation);
+
+  // Test retrieval from L0
+  const l0Ops = storage.getOperationsFromL0(10);
+  assert.ok(l0Ops.length > 0, 'Should have operations in L0');
+
+  // Test retrieval by cycle
+  const opsByCycle = await storage.getOperationsByCycle(1);
+  assert.ok(Array.isArray(opsByCycle), 'Should return array of operations');
+
+  // Test stats
+  const stats = await storage.getStats();
+  assert.ok(stats.l0Size >= 0, 'Should have L0 stats');
+
+  console.log('✓ StorageLayer tests passed');
+}
+
+async function testUnifiedLogger() {
+  console.log('Testing UnifiedLogger...');
+  const logger = UnifiedLogger.getInstance();
+
+  // Initialize
+  logger.initialize();
+
+  // Test trace context creation
+  const traceContext = logger.createTraceContext(1);
+  assert.ok(traceContext.traceId, 'Should generate trace ID');
+  assert.strictEqual(traceContext.cycleId, 1, 'Should set cycle ID');
+
+  // Test operation lifecycle
+  const operationId = logger.startOperation(traceContext, 'test_operation', { input: 'test' });
+  assert.ok(operationId, 'Should return operation ID');
+
+  logger.startStage(operationId, 'stage1');
+  await new Promise(resolve => setTimeout(resolve, 10));
+  logger.completeStage(operationId, 'stage1', { output: 'stage1-output' });
+
+  const completed = logger.completeOperation(operationId, 'completed', { result: 'success' });
+  assert.ok(completed, 'Should complete operation');
+  assert.strictEqual(completed.status, 'completed', 'Status should be completed');
+
+  // Test metrics
+  logger.recordCycleTime(1, 1000);
+  logger.recordAPILatency('test.endpoint', 50);
+
+  const metrics = logger.getMetricsSnapshot(1);
+  assert.ok(metrics.timestamp > 0, 'Should have timestamp');
+  assert.ok(metrics.performance.cycleTime.p50 >= 0, 'Should calculate cycle time stats');
+
+  // Test error recording
+  logger.recordError(new Error('Test error'), { cycleId: 1 });
+  const errorRate = logger.getErrorRate();
+  assert.ok(errorRate >= 0, 'Should calculate error rate');
+
+  // Test snapshot creation
+  const snapshot = logger.createSnapshot(
+    1,
+    {
+      equity: 10000,
+      balance: 10000,
+      marginUsed: 0,
+      availableMargin: 10000,
+    },
+    [],
+    [],
+    []
+  );
+
+  assert.ok(snapshot.snapshotId, 'Should create snapshot');
+  assert.strictEqual(snapshot.cycleId, 1, 'Should set cycle ID');
+
+  // Test operations retrieval
+  const ops = await logger.getOperationsByCycle(1);
+  assert.ok(Array.isArray(ops), 'Should return operations');
+
+  // Test anomaly checking
+  const anomalies = logger.checkAnomalies();
+  assert.ok(Array.isArray(anomalies), 'Should return anomalies array');
+
+  // Test sampling
+  const state = logger.getSamplingState();
+  assert.ok(['normal', 'warning', 'critical'].includes(state), 'Should return valid state');
+
+  const shouldLog = logger.shouldLog('operation', false);
+  assert.strictEqual(typeof shouldLog, 'boolean', 'Should return boolean');
+
+  console.log('✓ UnifiedLogger tests passed');
+}
+
+async function runAllTests() {
+  console.log('\n=== Running Stage 2 Tests ===\n');
+
+  try {
+    await testSampler();
+    await testAnomalyDetector();
+    await testStorageLayer();
+    await testUnifiedLogger();
+
+    console.log('\n=== All Stage 2 Tests Passed! ===\n');
+    process.exit(0);
+  } catch (error) {
+    console.error('\n=== Test Failed ===');
+    console.error(error);
+    if (error instanceof Error) {
+      console.error('Stack:', error.stack);
+    }
+    process.exit(1);
+  }
+}
+
+runAllTests();

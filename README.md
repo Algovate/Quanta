@@ -182,6 +182,47 @@ npm run type-check  # TypeScript type checks (no emit)
 npm run format   # Format code
 ```
 
+### Project Structure
+
+```
+Quanta/
+├── src/              # Source code
+│   ├── logging/      # Logging system components
+│   ├── core/         # Core trading logic
+│   ├── exchange/     # Exchange adapters
+│   └── ...
+├── tests/            # Test files (separated from source)
+│   ├── logging/      # Logging system tests
+│   ├── okx/          # Exchange-specific tests
+│   └── *.unit.ts     # Unit tests
+├── config/           # Configuration files
+└── docs/             # Documentation
+```
+
+### Testing
+
+Tests are located in the `tests/` directory, separated from source code:
+
+```bash
+# Run specific test suites
+npm run test:okx:unit      # OKX exchange tests
+npm run test:okx:ticker    # OKX ticker tests
+
+# Run logging system tests (using Node.js assert or vitest)
+tsx tests/logging/test-all.ts    # Run all logging component tests
+tsx tests/logging/stage2-test.ts # Run Stage 2 component tests
+
+# Run with vitest (if configured)
+npx vitest tests/logging          # Run logging tests with vitest
+```
+
+**Test Organization:**
+
+- Unit tests: `tests/*.unit.ts`
+- Component tests: `tests/logging/*.test.ts`
+- Exchange tests: `tests/okx/`
+- All tests are separated from source code in `tests/` directory
+
 ## Risk Warning
 
 ⚠️ **CRITICAL**: This software is for educational purposes only. Cryptocurrency trading involves substantial risk. Never trade with money you cannot afford to lose.

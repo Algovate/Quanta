@@ -1,551 +1,809 @@
-# Logging 使用指南
+# Logging System Guide
 
-## 快速开始
+Complete guide to Quanta's new operation-driven logging system.
 
-### 基本用法
+## Overview
 
-```typescript
-import { Logger } from '../utils/logger.js';
+Quanta uses a sophisticated **operation-driven logging system** that tracks the complete lifecycle of operations, aggregates errors intelligently, captures system state snapshots, and provides powerful query capabilities for analysis and debugging.
 
-// 获取 Logger 实例
-const logger = Logger.getInstance('MyModule');
+### Key Features
 
-// 记录不同级别的日志
-logger.info('应用程序启动');
-logger.warn('磁盘空间不足');
-logger.error('数据库连接失败', error);
-logger.debug('调试信息', { userId: 123 });
+- **Operation Lifecycle Tracking**: Track complete operation flows with stages, inputs, outputs, and errors
+- **Intelligent Error Aggregation**: Group similar errors to reduce noise and identify patterns
+- **System State Snapshots**: Periodic capture of critical system state for post-mortem analysis
+- **Real-time Metrics**: Collect and monitor performance metrics during runtime
+- **Intelligent Sampling**: Dynamically adjust logging detail based on system health
+- **Anomaly Detection**: Automatically detect and respond to unusual system patterns
+- **Tiered Storage**: Efficient multi-level storage (memory → hot → warm → cold)
+- **Query Interface**: Powerful CLI and programmatic query capabilities
+- **Backward Compatibility**: Works alongside existing logger for gradual migration
+
+## Architecture
+
+### Components
+
+```
+┌─────────────────┐
+│ UnifiedLogger   │ ← Main interface
+└────────┬────────┘
+         │
+    ┌────┴──────────────────────────────┐
+    │                                  │
+┌───▼──────────┐  ┌──────────────┐  ┌─▼───────────┐
+│OperationLogger│  │ErrorAggregator│  │MetricsCollector│
+└──────────────┘  └──────────────┘  └──────────────┘
+         │                                  │
+┌────────▼──────────┐              ┌─────────▼─────────┐
+│StateSnapshot     │              │AnomalyDetector   │
+└──────────────────┘              └──────────────────┘
+         │                                  │
+┌────────▼──────────┐              ┌─────────▼─────────┐
+│StorageLayer       │              │StorageOptimizer │
+│  (Tiered Storage) │              │  (Batch Writes)  │
+└───────────────────┘              └──────────────────┘
+         │
+┌────────▼──────────┐
+│QueryInterface     │
+│  (Search/Filter)  │
+└───────────────────┘
 ```
 
-## 日志级别
+## Quick Start
 
-### 1. ERROR - 错误
+### Basic Usage
 
-用于记录程序错误和异常情况。
+```typescript
+import { UnifiedLogger } from '../logging/index.js';
+
+// Get logger instance
+const logger = UnifiedLogger.getInstance();
+logger.initialize();
+
+// Create trace context for a cycle
+const traceContext = logger.createTraceContext(cycleId);
+
+// Start an operation
+const operationId = logger.startOperation(
+  traceContext,
+  'signal_generation',
+  { symbols: ['BTC/USDT', 'ETH/USDT'] },
+  'BTC/USDT'
+);
+
+// Track operation stages
+logger.startStage(operationId, 'fetch_market_data');
+// ... do work ...
+logger.completeStage(operationId, 'fetch_market_data', { candles: 100 });
+
+// Record metrics
+logger.recordMetric('api_latency', 150, { endpoint: '/api/ticker' });
+
+// Complete operation
+logger.completeOperation(operationId, 'completed', {
+  signals: [{ symbol: 'BTC/USDT', action: 'LONG', confidence: 0.85 }],
+});
+```
+
+## Operation Lifecycle
+
+### 1. Starting Operations
+
+Every operation has a unique ID and belongs to a trace (cycle-level grouping).
+
+```typescript
+// Create trace context
+const traceContext = logger.createTraceContext(cycleId);
+
+// Start operation
+const operationId = logger.startOperation(
+  traceContext, // Trace context
+  'order_execution', // Operation type
+  { orderId: '123' }, // Input data
+  'BTC/USDT' // Optional symbol
+);
+```
+
+**Operation Types**:
+
+- `cycle_execution`: Complete trading cycle
+- `signal_generation`: AI signal generation
+- `order_execution`: Order placement/execution
+- `position_monitoring`: Position updates
+- `risk_validation`: Risk checks
+- `account_sync`: Account data fetching
+
+### 2. Tracking Stages
+
+Operations can have multiple stages for detailed tracking.
+
+```typescript
+// Start a stage
+logger.startStage(operationId, 'validate_risk', {
+  maxPosition: 5,
+  currentPositions: 3,
+});
+
+// ... perform validation ...
+
+// Complete stage with output
+logger.completeStage(operationId, 'validate_risk', {
+  approved: true,
+  reason: 'Within limits',
+});
+```
+
+**Common Stages**:
+
+- `fetch_account_data`: Fetch account information
+- `fetch_market_data`: Fetch market/candlestick data
+- `generate_signals`: AI signal generation
+- `validate_risk`: Risk validation
+- `execute_order`: Order placement
+- `update_positions`: Position updates
+
+### 3. Error Handling
+
+Errors are automatically captured and aggregated.
 
 ```typescript
 try {
   await riskyOperation();
 } catch (error) {
-  logger.error('关键操作失败', error, {
-    operationId: '123',
-    userId: 456,
-    details: '数据库连接超时',
-  });
+  // Error is automatically captured in the operation log
+  logger.completeOperation(operationId, 'failed', undefined, error);
 }
 ```
 
-**文件输出**:
+### 4. Completing Operations
 
-```json
+```typescript
+// Success
+logger.completeOperation(operationId, 'completed', {
+  result: 'Order placed successfully',
+  orderId: 'order-123',
+});
+
+// Failure
+logger.completeOperation(operationId, 'failed', undefined, error);
+
+// Cancellation
+logger.completeOperation(operationId, 'cancelled');
+```
+
+## Error Aggregation
+
+The system automatically groups similar errors to reduce noise.
+
+### Features
+
+- **Time-windowed grouping**: Errors within a configurable window (default: 60s) are grouped
+- **Fingerprinting**: Similar errors are identified by type and message
+- **Trend detection**: Identifies increasing/decreasing error patterns
+- **Severity calculation**: Based on frequency, affected symbols, and cycles
+- **Recovery tracking**: Tracks recovery attempts and success rates
+
+### Error Information
+
+Each aggregated error includes:
+
+```typescript
 {
-  "timestamp": "2025-10-28T10:30:00.000Z",
-  "level": "error",
-  "context": "MyModule",
-  "message": "关键操作失败",
-  "error": "数据库连接超时",
-  "stack": "Error: ...",
-  "operationId": "123",
-  "userId": 456
+  fingerprint: string;        // Unique error identifier
+  errorType: string;           // Error class name
+  message: string;             // Error message
+  firstOccurrence: number;     // First seen timestamp
+  lastOccurrence: number;     // Most recent timestamp
+  totalCount: number;          // Total occurrences
+  affectedCycles: number[];    // Cycle IDs affected
+  affectedSymbols: string[];   // Symbols affected
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  trend: 'increasing' | 'stable' | 'decreasing';
+  sampleErrors: ErrorInfo[];  // Sample of actual errors
+  recoveryAttempts?: number;
+  recoverySuccess?: boolean;
 }
 ```
 
-### 2. WARN - 警告
+## System Snapshots
 
-用于记录潜在问题和不推荐的操作。
+Periodic snapshots capture the complete system state.
 
-```typescript
-if (apiUsage > 90) {
-  logger.warn('API 使用率过高', {
-    usage: 92,
-    limit: 100,
-  });
-}
-```
-
-### 3. INFO - 信息
-
-用于记录重要业务流程和状态变更。
+### Snapshot Content
 
 ```typescript
-logger.info('用户登录成功', {
-  userId: 123,
-  ip: '192.168.1.1',
-  userAgent: 'Mozilla/5.0',
-});
-```
-
-### 4. DEBUG - 调试
-
-用于记录详细的调试信息（开发环境）。
-
-```typescript
-logger.debug('缓存命中', {
-  key: 'user:123',
-  cacheSize: 42,
-  hitRate: 0.85,
-});
-```
-
-## 结构化管理
-
-### 记录元数据
-
-```typescript
-// 交易信号生成
-logger.info('AI Signal Generation', {
-  signalCount: 3,
-  signals: [
-    { coin: 'BTC', action: 'LONG', confidence: 0.85 },
-    { coin: 'ETH', action: 'HOLD', confidence: 0.65 },
-  ],
-});
-
-// 周期总结
-logger.info('Cycle Summary', {
-  cycle: 42,
-  runtime: '15m 30s',
+{
+  snapshotId: string;
+  timestamp: number;
+  cycleId: number;
   account: {
-    equity: 10000,
-    totalPnl: 250.5,
-    leverage: 2.5,
-  },
-});
-```
-
-## 背景模式
-
-### 自动检测
-
-Logger 会自动检测是否在后台运行：
-
-```typescript
-// TTY 可用 = 交互模式 (前台)
-// TTY 不可用 = 后台模式
-
-const logger = Logger.getInstance('Workflow');
-if (logger.isBackgroundMode()) {
-  // 在后台运行 - 日志会简化格式
+    equity: number;
+    balance: number;
+    marginUsed: number;
+    availableMargin: number;
+  };
+  positions: Array<{
+    symbol: string;
+    side: 'long' | 'short';
+    size: number;
+    entryPrice: number;
+    unrealizedPnl: number;
+  }>;
+  systemMetrics: {
+    uptime: number;
+    errorRate: number;
+    avgCycleTime: number;
+    memoryUsage: { heapUsed, heapTotal, rss };
+    apiLatency: { p50, p75, p90, p95, p99 };
+  };
+  circuitBreakers: Array<{ name, state, failures }>;
+  errorSummary: Record<string, AggregatedError>;
+  activeOperations: OperationLog[];
 }
 ```
 
-### 强制后台模式
+### Creating Snapshots
+
+```typescript
+const snapshot = logger.createSnapshot(cycleId, {
+  account: accountData,
+  positions: positionsData,
+  circuitBreakers: circuitBreakerStates,
+  recentOperations: operationsSummary,
+});
+```
+
+## Metrics Collection
+
+Real-time metrics are collected automatically.
+
+### Recorded Metrics
+
+- **Operation Times**: Duration of each operation type
+- **API Latencies**: Response times for API calls (percentiles)
+- **Error Rates**: Errors per cycle, error types
+- **Resource Usage**: CPU, memory usage
+- **Business Metrics**: Signal generation success, order execution rates
+
+### Recording Metrics
+
+```typescript
+// Record API latency
+logger.recordMetric('api_latency', 150, {
+  endpoint: '/api/ticker',
+  method: 'GET',
+});
+
+// Record operation time (automatic)
+// Metrics are recorded when operations complete
+
+// Record signal generation
+logger.recordMetric('signal_generation', 1, {
+  success: true,
+  signalCount: 3,
+});
+```
+
+## Intelligent Sampling
+
+The system dynamically adjusts logging detail based on system health.
+
+### Sampling States
+
+- **Normal**: Standard sampling rate (default: 100%)
+- **Warning**: Increased sampling (150%)
+- **Critical**: Maximum sampling (200%)
+
+### Sampling Factors
+
+- Error rate thresholds
+- Performance degradation
+- Anomaly detection triggers
+- Manual override
+
+## Anomaly Detection
+
+Automatic detection of unusual patterns.
+
+### Detected Anomalies
+
+- **Error Rate Spike**: Sudden increase in error frequency
+- **Performance Degradation**: Unusual latency increases
+- **Memory Leak**: Continuously increasing memory usage
+- **API Timeout Pattern**: Repeated timeouts from same endpoint
+
+### Anomaly Response
+
+When anomalies are detected, the system can:
+
+- Increase sampling rate automatically
+- Force immediate snapshot creation
+- Trigger alerts (console warnings)
+- Store additional diagnostic information
+
+## Storage Architecture
+
+### Tiered Storage
+
+```
+L0: In-Memory Cache
+  └─ Active operations, recent metrics (fast access)
+
+L1: Hot Storage (SQLite - planned)
+  └─ Recent cycles, frequently accessed data
+
+L2: Warm Storage (File System)
+  └─ Organized by cycle: logs/l2-history/cycle-{id}/
+
+L3: Cold Storage (Compressed Archive)
+  └─ Old cycles, compressed: logs/l3-archive/cycle-{id}.json.gz
+```
+
+### Storage Optimization
+
+- **Batch Writes**: Operations and snapshots are batched for efficient I/O
+- **Async Processing**: Storage operations don't block execution
+- **Automatic Cleanup**: Old data is archived automatically
+- **Compression**: L3 storage uses gzip compression
+
+## Query Interface
+
+### CLI Commands
+
+#### Query Operations
 
 ```bash
-# 环境变量
-BACKGROUND_MODE=true quanta trade start
+# Query all operations
+quanta log query
 
-# 或
-export BACKGROUND_MODE=true
-quanta trade start
+# Filter by cycle
+quanta log query --cycle-id 42
+
+# Filter by operation type
+quanta log query --type signal_generation
+
+# Filter by status
+quanta log query --status failed
+
+# Filter by symbol
+quanta log query --symbol BTC/USDT
+
+# Filter by trace ID
+quanta log query --trace-id trace-42-1234567890
+
+# Combined filters
+quanta log query --cycle-id 42 --type order_execution --status failed
+
+# Pagination
+quanta log query --limit 20 --offset 0
+
+# JSON output
+quanta log query --format json
 ```
 
-### 行为差异
-
-**交互模式**:
-
-```
-🚀 Starting Quanta trading workflow...
-💰 Account: $10000.00 | Positions: 2
-```
-
-**后台模式**:
-
-```
-[2025-10-28T10:30:00.000Z] [INFO] [Workflow] Starting Quanta trading workflow
-[2025-10-28T10:30:00.000Z] [INFO] [Workflow] Account: $10000.00 | Positions: 2
-```
-
-## 配置方式
-
-### 方式 1: 环境变量（推荐）
+#### Statistics
 
 ```bash
-# 设置日志级别
-LOG_LEVEL=debug
+# Overall statistics
+quanta log stats
 
-# 设置日志目录
-LOG_DIR=/var/log/quanta
+# Filtered statistics
+quanta log stats --cycle-id 42 --type signal_generation
 
-# 设置最大文件大小 (10MB)
-LOG_MAX_SIZE=10485760
-
-# 设置保留天数 (14天)
-LOG_MAX_FILES=14
-
-# 禁用文件输出
-LOG_FILE_OUTPUT=false
-
-# 强制后台模式
-BACKGROUND_MODE=true
+# JSON output
+quanta log stats --format json
 ```
 
-### 方式 2: 配置文件
+#### Trace Viewing
 
-编辑 `config/config.json`:
+```bash
+# View complete trace
+quanta log trace trace-42-1234567890
 
-```json
-{
-  "logging": {
-    "level": "info",
-    "fileOutput": true,
-    "logDir": "./logs",
-    "maxFileSize": 10485760,
-    "maxFiles": 14,
-    "backgroundMode": false
+# JSON output
+quanta log trace trace-42-1234567890 --format json
+```
+
+#### Search
+
+```bash
+# Search by keyword
+quanta log search "API timeout"
+
+# Filtered search
+quanta log search "error" --type order_execution --status failed
+
+# Pagination
+quanta log search "signal" --limit 10 --offset 0
+```
+
+#### Snapshots
+
+```bash
+# View latest snapshot
+quanta log snapshot
+
+# View specific snapshot
+quanta log snapshot snapshot-abc123
+
+# JSON output
+quanta log snapshot --format json
+```
+
+#### Storage Statistics
+
+```bash
+# View storage statistics
+quanta log storage
+```
+
+### Programmatic API
+
+```typescript
+import { QueryInterface } from '../logging/index.js';
+
+const query = QueryInterface.getInstance();
+
+// Query operations
+const result = await query.queryOperations({
+  cycleId: 42,
+  operationType: 'signal_generation',
+  status: 'completed',
+  limit: 50,
+});
+
+// Get statistics
+const stats = await query.getStatistics({
+  cycleId: 42,
+  operationType: 'order_execution',
+});
+
+// Search
+const searchResults = await query.searchOperations('timeout', {
+  limit: 20,
+});
+
+// Get trace
+const trace = await query.getTrace('trace-42-1234567890');
+```
+
+## Integration with Workflow
+
+The logging system is integrated into the main trading workflow.
+
+### Workflow Integration Points
+
+```typescript
+// In TradingWorkflow class
+
+async executeCycle() {
+  // Create trace context
+  const traceContext = this.unifiedLogger.createTraceContext(this.state.cycleCount);
+
+  // Start cycle operation
+  const cycleOpId = this.unifiedLogger.startOperation(
+    traceContext,
+    'cycle_execution',
+    { cycleId: this.state.cycleCount }
+  );
+
+  try {
+    // Fetch account data (stage)
+    this.unifiedLogger.startStage(cycleOpId, 'fetch_account_data');
+    const account = await this.exchange.getAccount();
+    this.unifiedLogger.completeStage(cycleOpId, 'fetch_account_data', { balance: account.balance });
+
+    // Generate signals (stage)
+    this.unifiedLogger.startStage(cycleOpId, 'generate_signals');
+    const signals = await this.generateSignals();
+    this.unifiedLogger.completeStage(cycleOpId, 'generate_signals', { signalCount: signals.length });
+
+    // ... more stages ...
+
+    // Complete cycle
+    this.unifiedLogger.completeOperation(cycleOpId, 'completed', {
+      signalsProcessed: signals.length,
+      ordersPlaced: orders.length
+    });
+  } catch (error) {
+    this.unifiedLogger.completeOperation(cycleOpId, 'failed', undefined, error);
+    throw error;
   }
 }
 ```
 
-### 方式 3: 运行时更新
+## Best Practices
+
+### 1. Use Appropriate Operation Types
 
 ```typescript
-const logger = Logger.getInstance();
-logger.updateConfig({
-  level: LogLevel.DEBUG,
-  backgroundMode: true,
-});
+// ✅ Good: Specific operation type
+logger.startOperation(traceContext, 'signal_generation', data);
+
+// ❌ Bad: Generic type
+logger.startOperation(traceContext, 'operation', data);
 ```
 
-## 日志文件结构
-
-### 目录结构
-
-```
-logs/
-├── combined.log              # 所有日志
-├── error.log                 # 仅错误日志
-├── combined.2025-10-28.log  # 已旋转的日志
-└── error.2025-10-28.log
-```
-
-### 文件内容示例
-
-**combined.log**:
-
-```json
-{"timestamp":"2025-10-28T10:30:00.000Z","level":"info","context":"Workflow","message":"交易循环开始","cycle":42}
-{"timestamp":"2025-10-28T10:30:01.000Z","level":"info","context":"Workflow","message":"AI Signal Generation","signalCount":2}
-{"timestamp":"2025-10-28T10:30:02.000Z","level":"error","context":"OpenRouter","message":"API 请求失败","error":"超时"}
-```
-
-**error.log**:
-
-```json
-{
-  "timestamp": "2025-10-28T10:30:02.000Z",
-  "level": "error",
-  "context": "OpenRouter",
-  "message": "API 请求失败",
-  "error": "超时",
-  "stack": "..."
-}
-```
-
-## 日志轮转
-
-### 自动轮转
-
-Logger 会在以下情况自动轮转：
-
-1. **时间轮转**: 每天午夜自动轮转
-2. **大小轮转**: 文件超过配置的最大大小（默认 10MB）
-3. **清理**: 自动删除超过保留期的旧日志（默认 14 天）
-
-### 轮转日志命名
-
-```
-combined.log                          # 当前日志
-combined.2025-10-28.1698480000000.log  # 已轮转日志
-combined.2025-10-27.1698393600000.log # 更旧的日志
-```
-
-### 手动触发
+### 2. Track Meaningful Stages
 
 ```typescript
-const logger = Logger.getInstance();
-logger.flushSync(); // 立即刷新缓冲区
+// ✅ Good: Clear stage names
+logger.startStage(opId, 'fetch_market_data');
+logger.startStage(opId, 'validate_risk');
+logger.startStage(opId, 'execute_order');
+
+// ❌ Bad: Vague stages
+logger.startStage(opId, 'step1');
+logger.startStage(opId, 'step2');
 ```
 
-## 最佳实践
-
-## Backtest 渲染与降噪
-
-### 渲染器概览
-
-Backtest 使用终端渲染器提供进度、心跳与周期摘要：
-
-- 进度条: `--no-progress` 可禁用
-- 心跳: 长时间无输出时，每 ~1.5s 提示一次
-- 周期摘要: 仅在采样间隔或显著变化时输出，减少噪声
-
-### 降噪阈值（可配置）
-
-通过 CLI 调整输出触发阈值：
-
-- `--cycle-sample <n>`: 每 N 个周期输出一次（默认 10）
-- `--equity-delta-pct <pct>`: 账户权益相对变化超过 pct 时输出（默认 0.001 = 0.1%）
-- `--upnl-delta <usd>`: UPNL 绝对变化超过 usd 时输出（默认 $10）
-- `--exposure-delta-pct <pct>`: 暴露（未加杠杆）相对变化超过 pct 时输出（默认 0.1）
-- `--leverage-delta <val>`: 杠杆绝对变化超过 val 时输出（默认 0.2）
-- `--dd-steps <steps>`: 回撤阈值，逗号分隔，例如 `5,10,15`
-
-### 结构化提示
-
-- RISK 行：当回撤跨越配置阈值时输出，例如：
-  - `RISK | dd=6.2% crossed 5% | eq=$10,120 | lev=1.80`
-- 周期行：包含 Eq、Positions、G/A/R、UPNL、EXP、LV 等关键字段
-
-### 报告视图控制
-
-- `--summary-only`: 仅输出概览一行
-- `--no-risks` / `--no-signals` / `--no-equity`: 隐藏对应报告分区
-
-### 1. 使用有意义的上下文
+### 3. Include Context in Input/Output
 
 ```typescript
-// ❌ 不好
-const logger = Logger.getInstance();
-
-// ✅ 好
-const logger = Logger.getInstance('OrderExecutor');
-const logger = Logger.getInstance('RiskManager');
-```
-
-### 2. 添加结构化元数据
-
-```typescript
-// ❌ 不好
-logger.info('Order placed');
-
-// ✅ 好
-logger.info('Order placed', {
-  orderId: order.id,
+// ✅ Good: Rich context
+logger.startOperation(traceContext, 'order_execution', {
+  orderId: '123',
   symbol: 'BTC/USDT',
   side: 'buy',
   amount: 0.1,
   price: 45000,
 });
+
+// ❌ Bad: Minimal context
+logger.startOperation(traceContext, 'order_execution', {});
 ```
 
-### 3. 正确使用错误日志
+### 4. Handle Errors Properly
 
 ```typescript
-// ❌ 不好
-console.error(error);
+// ✅ Good: Capture error details
+try {
+  await operation();
+  logger.completeOperation(opId, 'completed', result);
+} catch (error) {
+  logger.completeOperation(opId, 'failed', undefined, error);
+  throw error; // Re-throw if needed
+}
 
-// ✅ 好
-logger.error('Database connection failed', error, {
-  host: 'db.example.com',
-  port: 5432,
-  timeout: 5000,
+// ❌ Bad: Swallow errors
+try {
+  await operation();
+} catch (error) {
+  // Error not logged!
+}
+```
+
+### 5. Create Snapshots at Key Points
+
+```typescript
+// ✅ Good: Regular snapshots
+if (this.state.cycleCount % 10 === 0) {
+  logger.createSnapshot(this.state.cycleCount, snapshotData);
+}
+
+// ✅ Good: Before critical operations
+logger.createSnapshot(cycleId, snapshotData);
+await criticalOperation();
+```
+
+### 6. Use Query Interface for Analysis
+
+```typescript
+// ✅ Good: Analyze patterns
+const failedOps = await query.queryOperations({
+  status: 'failed',
+  operationType: 'order_execution',
+});
+
+// Analyze error trends
+const stats = await query.getStatistics({
+  operationType: 'signal_generation',
 });
 ```
 
-### 4. 避免在循环中过度日志
+## Configuration
+
+### Storage Configuration
 
 ```typescript
-// ❌ 不好 - 每秒产生 60 条日志
-setInterval(() => {
-  logger.info('Heartbeat');
-}, 1000);
-
-// ✅ 好 - 每 5 秒一条日志
-let lastLog = 0;
-setInterval(() => {
-  if (Date.now() - lastLog > 5000) {
-    logger.debug('Heartbeat');
-    lastLog = Date.now();
-  }
-}, 1000);
+// In unified-logger initialization
+const storageConfig = {
+  l0MaxSize: 1000, // Max operations in memory
+  l1MaxCycles: 10, // Max cycles in hot storage
+  l2RetentionDays: 7, // Days to keep in warm storage
+  l3RetentionDays: 30, // Days to keep in cold storage
+  snapshotInterval: 60000, // Snapshot interval (ms)
+};
 ```
 
-### 5. 日志级别策略
-
-```
-DEBUG: 详细的调试信息（开发环境）
-  - 数据库查询详情
-  - 内部状态变更
-  - 详细的请求/响应数据
-
-INFO: 业务流程和关键事件
-  - 交易信号生成
-  - 订单执行
-  - 周期总结
-
-WARN: 潜在问题
-  - API 使用率过高
-  - 缓存未命中
-  - 性能警告
-
-ERROR: 错误和异常
-  - API 调用失败
-  - 数据库错误
-  - 严重业务逻辑错误
-```
-
-## 集成示例
-
-### 工作流集成
+### Sampling Configuration
 
 ```typescript
-// src/core/workflow.ts
-export class TradingWorkflow {
-  private logger: Logger;
-  private isBackgroundMode: boolean;
+const samplingConfig = {
+  normalRate: 1.0, // 100% in normal state
+  warningRate: 1.5, // 150% in warning state
+  criticalRate: 2.0, // 200% in critical state
+};
+```
 
-  constructor(...) {
-    this.logger = Logger.getInstance('Workflow');
-    this.isBackgroundMode = this.logger.isBackgroundMode();
-  }
+### Anomaly Detection Thresholds
 
-  async executeCycle() {
-    this.logger.info('Cycle Summary', {
-      cycle: this.state.cycleCount,
-      equity: account.equity,
-      positions: positions.length
-    });
-  }
+```typescript
+const anomalyThresholds = {
+  errorRateSpike: 0.1, // 10% error rate threshold
+  latencyDegradation: 2.0, // 2x latency increase
+  memoryLeakRate: 0.05, // 5% memory increase per cycle
+};
+```
+
+## Migration from Old Logger
+
+The new logging system works alongside the existing logger.
+
+### Coexistence
+
+```typescript
+// Old logger (still works)
+import { Logger } from '../utils/logger.js';
+const logger = Logger.getInstance('Module');
+
+// New logger (for operation tracking)
+import { UnifiedLogger } from '../logging/index.js';
+const unifiedLogger = UnifiedLogger.getInstance();
+```
+
+### Gradual Migration
+
+1. **Phase 1**: Use both loggers (current state)
+2. **Phase 2**: Migrate operation tracking to UnifiedLogger
+3. **Phase 3**: Migrate all logging to UnifiedLogger (future)
+
+## Troubleshooting
+
+### No Operations Appearing in Queries
+
+- Check if `logger.initialize()` was called
+- Verify operations are being started and completed
+- Check storage layer for errors
+- Verify cycle IDs match
+
+### High Memory Usage
+
+- Reduce L0 cache size
+- Enable automatic cleanup
+- Archive old cycles manually
+- Reduce snapshot frequency
+
+### Slow Queries
+
+- Use filters to narrow results
+- Enable query result caching
+- Consider archiving old data
+- Use pagination for large result sets
+
+### Missing Snapshots
+
+- Check snapshot interval configuration
+- Verify snapshot creation is being called
+- Check storage layer permissions
+- Review error logs
+
+## Examples
+
+### Complete Operation Example
+
+```typescript
+const traceContext = logger.createTraceContext(cycleId);
+const opId = logger.startOperation(traceContext, 'order_execution', {
+  orderId: '123',
+  symbol: 'BTC/USDT',
+  side: 'buy',
+  amount: 0.1,
+});
+
+// Stage 1: Validate
+logger.startStage(opId, 'validate_order');
+const validation = await validateOrder(orderData);
+logger.completeStage(opId, 'validate_order', { approved: true });
+
+// Stage 2: Check risk
+logger.startStage(opId, 'check_risk');
+const riskCheck = await checkRisk(orderData);
+logger.completeStage(opId, 'check_risk', { passed: true });
+
+// Stage 3: Execute
+logger.startStage(opId, 'place_order');
+const order = await exchange.placeOrder(orderData);
+logger.completeStage(opId, 'place_order', { orderId: order.id });
+
+// Complete
+logger.completeOperation(opId, 'completed', { order });
+```
+
+### Error Analysis Example
+
+```typescript
+// Query failed operations
+const failedOps = await query.queryOperations({
+  status: 'failed',
+  operationType: 'order_execution',
+});
+
+// Analyze patterns
+const errorsBySymbol = {};
+for (const op of failedOps.operations) {
+  const symbol = op.symbol || 'unknown';
+  errorsBySymbol[symbol] = (errorsBySymbol[symbol] || 0) + 1;
 }
+
+console.log('Errors by symbol:', errorsBySymbol);
+
+// Get full trace for investigation
+const trace = await query.getTrace(failedOps.operations[0].traceId);
+console.log('Full trace:', trace);
 ```
 
-### 错误处理集成
+### Performance Analysis Example
 
 ```typescript
-// src/ai/agent.ts
-try {
-  const response = await this.callOpenRouterAPI(prompt);
-  return this.parseResponse(response);
-} catch (error) {
-  this.logger.error('Error generating trading signal', error, {
-    model: this.model,
-    requestId: crypto.randomUUID(),
-  });
-  return [];
-}
+// Get statistics
+const stats = await query.getStatistics({
+  operationType: 'signal_generation',
+});
+
+console.log(`Average duration: ${stats.averageDuration}ms`);
+console.log(`Success rate: ${(1 - stats.errorRate) * 100}%`);
+console.log(`Total operations: ${stats.totalOperations}`);
+
+// Compare cycles
+const cycle1Stats = await query.getStatistics({ cycleId: 1 });
+const cycle2Stats = await query.getStatistics({ cycleId: 2 });
+
+console.log(`Cycle 1 avg: ${cycle1Stats.averageDuration}ms`);
+console.log(`Cycle 2 avg: ${cycle2Stats.averageDuration}ms`);
 ```
 
-## 性能考虑
+## Advanced Usage
 
-### 缓冲机制
-
-Logger 使用缓冲机制提高性能：
-
-- **大小触发**: 缓冲区达到 50 个条目时自动刷新
-- **时间触发**: 每 100ms 自动刷新一次
-- **手动触发**: 调用 `flushSync()` 立即刷新
+### Custom Metrics
 
 ```typescript
-// 立即刷新（谨慎使用）
-logger.flushSync();
-
-// 正常使用（自动缓冲）
-logger.info('Message');
-logger.warn('Warning');
-// 最多等待 100ms 或 50 个条目后刷新
+// Record custom business metric
+logger.recordMetric('custom_metric', value, {
+  category: 'trading',
+  metadata: { extra: 'data' },
+});
 ```
 
-### 优雅关闭
-
-Logger 会自动处理进程关闭信号：
+### Nested Operations
 
 ```typescript
-// 自动注册 SIGTERM 和 SIGINT 处理器
-// 进程关闭时会自动刷新缓冲区
+// Parent operation
+const parentOpId = logger.startOperation(traceContext, 'cycle_execution', {});
+
+// Child operation
+const childTraceContext = logger.createNestedContext(parentOpId);
+const childOpId = logger.startOperation(childTraceContext, 'signal_generation', {});
+
+// Complete child
+logger.completeOperation(childOpId, 'completed', {});
+
+// Complete parent
+logger.completeOperation(parentOpId, 'completed', {});
 ```
 
-**手动测试**:
+### Tags and Context
 
-```bash
-# 启动应用
-quanta trade start &
+```typescript
+// Add tags
+logger.addTags(operationId, 'trading', 'high-priority', 'experimental');
 
-# 发送关闭信号
-kill -SIGTERM <pid>
-
-# 确保日志已刷新到文件
-tail -f logs/combined.log
+// Update context
+logger.updateOperationContext(operationId, {
+  accountState: { equity: 10000 },
+  marketState: { volatility: 'high' },
+});
 ```
 
-## 监控和分析
+---
 
-### 查看日志文件
-
-```bash
-# 查看所有日志
-tail -f logs/combined.log
-
-# 只查看错误
-tail -f logs/error.log
-
-# 搜索特定内容
-grep "OrderExecutor" logs/combined.log
-
-# 统计错误数量
-grep -c '"level":"error"' logs/combined.log
-```
-
-### 使用 jq 分析 JSON 日志
-
-```bash
-# 提取所有错误
-cat logs/combined.log | jq 'select(.level == "error")'
-
-# 统计各模块的错误数
-cat logs/combined.log | jq -r '.context' | sort | uniq -c
-
-# 查看最近的交易信号
-cat logs/combined.log | jq 'select(.message == "AI Signal Generation")'
-```
-
-## 常见问题
-
-### Q: 如何禁用文件日志？
-
-```bash
-LOG_FILE_OUTPUT=false quanta trade start
-```
-
-### Q: 如何改变日志目录？
-
-```bash
-LOG_DIR=/var/log/quanta quanta trade start
-```
-
-### Q: 如何临时提高日志详细度？
-
-```bash
-LOG_LEVEL=debug quanta trade start
-```
-
-### Q: 如何在后台运行时减少日志量？
-
-后台模式会自动简化输出，日志会保存到文件。
-
-## 示例场景
-
-### 场景 1: 本地开发
-
-```bash
-# 全功能日志
-LOG_LEVEL=debug npm run dev
-```
-
-### 场景 2: 生产部署
-
-```bash
-# 最小日志，文件输出
-LOG_LEVEL=info \
-LOG_FILE_OUTPUT=true \
-BACKGROUND_MODE=true \
-npm start
-```
-
-### 场景 3: 调试生产问题
-
-```bash
-# 详细日志用于调试
-LOG_LEVEL=debug \
-LOG_MAX_FILES=30 \
-quanta trade start
-```
+**Note**: This new logging system is designed for production use and provides comprehensive observability for the Quanta trading system. For basic logging needs, the existing `Logger` class is still available and works alongside the new system.

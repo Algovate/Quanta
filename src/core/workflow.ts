@@ -14,6 +14,7 @@ import { CycleLogger, CycleDisplay } from './display/index.js';
 import chalk from 'chalk';
 import { ExchangeSnapshotService } from './exchange-snapshot.js';
 import { getConfig } from '../config/settings.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export interface SystemState {
   isRunning: boolean;
@@ -76,6 +77,7 @@ export class TradingWorkflow {
   private barScheduler?: BarScheduler; // legacy fallback
   private barDrivenEnabled: boolean = false;
   private barUnsubscribe?: () => void;
+  private unifiedLogger: UnifiedLogger;
 
   constructor(
     exchange: Exchange,
@@ -101,6 +103,8 @@ export class TradingWorkflow {
     this.cycleDisplay = new CycleDisplay();
     this.isBackgroundMode = this.logger.isBackgroundMode();
     this.snapshotService = new ExchangeSnapshotService(this.exchange);
+    this.unifiedLogger = UnifiedLogger.getInstance();
+    this.unifiedLogger.initialize();
 
     this.state = {
       isRunning: false,
@@ -450,6 +454,18 @@ export class TradingWorkflow {
     if (!this.state.isRunning) return;
     if (this.isCycleRunning) return; // prevent overlap
     this.isCycleRunning = true;
+
+    const cycleStartTime = Date.now();
+    const cycleOperationId = this.unifiedLogger.startOperation(
+      this.unifiedLogger.createTraceContext(this.state.cycleCount + 1),
+      'trading_cycle',
+      {
+        cycleCount: this.state.cycleCount + 1,
+        coins: this.config.coins,
+        cyclePeriod: this.config.cyclePeriod,
+      }
+    );
+
     try {
       this.state.cycleCount++;
       this.state.lastUpdate = Date.now();
@@ -467,6 +483,11 @@ export class TradingWorkflow {
         startTime: this.state.startTime,
       });
 
+      // Record cycle start in unified logger
+      this.unifiedLogger.startStage(cycleOperationId, 'cycle_start', {
+        cycleCount: this.state.cycleCount,
+      });
+
       // Display cycle header with emphasis
       this.emitLog('info', '');
       const cycleHeader = this.cycleDisplay.formatCycleHeader(this.state.cycleCount);
@@ -475,7 +496,17 @@ export class TradingWorkflow {
       this.emitLog('info', chalk.gray('⏳ Fetching account data...'));
 
       // 1. Get a consistent snapshot of account and positions
+      this.unifiedLogger.startStage(cycleOperationId, 'fetch_account', {});
+      const accountStartTime = Date.now();
       const { account, positions } = await this.snapshotService.getSnapshot();
+      const accountDuration = Date.now() - accountStartTime;
+      this.unifiedLogger.recordAPILatency('exchange.getAccount', accountDuration);
+      this.unifiedLogger.completeStage(cycleOperationId, 'fetch_account', {
+        equity: account.equity,
+        balance: account.balance,
+        positionsCount: positions.length,
+        duration: accountDuration,
+      });
 
       // Set initial balance on first cycle (must happen early before any operations that might fail)
       // This ensures P&L calculations are correct even if the cycle fails later
@@ -493,8 +524,20 @@ export class TradingWorkflow {
       );
 
       // 2. Monitor existing positions
+      this.unifiedLogger.startStage(cycleOperationId, 'monitor_positions', {
+        positionsCount: positions.length,
+      });
       if (positions.length > 0) {
+        const monitorStartTime = Date.now();
         await this.positionMonitor.monitorPositions(positions, this.exchange);
+        const monitorDuration = Date.now() - monitorStartTime;
+        this.unifiedLogger.completeStage(cycleOperationId, 'monitor_positions', {
+          duration: monitorDuration,
+        });
+      } else {
+        this.unifiedLogger.completeStage(cycleOperationId, 'monitor_positions', {
+          duration: 0,
+        });
       }
 
       // Guard: check if stopped mid-cycle
@@ -504,6 +547,10 @@ export class TradingWorkflow {
 
       // 3. Get market data for all coins
       this.emitLog('info', chalk.gray('⏳ Fetching market data...'));
+      this.unifiedLogger.startStage(cycleOperationId, 'fetch_market_data', {
+        coins: this.config.coins,
+        timeframes: this.config.marketTimeframes ?? ['3m', '4h'],
+      });
       const fetchStart = Date.now();
       const timeframes = this.config.marketTimeframes ?? ['3m', '4h'];
 
@@ -545,6 +592,12 @@ export class TradingWorkflow {
 
       const { marketData: allMarketData, successCount, failCount } = marketDataResult;
       const fetchMs = Date.now() - fetchStart;
+      this.unifiedLogger.completeStage(cycleOperationId, 'fetch_market_data', {
+        itemsCount: allMarketData.length,
+        successCount,
+        failCount,
+        duration: fetchMs,
+      });
       this.emitLog(
         'info',
         chalk.gray(
@@ -565,11 +618,32 @@ export class TradingWorkflow {
           failCount,
           coins: this.config.coins.length,
         });
+
+        // Record error and complete cycle
+        this.unifiedLogger.recordError(new Error('Insufficient market data'), {
+          cycleId: this.state.cycleCount,
+          operationId: cycleOperationId,
+        });
+        this.unifiedLogger.completeStage(
+          cycleOperationId,
+          'fetch_market_data',
+          undefined,
+          new Error('Insufficient market data')
+        );
+        this.unifiedLogger.completeOperation(
+          cycleOperationId,
+          'failed',
+          undefined,
+          new Error('Insufficient market data')
+        );
         return; // Skip signal generation and execution
       }
 
       // 4. Generate AI signals
       this.emitLog('info', chalk.gray('⏳ Generating AI signals...'));
+      this.unifiedLogger.startStage(cycleOperationId, 'generate_signals', {
+        marketDataCount: allMarketData.length,
+      });
       const context: AIContext = {
         startTime: this.state.startTime,
         currentTime: Date.now(),
@@ -591,13 +665,38 @@ export class TradingWorkflow {
         },
       };
 
-      const signals = await this.aiAgent.generateTradingSignal(
-        allMarketData,
-        account,
-        positions,
-        context
-      );
-      this.state.totalSignals += signals.length;
+      const signalStartTime = Date.now();
+      let signals: TradingSignal[] = [];
+      let signalError: Error | undefined;
+
+      try {
+        signals = await this.aiAgent.generateTradingSignal(
+          allMarketData,
+          account,
+          positions,
+          context
+        );
+        this.state.totalSignals += signals.length;
+        const signalDuration = Date.now() - signalStartTime;
+        this.unifiedLogger.recordAPILatency('ai.generateSignal', signalDuration);
+        this.unifiedLogger.completeStage(cycleOperationId, 'generate_signals', {
+          signalCount: signals.length,
+          duration: signalDuration,
+        });
+      } catch (error) {
+        signalError = error instanceof Error ? error : new Error(String(error));
+        this.unifiedLogger.recordError(signalError, {
+          cycleId: this.state.cycleCount,
+          operationId: cycleOperationId,
+        });
+        this.unifiedLogger.completeStage(
+          cycleOperationId,
+          'generate_signals',
+          undefined,
+          signalError
+        );
+        throw error;
+      }
 
       // Emit signals generated event
       EventBus.emit('cycle:signals', {
@@ -704,9 +803,22 @@ export class TradingWorkflow {
         totalTrades: this.state.totalTrades,
       });
 
+      // Complete signal execution stage
+      this.unifiedLogger.startStage(cycleOperationId, 'execute_signals', {
+        signalCount: signals.length,
+        actionableSignals: signals.filter(s => s.action !== 'HOLD').length,
+      });
+      const executeStartTime = Date.now();
+
       // 5.5. Refresh account and positions after executing signals using a single snapshot
       const { account: updatedAccount, positions: updatedPositions } =
         await this.snapshotService.getSnapshot();
+
+      const executeDuration = Date.now() - executeStartTime;
+      this.unifiedLogger.completeStage(cycleOperationId, 'execute_signals', {
+        executedCount: this.state.totalTrades - tradesBefore,
+        duration: executeDuration,
+      });
 
       // Aggregate once per cycle for reuse
       const aggregates = aggregatePositionMetrics(updatedPositions);
@@ -714,11 +826,42 @@ export class TradingWorkflow {
       // 6. Update performance metrics with latest data
       this.updatePerformanceMetrics(updatedAccount, aggregates);
 
+      // Record cycle execution time
+      const cycleDuration = Date.now() - cycleStartTime;
+      this.unifiedLogger.recordCycleTime(this.state.cycleCount, cycleDuration);
+
       // 7. Log cycle summary with latest data
       const tradeCountCycle = this.state.totalTrades - tradesBefore;
       this.logCycleSummary(updatedAccount, updatedPositions, signals, aggregates, {
         rejectedSignalsCycle: this.state.rejectedSignalsCycle,
         tradeCountCycle,
+      });
+
+      // Create system snapshot for state tracking
+      this.unifiedLogger.startStage(cycleOperationId, 'create_snapshot', {});
+      const circuitBreakers = this.getCircuitBreakerStates();
+      const recentOperations = this.getRecentOperationsSummary();
+
+      this.unifiedLogger.createSnapshot(
+        this.state.cycleCount,
+        {
+          equity: updatedAccount.equity,
+          balance: updatedAccount.balance,
+          marginUsed: 0, // Account type doesn't have marginUsed, calculate from positions if needed
+          availableMargin: updatedAccount.equity, // Use equity as available margin
+        },
+        updatedPositions.map(p => ({
+          symbol: p.symbol,
+          side: p.side,
+          size: p.size,
+          entryPrice: p.entryPrice,
+          unrealizedPnl: p.unrealizedPnl,
+        })),
+        circuitBreakers,
+        recentOperations
+      );
+      this.unifiedLogger.completeStage(cycleOperationId, 'create_snapshot', {
+        positionsCount: updatedPositions.length,
       });
 
       // Prepare per-cycle action distribution
@@ -746,15 +889,39 @@ export class TradingWorkflow {
         cyclePnl: this.state.cyclePnl ?? 0,
         actionCounts,
       });
+
+      // Complete cycle operation
+      this.unifiedLogger.completeStage(cycleOperationId, 'cycle_start', {
+        cycleCount: this.state.cycleCount,
+      });
+      this.unifiedLogger.completeOperation(cycleOperationId, 'completed', {
+        cycleCount: this.state.cycleCount,
+        duration: cycleDuration,
+        signalsGenerated: signals.length,
+        tradesExecuted: tradeCountCycle,
+        totalPnl: this.state.totalPnl,
+      });
     } catch (error) {
+      const cycleError = error instanceof Error ? error : new Error(String(error));
       this.emitLog('error', `Error in trading cycle: ${error}`);
+
+      // Record error in unified logger
+      this.unifiedLogger.recordError(cycleError, {
+        cycleId: this.state.cycleCount,
+        operationId: cycleOperationId,
+      });
 
       // Emit cycle error event
       EventBus.emit('cycle:error', {
         cycleCount: this.state.cycleCount,
-        error: error instanceof Error ? error.message : String(error),
+        error: cycleError.message,
         timestamp: Date.now(),
       });
+
+      // Complete cycle operation with error
+      if (cycleOperationId) {
+        this.unifiedLogger.completeOperation(cycleOperationId, 'failed', undefined, cycleError);
+      }
     } finally {
       this.isCycleRunning = false;
       // Chain next cycle if still running and not paused
@@ -1383,6 +1550,50 @@ export class TradingWorkflow {
     console.log(
       chalk.cyan(`⏱️  Next cycle in ${countdownText}`) + chalk.gray(` | Press Ctrl+C to stop`)
     );
+  }
+
+  /**
+   * Get circuit breaker states from AI agent
+   */
+  private getCircuitBreakerStates(): Array<{
+    name: string;
+    state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+    failureCount: number;
+    lastFailure?: number;
+    lastSuccess?: number;
+  }> {
+    // Access circuit breaker from AI agent via reflection if needed
+    // For now, return empty array as circuit breaker is private
+    // TODO: Add public method to OpenRouterClient to get circuit breaker stats
+    return [];
+  }
+
+  /**
+   * Get recent operations summary for snapshot
+   */
+  private getRecentOperationsSummary(): Array<{
+    operationId: string;
+    type: string;
+    status: 'running' | 'completed' | 'failed' | 'cancelled';
+    duration: number;
+  }> {
+    try {
+      const operationLogger = (this.unifiedLogger as any).operationLogger;
+      if (operationLogger && typeof operationLogger.getActiveOperations === 'function') {
+        const activeOps = operationLogger.getActiveOperations();
+        return Array.from(activeOps.values())
+          .slice(0, 10)
+          .map((op: any) => ({
+            operationId: op.operationId || 'unknown',
+            type: op.operationType || 'unknown',
+            status: (op.status || 'running') as 'running' | 'completed' | 'failed' | 'cancelled',
+            duration: op.metrics?.duration || 0,
+          }));
+      }
+    } catch {
+      // Ignore errors
+    }
+    return [];
   }
 
   private generateReport(): void {

@@ -438,6 +438,295 @@ quanta config init
 
 ---
 
+## Log Commands
+
+### `log query` - Query Operations
+
+Query operations with various filters for analysis and debugging.
+
+```bash
+quanta log query [options]
+
+Options:
+  --cycle-id <id>        Filter by cycle ID
+  --type <type>          Filter by operation type (e.g., signal_generation, order_execution)
+  --status <status>      Filter by status (running|completed|failed|cancelled)
+  --symbol <symbol>      Filter by symbol (e.g., BTC/USDT)
+  --trace-id <id>        Filter by trace ID
+  --operation-id <id>    Filter by operation ID
+  --limit <limit>        Limit number of results (default: 50)
+  --offset <offset>      Offset for pagination (default: 0)
+  --format <format>      Output format (table|json, default: table)
+```
+
+**Examples:**
+
+```bash
+# Query all operations
+quanta log query
+
+# Filter by cycle
+quanta log query --cycle-id 42
+
+# Find failed operations
+quanta log query --status failed
+
+# Find signal generation operations
+quanta log query --type signal_generation
+
+# Filter by symbol
+quanta log query --symbol BTC/USDT
+
+# Combined filters
+quanta log query --cycle-id 42 --type order_execution --status failed
+
+# JSON output
+quanta log query --format json
+
+# Pagination
+quanta log query --limit 20 --offset 0
+```
+
+**Output Format:**
+
+```
+📋 Operations Query Results
+Found 25 operations
+
+┌────────────┬─────────────┬──────────┬──────────┬─────────────┬────────────┐
+│ Operation  │ Type        │ Status   │ Symbol   │ Duration    │ Time       │
+├────────────┼─────────────┼──────────┼──────────┼─────────────┼────────────┤
+│ abc123...  │ signal_gen  │ SUCCESS  │ BTC/USDT │ 1.2s        │ 10:30:15   │
+│ def456...  │ order_exec  │ FAILED   │ ETH/USDT │ 0.5s        │ 10:30:20   │
+└────────────┴─────────────┴──────────┴──────────┴─────────────┴────────────┘
+```
+
+---
+
+### `log stats` - Show Statistics
+
+Show aggregated statistics for operations.
+
+```bash
+quanta log stats [options]
+
+Options:
+  --cycle-id <id>        Filter by cycle ID
+  --type <type>          Filter by operation type
+  --format <format>      Output format (table|json, default: table)
+```
+
+**Examples:**
+
+```bash
+# Overall statistics
+quanta log stats
+
+# Filter by cycle
+quanta log stats --cycle-id 42
+
+# Filter by operation type
+quanta log stats --type signal_generation
+
+# JSON output
+quanta log stats --format json
+```
+
+**Output Format:**
+
+```
+📊 Operation Statistics
+
+📈 Summary:
+   Total Operations: 150
+   Completed: 142
+   Failed: 8
+   Error Rate: 5.33%
+
+⏱️  Performance:
+   Average Duration: 1.25s
+   Min Duration: 0.1s
+   Max Duration: 5.8s
+
+🔧 By Operation Type:
+   signal_generation: 50
+   order_execution: 40
+   position_monitoring: 30
+```
+
+---
+
+### `log trace <trace-id>` - Show Complete Trace
+
+Display the complete trace for a specific trace ID, showing all operations in the trace.
+
+```bash
+quanta log trace <trace-id> [options]
+
+Options:
+  --format <format>      Output format (table|json, default: table)
+```
+
+**Examples:**
+
+```bash
+# View trace
+quanta log trace trace-42-1234567890
+
+# JSON output
+quanta log trace trace-42-1234567890 --format json
+```
+
+**Output Format:**
+
+```
+🔍 Operation Trace
+Trace ID: trace-42-1234567890 | Cycle ID: 42
+
+Overall Status: COMPLETED | Duration: 2.5s
+
+Operations in Trace:
+┌────────────┬─────────────┬──────────┬──────────┬─────────────┬────────────┐
+│ Operation  │ Type        │ Status   │ Symbol   │ Duration    │ Time       │
+├────────────┼─────────────┼──────────┼──────────┼─────────────┼────────────┤
+│ op1-abc... │ signal_gen  │ SUCCESS  │ BTC/USDT │ 1.2s        │ 10:30:15   │
+│ op2-def... │ order_exec  │ SUCCESS  │ BTC/USDT │ 0.8s        │ 10:30:16   │
+└────────────┴─────────────┴──────────┴──────────┴─────────────┴────────────┘
+```
+
+---
+
+### `log search <term>` - Search Operations
+
+Search operations by keyword in messages, errors, and metadata.
+
+```bash
+quanta log search <term> [options]
+
+Options:
+  --limit <limit>        Limit number of results (default: 50)
+  --offset <offset>      Offset for pagination (default: 0)
+  --format <format>      Output format (table|json, default: table)
+```
+
+**Examples:**
+
+```bash
+# Search for errors
+quanta log search "API timeout"
+
+# Search with filters
+quanta log search "error" --limit 20
+
+# JSON output
+quanta log search "signal" --format json
+```
+
+**Output Format:**
+
+```
+🔎 Search Results for "API timeout"
+Found 12 operations
+
+┌────────────┬─────────────┬──────────┬──────────┬─────────────┬────────────┐
+│ Operation  │ Type        │ Status   │ Symbol   │ Duration    │ Time       │
+├────────────┼─────────────┼──────────┼──────────┼─────────────┼────────────┤
+│ ...        │ order_exec  │ FAILED   │ ETH/USDT │ 5.0s        │ 10:30:20   │
+└────────────┴─────────────┴──────────┴──────────┴─────────────┴────────────┘
+```
+
+---
+
+### `log snapshot [snapshot-id]` - Show Snapshot
+
+Display system snapshot details. Shows latest snapshot if snapshot-id is not provided.
+
+```bash
+quanta log snapshot [snapshot-id] [options]
+
+Options:
+  --format <format>      Output format (table|json, default: table)
+```
+
+**Examples:**
+
+```bash
+# View latest snapshot
+quanta log snapshot
+
+# View specific snapshot
+quanta log snapshot snapshot-abc123
+
+# JSON output
+quanta log snapshot --format json
+```
+
+**Output Format:**
+
+```
+📸 System Snapshot
+Timestamp: 10:30:00 | Cycle: 42
+
+💰 Account:
+   Equity: $10000.00
+   Balance: $9500.00
+   Margin Used: $500.00
+   Available Margin: $9500.00
+
+📊 Positions:
+   BTC/USDT LONG: 0.1 @ $45000.00 | P&L: $50.00
+   ETH/USDT SHORT: 0.5 @ $3000.00 | P&L: -$25.00
+
+📈 System Metrics:
+   uptime: 3600
+   errorRate: 0.05
+   avgCycleTime: 2.5
+   memoryUsage: {"heapUsed":52428800,"heapTotal":104857600,"rss":125829120}
+
+❌ Error Summary:
+   ApiError: {"totalCount":3,"affectedSymbols":["BTC/USDT"]}
+```
+
+---
+
+### `log storage` - Show Storage Statistics
+
+Display storage layer statistics including operation counts and storage tiers.
+
+```bash
+quanta log storage [options]
+
+Options:
+  --format <format>      Output format (table|json, default: table)
+```
+
+**Examples:**
+
+```bash
+# View storage statistics
+quanta log storage
+
+# JSON output
+quanta log storage --format json
+```
+
+**Output Format:**
+
+```
+🗄️  Storage Statistics
+Current log storage usage
+
+📦 Storage Layers:
+   L0 (In-memory Cache): 50 operations
+   L1 (Warm Storage): 5 cycles (SQLite - planned)
+   L2 (Cold Storage): 20 cycles (Filesystem)
+   L3 (Archive Storage): 10 cycles (Compressed)
+
+   Total Operations Stored: 5000
+```
+
+---
+
 ## Quick Reference
 
 ### Most Common Commands
@@ -457,6 +746,11 @@ quanta trade status
 
 # Stop trading
 quanta trade stop --graceful
+
+# Query logs
+quanta log query --status failed
+quanta log stats
+quanta log snapshot
 ```
 
 ---

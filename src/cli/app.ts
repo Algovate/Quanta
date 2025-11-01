@@ -6,6 +6,7 @@ import {
   HelpCommand,
   SimulateCommands,
   ServerCommands,
+  LogCommands,
 } from './commands/index.js';
 
 export class CLIApplication {
@@ -43,6 +44,10 @@ export class CLIApplication {
 
     // Server commands
     ServerCommands.register(this.program);
+
+    // Log commands
+    const log = this.program.command('log').description('Log query and analysis');
+    LogCommands.register(log);
 
     // Help command
     HelpCommand.register(this.program);

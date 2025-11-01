@@ -46,10 +46,14 @@ Complete documentation index for the Quanta AI trading system.
   - API configuration
   - Abbreviation guide
 
-- **[Logging Guide](logging-guide.md)** (9.1KB)
-  - Logger configuration
-  - Log levels and formats
-  - Background mode
+- **[Logging Guide](logging-guide.md)** (15KB+)
+  - Operation-driven logging system
+  - Operation lifecycle tracking
+  - Error aggregation
+  - System snapshots
+  - Metrics collection
+  - Query interface and CLI commands
+  - Storage architecture
 
 ### 💡 Concepts & Terminology
 
@@ -82,6 +86,8 @@ Complete documentation index for the Quanta AI trading system.
 1. Check [Command Reference](commands.md)
 2. Understand [architecture](concepts.md#architecture)
 3. Review [algorithms](concepts.md#algorithms)
+4. Learn [logging system](logging-guide.md) for debugging and analysis
+5. Read [testing guide](testing-simulation.md) for test structure and running tests
 
 ## 📊 Documentation Statistics
 
@@ -94,8 +100,8 @@ Complete documentation index for the Quanta AI trading system.
 | commands.md           | 7.5KB     | ~374       | Command reference     |
 | concepts.md           | 23KB      | ~1097      | Concepts & algorithms |
 | exchanges.md          | 4.2KB     | ~161       | Exchange support      |
-| logging-guide.md      | 9.1KB     | ~504       | Logging system        |
-| **Total**             | **~60KB** | **~2,773** | Complete docs         |
+| logging-guide.md      | 15KB+     | ~800+      | Logging system        |
+| **Total**             | **~66KB** | **~3,069** | Complete docs         |
 
 ## 🔍 Key Topics
 
@@ -200,6 +206,11 @@ All documentation is actively maintained. Latest updates:
 - ✅ Streamlined documentation structure
 - ✅ Added exchanges support guide
 - ✅ Integrated logging guide
+- ✅ Added operation-driven logging system
+- ✅ Added log query CLI commands
+- ✅ Enhanced logging with error aggregation and snapshots
+- ✅ Separated tests from source code (tests/ directory)
+- ✅ Added comprehensive test structure documentation
 
 ---
 

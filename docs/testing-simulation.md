@@ -2,6 +2,38 @@
 
 Complete guide to testing and simulation in Quanta.
 
+## Test Structure
+
+Tests are organized in the `tests/` directory, separated from source code:
+
+```
+tests/
+├── logging/              # Logging system unit tests
+│   ├── test-all.ts       # All logging component tests
+│   ├── operation-logger.test.ts
+│   ├── error-aggregator.test.ts
+│   ├── metrics-collector.test.ts
+│   └── stage2-test.ts    # Stage 2 components tests
+├── okx/                  # Exchange-specific tests
+├── *.unit.ts             # Unit tests for various components
+└── ...
+```
+
+### Running Tests
+
+```bash
+# Run logging system tests
+tsx tests/logging/test-all.ts       # Run all logging tests
+tsx tests/logging/stage2-test.ts    # Run Stage 2 tests
+
+# Run exchange tests
+npm run test:okx:unit
+npm run test:okx:ticker
+
+# Run with vitest (for .test.ts files)
+npx vitest tests/logging
+```
+
 ## Simulation Modes
 
 ### Mock AI (Default - No API Key Required)
@@ -40,6 +72,24 @@ quanta simulate cycle --coins BTC --ai real --verbose
 - Real market decisions
 - More realistic results
 - Requires API key
+
+## Unit Testing
+
+The logging system includes comprehensive unit tests located in `tests/logging/`:
+
+- **test-all.ts**: Tests for OperationLogger, ErrorAggregator, MetricsCollector, and StateSnapshotService
+- **stage2-test.ts**: Tests for Sampler, AnomalyDetector, StorageLayer, and UnifiedLogger
+- **Component tests**: Individual test files for each component (`.test.ts` files using vitest)
+
+These tests verify:
+
+- Operation lifecycle tracking
+- Error aggregation and fingerprinting
+- Metrics collection and statistics
+- State snapshot creation and queries
+- Intelligent sampling
+- Anomaly detection
+- Storage layer operations
 
 ## Testing Commands
 

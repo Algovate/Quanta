@@ -6,13 +6,14 @@ import prettier from 'eslint-plugin-prettier';
 export default [
   js.configs.recommended,
   {
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.ts', 'src/**/__tests__/**/*.ts'],
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {
         ecmaVersion: 2022,
         sourceType: 'module',
         project: './tsconfig.json',
+        tsconfigRootDir: import.meta.dirname || process.cwd(),
       },
       globals: {
         console: 'readonly',
@@ -39,6 +40,23 @@ export default [
       'no-undef': 'off', // TypeScript handles this
       'prefer-const': 'error',
       'no-var': 'error',
+    },
+  },
+  {
+    files: ['src/**/__tests__/**/*.ts', 'src/**/*.test.ts'],
+    languageOptions: {
+      parser: typescriptParser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        // Don't require project for test files to avoid tsconfig exclusion issues
+        project: null,
+      },
+    },
+    rules: {
+      // Relax some rules for test files
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
   {
