@@ -36,6 +36,11 @@ export class AnomalyDetector {
   private memoryHistory: Array<{ timestamp: number; heapUsed: number }> = [];
   private maxMemoryHistorySize: number = 60; // Keep last 60 minutes of memory data
   private checkInterval?: NodeJS.Timeout; // Keep for cleanup if needed
+  // Memory leak detection state
+  private memoryLeakBaseline: number | null = null; // Fixed baseline after cooldown or reset
+  private memoryLeakLastAlertTime: number | null = null; // Last time memory leak was detected
+  private memoryLeakCooldownMs: number = 30 * 60 * 1000; // 30 minutes cooldown
+  private memoryLeakMinTimeWindowMs: number = 30 * 60 * 1000; // Minimum 30 minutes to detect trend
 
   private constructor() {
     this.metricsCollector = MetricsCollector.getInstance();
@@ -233,15 +238,16 @@ export class AnomalyDetector {
       return null;
     }
 
-    const now = Date.now();
+    // Use snapshot's actual timestamp, not current time
+    const snapshotTimestamp = lastSnapshot.timestamp;
     const heapUsed = lastSnapshot.systemMetrics.memoryUsage.heapUsed;
 
-    // Add to history
-    this.memoryHistory.push({ timestamp: now, heapUsed });
+    // Add to history with snapshot's timestamp
+    this.memoryHistory.push({ timestamp: snapshotTimestamp, heapUsed });
 
-    // Keep only recent history
-    const oneHourAgo = now - 60 * 60 * 1000;
-    this.memoryHistory = this.memoryHistory.filter(h => h.timestamp > oneHourAgo);
+    // Keep only recent history (last 2 hours for trend analysis)
+    const twoHoursAgo = snapshotTimestamp - 2 * 60 * 60 * 1000;
+    this.memoryHistory = this.memoryHistory.filter(h => h.timestamp > twoHoursAgo);
 
     // Keep only last N entries
     if (this.memoryHistory.length > this.maxMemoryHistorySize) {
@@ -253,34 +259,106 @@ export class AnomalyDetector {
       return null;
     }
 
-    // Calculate memory growth rate
+    // Check cooldown period - don't alert again if we recently alerted
+    const now = Date.now();
+    if (this.memoryLeakLastAlertTime !== null) {
+      const timeSinceLastAlert = now - this.memoryLeakLastAlertTime;
+      if (timeSinceLastAlert < this.memoryLeakCooldownMs) {
+        return null; // Still in cooldown
+      }
+    }
+
+    // Calculate time window for trend detection
     const first = this.memoryHistory[0];
     const last = this.memoryHistory[this.memoryHistory.length - 1];
-    const timeSpan = (last.timestamp - first.timestamp) / (60 * 60 * 1000); // hours
-    const growth = last.heapUsed - first.heapUsed;
-    const growthRate = timeSpan > 0 ? growth / timeSpan : 0; // MB per hour
+    const timeSpanMs = last.timestamp - first.timestamp;
 
-    // Check if memory is growing (more than 10% per hour)
-    const initialMem = first.heapUsed;
-    const growthPercentage = initialMem > 0 ? (growthRate / initialMem) * 100 : 0;
+    // Require minimum time window (30 minutes) to avoid false positives from short-term fluctuations
+    if (timeSpanMs < this.memoryLeakMinTimeWindowMs) {
+      return null;
+    }
 
-    if (growthPercentage > 10) {
+    // Use fixed baseline if available, otherwise use first entry
+    let baselineMemory: number;
+    let baselineTimestamp: number;
+
+    if (this.memoryLeakBaseline !== null && this.memoryLeakLastAlertTime !== null) {
+      // Use fixed baseline from last alert or reset point
+      // Find the closest history entry to the baseline time
+      const lastAlertTime = this.memoryLeakLastAlertTime;
+      const baselineEntry = this.memoryHistory.find(h => h.timestamp >= lastAlertTime) || first;
+      baselineMemory = this.memoryLeakBaseline;
+      baselineTimestamp = baselineEntry.timestamp;
+    } else {
+      // First time or after reset - use first entry as baseline
+      baselineMemory = first.heapUsed;
+      baselineTimestamp = first.timestamp;
+      this.memoryLeakBaseline = baselineMemory;
+    }
+
+    // Calculate growth from baseline
+    const growth = last.heapUsed - baselineMemory;
+    const effectiveTimeSpanMs = last.timestamp - baselineTimestamp;
+    const effectiveTimeSpanHours = effectiveTimeSpanMs / (60 * 60 * 1000);
+
+    // Add tolerance for normal fluctuations (±5MB or 5% of baseline, whichever is larger)
+    const tolerance = Math.max(5, baselineMemory * 0.05);
+
+    // Only consider significant growth beyond tolerance
+    if (growth <= tolerance) {
+      // Memory is stable or within normal fluctuation - reset baseline if we had one
+      if (this.memoryLeakBaseline !== null && this.memoryLeakLastAlertTime !== null) {
+        // Memory has stabilized, reset baseline to current value for future checks
+        this.memoryLeakBaseline = last.heapUsed;
+        this.memoryLeakLastAlertTime = null;
+      }
+      return null;
+    }
+
+    // Calculate growth rate only for significant growth
+    const growthRate = effectiveTimeSpanHours > 0 ? growth / effectiveTimeSpanHours : 0; // MB per hour
+    const growthPercentage = baselineMemory > 0 ? (growth / baselineMemory) * 100 : 0;
+
+    // Check for sustained growth trend (not just a single spike)
+    // Look at recent trend: check if last few points show consistent growth
+    const recentPoints = this.memoryHistory.slice(-5); // Last 5 points
+    const isConsistentGrowth = recentPoints.every((point, idx) => {
+      if (idx === 0) return true;
+      return point.heapUsed >= recentPoints[idx - 1].heapUsed - tolerance; // Allow small decreases within tolerance
+    });
+
+    // Only alert on consistent growth trend, not one-time spikes
+    if (!isConsistentGrowth && growthPercentage < 25) {
+      // Not a consistent trend and growth is moderate - don't alert
+      return null;
+    }
+
+    // Alert if growth exceeds threshold (20% for warning, 40% for critical)
+    // This is more conservative than before to reduce false positives
+    const warningThreshold = 20; // 20% growth
+    const criticalThreshold = 40; // 40% growth
+
+    if (growthPercentage > warningThreshold) {
       const event: AnomalyEvent = {
         type: 'memory_leak',
-        severity: growthPercentage > 20 ? 'critical' : 'warning',
-        message: `Memory leak detected: growing at ${growthRate.toFixed(2)} MB/hour (${growthPercentage.toFixed(1)}%)`,
-        timestamp: now,
+        severity: growthPercentage > criticalThreshold ? 'critical' : 'warning',
+        message: `Memory leak detected: growing at ${growthRate.toFixed(2)} MB/hour (${growthPercentage.toFixed(1)}% over ${effectiveTimeSpanHours.toFixed(1)} hours)`,
+        timestamp: snapshotTimestamp,
         metrics: {
           current: last.heapUsed,
-          previous: first.heapUsed,
-          threshold: initialMem * 1.1, // 10% growth
+          previous: baselineMemory,
+          threshold: baselineMemory * (1 + warningThreshold / 100),
         },
         actions: [
           'save_heap_snapshot',
           'increase_sampling',
-          growthPercentage > 20 ? 'alert' : 'log',
+          growthPercentage > criticalThreshold ? 'alert' : 'log',
         ],
       };
+
+      // Update baseline and alert time
+      this.memoryLeakBaseline = last.heapUsed;
+      this.memoryLeakLastAlertTime = now;
 
       this.triggerActions(event);
       return event;
@@ -353,5 +431,7 @@ export class AnomalyDetector {
   reset(): void {
     this.previousMetrics = null;
     this.memoryHistory = [];
+    this.memoryLeakBaseline = null;
+    this.memoryLeakLastAlertTime = null;
   }
 }
