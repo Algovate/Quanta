@@ -286,7 +286,6 @@ Quanta uses a sophisticated **operation-driven logging system** that tracks the 
 - **System State Snapshots**: Periodic capture of critical system state for post-mortem analysis
 - **Real-time Metrics**: Collect and monitor performance metrics during runtime
 - **Intelligent Sampling**: Dynamically adjust logging detail based on system health
-- **Anomaly Detection**: Automatically detect and respond to unusual system patterns
 - **Tiered Storage**: Efficient multi-level storage (memory → hot → warm → cold) with SQLite for fast queries
 - **Query Interface**: Powerful CLI and programmatic query capabilities
 - **Log Cleanup**: Manual cleanup commands to manage storage space
@@ -305,11 +304,11 @@ Quanta uses a sophisticated **operation-driven logging system** that tracks the 
 ┌───▼──────────┐  ┌──────────────┐  ┌─▼───────────┐
 │OperationLogger│  │ErrorAggregator│  │MetricsCollector│
 └──────────────┘  └──────────────┘  └──────────────┘
-         │                                  │
-┌────────▼──────────┐              ┌─────────▼─────────┐
-│StateSnapshot     │              │AnomalyDetector   │
-└──────────────────┘              └──────────────────┘
-         │                                  │
+         │
+┌────────▼──────────┐
+│StateSnapshot     │
+└──────────────────┘
+         │
 ┌────────▼──────────┐              ┌─────────▼─────────┐
 │StorageLayer       │              │StorageOptimizer │
 │  (Tiered Storage) │              │  (Batch Writes)  │
@@ -329,10 +328,59 @@ Quanta uses a sophisticated **operation-driven logging system** that tracks the 
 - **MetricsCollector**: Collects performance metrics (latency, duration, resource usage)
 - **StateSnapshotService**: Captures periodic system state snapshots
 - **Sampler**: Dynamically adjusts logging detail based on system health
-- **AnomalyDetector**: Detects unusual patterns (error spikes, performance degradation)
 - **StorageLayer**: Manages tiered storage (L0: memory, L1: SQLite, L2: files, L3: archive)
 - **StorageOptimizer**: Batches writes for efficient I/O
 - **QueryInterface**: Provides query and analysis capabilities
+
+### UnifiedLogger API Reference
+
+The `UnifiedLogger` class provides the main interface for all logging operations:
+
+#### Initialization
+
+- `getInstance()` - Get singleton instance
+- `initialize()` - Initialize logging system and set up handlers
+
+#### Operations
+
+- `createTraceContext(cycleId)` - Create trace context for a cycle
+- `startOperation(traceContext, type, input, symbol?)` - Start an operation
+- `completeOperation(operationId, status, output?, error?)` - Complete an operation
+- `startStage(operationId, stageName, input?)` - Start a stage within an operation
+- `completeStage(operationId, stageName, output?, error?)` - Complete a stage
+
+#### Metrics & Errors
+
+- `recordAPILatency(endpoint, latency)` - Record API call latency
+- `recordCycleTime(cycleId, duration)` - Record cycle execution time
+- `recordError(error, context)` - Record error directly
+- `getMetricsSnapshot(cycleId?)` - Get current metrics snapshot
+- `getErrorRate()` - Get current error rate
+- `getAggregatedErrors()` - Get aggregated errors
+
+#### Snapshots
+
+- `createSnapshot(cycleId, account, positions, circuitBreakers, recentOperations)` - Create system snapshot
+- `getSnapshotById(snapshotId)` - Get snapshot by ID
+
+#### Data Quality & Validation
+
+- `recordValidationCheck(operationId, stageName, check)` - Record validation check to a stage
+- `recordDataQuality(operationId, stageName, qualityInfo)` - Record data quality info to a stage
+- `recordDecisionMetrics(operationId, stageName, metrics)` - Record decision metrics to a stage
+- `recordValidationResult(operationId, validationResults)` - Record validation results to an operation
+- `recordDecisionPath(operationId, decisionPath)` - Record decision path to an operation
+- `recordOperationDataQuality(operationId, dataQuality)` - Record data quality metrics to an operation
+- `appendDecisionChoice(operationId, choice)` - Append a choice to existing decision path
+- `aggregateValidationResults(operationId, stageName)` - Aggregate validation checks from a stage
+
+#### Query & Management
+
+- `getOperationsByCycle(cycleId)` - Get operations by cycle
+- `getOperation(operationId)` - Get operation by ID
+- `getSamplingState()` - Get current sampling state
+- `shouldLog(logType, errorOccurred?)` - Check if should log based on log type
+- `cleanup(maxCycles)` - Cleanup old data
 
 ## Quick Start
 
@@ -609,8 +657,7 @@ The system dynamically adjusts logging detail based on system health to balance 
 ### Sampling Factors
 
 - Error rate thresholds
-- Performance degradation
-- Anomaly detection triggers
+- Performance metrics
 - Manual state override
 
 ### Checking Sampling State
@@ -624,34 +671,34 @@ const shouldLog = logger.shouldLog('debug', false); // false in normal state
 const shouldLogError = logger.shouldLog('debug', true); // true (errors always logged)
 ```
 
-## Anomaly Detection
+## System Health Monitoring
 
-Automatic detection of unusual patterns to help identify issues early.
+Monitor system health using metrics and error rates to identify issues early.
 
-### Detected Anomalies
+### Available Metrics
 
-- **Error Rate Spike**: Sudden increase in error frequency (>10% threshold)
-- **Performance Degradation**: Unusual latency increases (>2x threshold)
-- **Memory Leak**: Continuously increasing memory usage (>5% per cycle)
-- **API Timeout Pattern**: Repeated timeouts from same endpoint
+- **Error Rate**: Current error rate calculated from recent operations
+- **Performance Metrics**: Latency, cycle times, and API response times
+- **Memory Usage**: System memory usage tracked in snapshots
+- **Operation Status**: Success/failure rates for different operation types
 
-### Anomaly Response
+### Health Monitoring
 
-When anomalies are detected, the system can:
+You can monitor system health by:
 
 - Increase sampling rate automatically
 - Force immediate snapshot creation
 - Trigger console warnings
 - Store additional diagnostic information
 
-### Checking Anomalies
+### Checking System Health
 
 ```typescript
-// Check for anomalies
-const anomalies = logger.checkAnomalies();
+// Get current metrics snapshot
+const metrics = logger.getMetricsSnapshot();
 
-// Anomalies include:
-// - type: 'error_rate_spike' | 'performance_degradation' | 'memory_leak' | 'api_timeout'
+// Check error rate
+const errorRate = logger.getErrorRate();
 // - severity: 'low' | 'medium' | 'high' | 'critical'
 // - message: string
 // - metrics: Record<string, any>
@@ -1358,15 +1405,15 @@ const LOGGING_CONSTANTS = {
 };
 ```
 
-### Anomaly Detection Thresholds
+### Monitoring Thresholds
 
 ```typescript
-const LOGGING_CONSTANTS = {
-  ANOMALY: {
-    ERROR_RATE_SPIKE: 0.1, // 10% error rate threshold
-    LATENCY_DEGRADATION: 2.0, // 2x latency increase
-    MEMORY_LEAK_RATE: 0.05, // 5% memory increase per cycle
-  },
+// Recommended thresholds for monitoring
+const MONITORING_THRESHOLDS = {
+  ERROR_RATE_WARNING: 0.05, // 5% error rate
+  ERROR_RATE_CRITICAL: 0.1, // 10% error rate
+  LATENCY_DEGRADATION: 2.0, // 2x latency increase
+  MEMORY_GROWTH: 0.05, // 5% memory increase per cycle
 };
 ```
 
@@ -1514,14 +1561,11 @@ await storage.cleanupByDays(7); // Keep last 7 days
 ### Custom Metrics
 
 ```typescript
-// Record custom business metric
-logger.recordMetric('custom_metric', value, {
-  category: 'trading',
-  metadata: { extra: 'data' },
-});
+// Record custom business metric (note: UnifiedLogger doesn't have recordMetric method)
+// Use MetricsCollector directly for custom metrics
 ```
 
-**Note**: The UnifiedLogger uses `recordAPILatency` and `recordCycleTime` methods. For custom metrics, use MetricsCollector directly:
+**Note**: The `UnifiedLogger` provides `recordAPILatency` and `recordCycleTime` methods. For custom metrics not covered by these methods, use `MetricsCollector` directly:
 
 ```typescript
 import { MetricsCollector } from '../logging/index.js';
@@ -1553,19 +1597,18 @@ logger.completeOperation(childOpId, 'completed', {});
 logger.completeOperation(parentOpId, 'completed', {});
 ```
 
-### Monitoring Anomalies
+### Monitoring System Health
 
 ```typescript
-// Check for anomalies periodically
+// Monitor system health periodically
 setInterval(() => {
-  const anomalies = logger.checkAnomalies();
-  if (anomalies.length > 0) {
-    console.warn('Anomalies detected:', anomalies);
+  const errorRate = logger.getErrorRate();
+  const metrics = logger.getMetricsSnapshot();
+  if (errorRate > 0.05) {
+    console.warn('High error rate detected:', errorRate);
 
-    // Force snapshot on critical anomalies
-    const criticalAnomalies = anomalies.filter(a => a.severity === 'critical');
-    if (criticalAnomalies.length > 0) {
-      // Create emergency snapshot
+    // Create emergency snapshot on critical conditions
+    if (errorRate > 0.1) {
       const snapshot = logger.createSnapshot(cycleId, snapshotData);
     }
   }

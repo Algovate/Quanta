@@ -3,7 +3,7 @@
  *
  * This is the main interface for the new logging system.
  * It coordinates all components: Operation Logger, Error Aggregator,
- * Metrics Collector, State Snapshot, Sampler, Anomaly Detector, and Storage Layer.
+ * Metrics Collector, State Snapshot, Sampler, and Storage Layer.
  */
 
 import { OperationLogger } from './operation-logger.js';
@@ -11,7 +11,6 @@ import { ErrorAggregator } from './error-aggregator.js';
 import { MetricsCollector } from './metrics-collector.js';
 import { StateSnapshotService } from './state-snapshot.js';
 import { Sampler } from './sampler.js';
-import { AnomalyDetector } from './anomaly-detector.js';
 import { StorageLayer } from './storage-layer.js';
 import { StorageOptimizer } from './storage-optimizer.js';
 import type {
@@ -27,7 +26,6 @@ import type {
   DataQualityMetrics,
   DecisionMetrics,
 } from './types.js';
-import type { AnomalyEvent } from './anomaly-detector.js';
 
 export class UnifiedLogger {
   private static instance: UnifiedLogger;
@@ -36,7 +34,6 @@ export class UnifiedLogger {
   private metricsCollector: MetricsCollector;
   private stateSnapshot: StateSnapshotService;
   private sampler: Sampler;
-  private anomalyDetector: AnomalyDetector;
   private storageLayer: StorageLayer;
   private storageOptimizer: StorageOptimizer;
   private initialized: boolean = false;
@@ -47,7 +44,6 @@ export class UnifiedLogger {
     this.metricsCollector = MetricsCollector.getInstance();
     this.stateSnapshot = StateSnapshotService.getInstance();
     this.sampler = Sampler.getInstance();
-    this.anomalyDetector = AnomalyDetector.getInstance();
     this.storageLayer = StorageLayer.getInstance();
     this.storageOptimizer = StorageOptimizer.getInstance();
   }
@@ -67,7 +63,17 @@ export class UnifiedLogger {
       return;
     }
 
-    // Set up handlers
+    this.setupOperationHandlers();
+    this.setupErrorAggregationHandlers();
+    this.setupSnapshotHandlers();
+
+    this.initialized = true;
+  }
+
+  /**
+   * Set up operation completion handlers
+   */
+  private setupOperationHandlers(): void {
     this.operationLogger.onOperationComplete(operation => {
       // Queue operation for batch write
       this.storageOptimizer.queueOperation(operation);
@@ -78,64 +84,70 @@ export class UnifiedLogger {
         operation.metrics.duration
       );
 
-      // Check if operation failed
+      // Handle operation errors
       if (operation.status === 'failed' && operation.error) {
-        this.errorAggregator.recordError(operation.error, {
-          cycleId: operation.cycleId,
-          symbol: operation.symbol,
-          operationId: operation.operationId,
-          context: operation.context,
-        });
-
-        // Record error in metrics
-        this.metricsCollector.recordError(operation.error.type, operation.cycleId);
+        this.handleOperationError(operation);
       }
 
       // Record business metrics
-      if (operation.operationType === 'signal_generation') {
-        this.metricsCollector.recordSignalGeneration(operation.status === 'completed');
-      } else if (operation.operationType === 'order_execution') {
-        this.metricsCollector.recordOrderExecution(operation.status === 'completed');
-      }
+      this.recordBusinessMetrics(operation);
+    });
+  }
+
+  /**
+   * Handle operation errors
+   */
+  private handleOperationError(operation: OperationLog): void {
+    if (!operation.error) {
+      return;
+    }
+
+    this.errorAggregator.recordError(operation.error, {
+      cycleId: operation.cycleId,
+      symbol: operation.symbol,
+      operationId: operation.operationId,
+      context: operation.context,
     });
 
-    // Set up error aggregation handlers
+    // Record error in metrics
+    this.metricsCollector.recordError(operation.error.type, operation.cycleId);
+  }
+
+  /**
+   * Record business-specific metrics based on operation type
+   */
+  private recordBusinessMetrics(operation: OperationLog): void {
+    if (operation.operationType === 'signal_generation') {
+      this.metricsCollector.recordSignalGeneration(operation.status === 'completed');
+    } else if (operation.operationType === 'order_execution') {
+      this.metricsCollector.recordOrderExecution(operation.status === 'completed');
+    }
+  }
+
+  /**
+   * Set up error aggregation handlers
+   */
+  private setupErrorAggregationHandlers(): void {
     this.errorAggregator.onAggregatedError(async () => {
-      // Store aggregated errors periodically
       const allAggregated = this.errorAggregator.getAggregatedErrors();
       await this.storageLayer.storeAggregatedErrors(allAggregated);
     });
+  }
 
-    // Set up snapshot handlers
+  /**
+   * Set up snapshot handlers
+   */
+  private setupSnapshotHandlers(): void {
     this.stateSnapshot.onSnapshot(snapshot => {
       // Queue snapshot for batch write
       this.storageOptimizer.queueSnapshot(snapshot);
 
-      // Update metrics snapshot
+      // Update and store metrics snapshot
       const metricsSnapshot = this.metricsCollector.createSnapshot(snapshot.cycleId);
-      // Store metrics snapshot directly (non-blocking)
       this.storageLayer.storeMetricsSnapshot(metricsSnapshot).catch(err => {
         console.error('Error storing metrics snapshot:', err);
       });
     });
-
-    // Set up anomaly detection handlers
-    this.anomalyDetector.onAnomalyDetected(event => {
-      console.warn(`[Anomaly] ${event.severity.toUpperCase()}: ${event.message}`, event.metrics);
-
-      // Trigger additional actions based on anomaly type
-      if (event.type === 'error_rate_spike' && event.severity === 'critical') {
-        // Force save current state
-        const lastSnapshot = this.stateSnapshot.getLastSnapshot();
-        if (lastSnapshot) {
-          this.storageLayer.storeSnapshot(lastSnapshot).catch(err => {
-            console.error('Failed to save snapshot during anomaly:', err);
-          });
-        }
-      }
-    });
-
-    this.initialized = true;
   }
 
   /**
@@ -218,10 +230,19 @@ export class UnifiedLogger {
       symbol: context.symbol,
       operationId: context.operationId,
     });
-    this.metricsCollector.recordError(
-      error instanceof Error ? error.constructor.name : 'UnknownError',
-      context.cycleId
-    );
+
+    const errorType = this.extractErrorType(error);
+    this.metricsCollector.recordError(errorType, context.cycleId);
+  }
+
+  /**
+   * Extract error type from error object
+   */
+  private extractErrorType(error: Error | unknown): string {
+    if (error instanceof Error) {
+      return error.constructor.name;
+    }
+    return 'UnknownError';
   }
 
   /**
@@ -330,13 +351,6 @@ export class UnifiedLogger {
   }
 
   /**
-   * Check for anomalies
-   */
-  checkAnomalies(): AnomalyEvent[] {
-    return this.anomalyDetector.checkForAnomalies();
-  }
-
-  /**
    * Get current sampling state
    */
   getSamplingState(): 'normal' | 'warning' | 'critical' {
@@ -412,19 +426,27 @@ export class UnifiedLogger {
     }
 
     const stage = operation.stages.find(s => s.stage === stageName);
-    if (!stage || !stage.validationChecks || stage.validationChecks.length === 0) {
+    if (!stage?.validationChecks || stage.validationChecks.length === 0) {
       return;
     }
 
-    const allPassed = stage.validationChecks.every(check => check.passed);
-    this.recordValidationResult(operationId, {
+    const validationResults = this.createValidationResults(stage.validationChecks);
+    this.recordValidationResult(operationId, validationResults);
+  }
+
+  /**
+   * Create validation results from validation checks
+   */
+  private createValidationResults(checks: ValidationCheck[]): ValidationResults {
+    const allPassed = checks.every(check => check.passed);
+    return {
       passed: allPassed,
-      checks: stage.validationChecks.map(check => ({
+      checks: checks.map(check => ({
         check: check.name,
         passed: check.passed,
         reason: check.reason,
         details: check.details,
       })),
-    });
+    };
   }
 }

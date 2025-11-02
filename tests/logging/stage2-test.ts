@@ -4,7 +4,6 @@
 
 import assert from 'node:assert';
 import { Sampler } from '../../src/logging/sampler.js';
-import { AnomalyDetector } from '../../src/logging/anomaly-detector.js';
 import { StorageLayer } from '../../src/logging/storage-layer.js';
 import { UnifiedLogger } from '../../src/logging/unified-logger.js';
 import { MetricsCollector } from '../../src/logging/metrics-collector.js';
@@ -36,37 +35,6 @@ async function testSampler() {
   assert.strictEqual(shouldLogError, true, 'Errors should always log');
 
   console.log('✓ Sampler tests passed');
-}
-
-async function testAnomalyDetector() {
-  console.log('Testing AnomalyDetector...');
-  const detector = AnomalyDetector.getInstance();
-  detector.reset();
-
-  const metricsCollector = MetricsCollector.getInstance();
-  metricsCollector.reset();
-
-  // Test error rate spike detection
-  // Simulate error rate increase
-  for (let i = 0; i < 10; i++) {
-    metricsCollector.recordError('TestError', i + 1);
-    metricsCollector.recordCycleTime(i + 1, 1000);
-  }
-
-  // Create initial metrics snapshot
-  metricsCollector.createSnapshot(1);
-
-  // Create second snapshot with higher error rate
-  for (let i = 0; i < 20; i++) {
-    metricsCollector.recordError('TestError', i + 10);
-    metricsCollector.recordCycleTime(i + 10, 1000);
-  }
-
-  const events = detector.checkForAnomalies();
-  // Anomaly detection may or may not trigger depending on timing
-  assert.ok(Array.isArray(events), 'Should return array of events');
-
-  console.log('✓ AnomalyDetector tests passed');
 }
 
 async function testStorageLayer() {
@@ -184,10 +152,6 @@ async function testUnifiedLogger() {
   const ops = await logger.getOperationsByCycle(1);
   assert.ok(Array.isArray(ops), 'Should return operations');
 
-  // Test anomaly checking
-  const anomalies = logger.checkAnomalies();
-  assert.ok(Array.isArray(anomalies), 'Should return anomalies array');
-
   // Test sampling
   const state = logger.getSamplingState();
   assert.ok(['normal', 'warning', 'critical'].includes(state), 'Should return valid state');
@@ -203,7 +167,6 @@ async function runAllTests() {
 
   try {
     await testSampler();
-    await testAnomalyDetector();
     await testStorageLayer();
     await testUnifiedLogger();
 

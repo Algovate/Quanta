@@ -375,6 +375,102 @@ export class PositionMonitorService implements PositionMonitor {
   }
 
   /**
+   * Extract base currency from symbol (e.g., BTC from BTC/USDT)
+   */
+  private getBaseCurrency(symbol: string): string {
+    return symbol.split('/')[0].toUpperCase();
+  }
+
+  /**
+   * Format position size with symbol unit for display
+   * @example formatPositionSize(0.01625143, 'BTC/USDT') => "0.01625143 BTC"
+   */
+  private formatPositionSize(size: number, symbol: string): string {
+    const baseCurrency = this.getBaseCurrency(symbol);
+    const formattedSize = size.toFixed(6).replace(/\.?0+$/, '');
+    return `${formattedSize} ${baseCurrency}`;
+  }
+
+  /**
+   * Format price with thousand separators for readability
+   * @example formatPrice(111037.50) => "111,037.50"
+   */
+  private formatPrice(price: number): string {
+    return price.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  /**
+   * Parse reason string to extract base reason and context
+   * Handles format: "flat-auto-close | cycles=8 r<=0.25"
+   */
+  private parseReasonWithContext(reason: string): {
+    baseReason: string;
+    context?: { cycles?: number; rMultiple?: string };
+  } {
+    if (!reason.includes('flat-auto-close')) {
+      return { baseReason: reason };
+    }
+
+    // Extract base reason (before the | separator)
+    const baseReason = reason.split('|')[0]?.trim() || 'flat-auto-close';
+
+    // Extract context using regex
+    const cyclesMatch = reason.match(/cycles=(\d+)/);
+    const rMatch = reason.match(/r<=([0-9.]+)/);
+
+    const context: { cycles?: number; rMultiple?: string } = {};
+    if (cyclesMatch) {
+      context.cycles = parseInt(cyclesMatch[1], 10);
+    }
+    if (rMatch) {
+      context.rMultiple = rMatch[1];
+    }
+
+    return {
+      baseReason,
+      context: Object.keys(context).length > 0 ? context : undefined,
+    };
+  }
+
+  /**
+   * Format context parts for log message
+   */
+  private formatContextParts(context: { cycles?: number; rMultiple?: string }): string {
+    const parts: string[] = [];
+    if (context.cycles !== undefined) {
+      parts.push(`cycles=${context.cycles}`);
+    }
+    if (context.rMultiple !== undefined) {
+      parts.push(`r≤${context.rMultiple}`);
+    }
+    return parts.length > 0 ? ` | ${parts.join(' ')}` : '';
+  }
+
+  /**
+   * Format position close log message consistently with other logs
+   * Follows format: "Position closed | symbol=... side=... size=... price=... reason=... | context"
+   */
+  private formatPositionCloseLog(position: Position, currentPrice: number, reason: string): string {
+    const { baseReason, context } = this.parseReasonWithContext(reason);
+
+    const parts = [
+      `symbol=${position.symbol}`,
+      `side=${position.side.toUpperCase()}`,
+      `size=${this.formatPositionSize(position.size, position.symbol)}`,
+      `price=${this.formatPrice(currentPrice)}`,
+      `reason=${baseReason}`,
+    ];
+
+    const baseMessage = `Position closed | ${parts.join(' ')}`;
+    const contextSuffix = context ? this.formatContextParts(context) : '';
+
+    return baseMessage + contextSuffix;
+  }
+
+  /**
    * Execute position close based on reason
    */
   private async executePositionClose(
@@ -391,10 +487,9 @@ export class PositionMonitorService implements PositionMonitor {
         // Default to stop loss for unknown reasons
         await this.orderExecutor.executeStopLoss(position, currentPrice);
       }
-      // Emit a concise, context-rich close log
-      this.logger.info(
-        `Position closed | symbol=${position.symbol} side=${position.side} size=${position.size} price=${currentPrice.toFixed(2)} reason=${reason}`
-      );
+      // Emit a concise, context-rich close log with consistent formatting
+      const formattedLog = this.formatPositionCloseLog(position, currentPrice, reason);
+      this.logger.info(formattedLog);
     } catch (error) {
       this.logger.error(`Failed to execute close for ${position.symbol}`, error);
       throw error; // Re-throw to trigger retry
