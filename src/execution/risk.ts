@@ -663,20 +663,14 @@ export class RiskManager {
   }
 
   checkStopLoss(position: Position, currentPrice: number): boolean {
-    // Use custom stop loss if set, otherwise use calculated default
-    const stopLossPrice =
-      position.customStopLoss !== undefined
-        ? position.customStopLoss
-        : this.calculateStopLoss(position, position.entryPrice);
+    // Use effective stop loss price (custom, trailing, or calculated based on entry price)
+    const stopLossPrice = this.getEffectiveStopLossPrice(position, position.entryPrice);
     return this.checkExitCondition(position, currentPrice, stopLossPrice, 'stop');
   }
 
   checkTakeProfit(position: Position, currentPrice: number): boolean {
-    // Use custom take profit if set, otherwise use calculated default
-    const takeProfitPrice =
-      position.customTakeProfit !== undefined
-        ? position.customTakeProfit
-        : this.calculateTakeProfit(position, position.entryPrice);
+    // Use effective take profit price (custom or calculated based on entry price)
+    const takeProfitPrice = this.getEffectiveTakeProfitPrice(position, position.entryPrice);
     return this.checkExitCondition(position, currentPrice, takeProfitPrice, 'profit');
   }
 
@@ -885,5 +879,31 @@ export class RiskManager {
   /** Apply breakeven: set trailingStopPrice to entryPrice */
   applyBreakevenStop(position: Position): void {
     position.trailingStopPrice = this.computeBreakevenStop(position);
+  }
+
+  /**
+   * Get effective stop loss price for a position
+   * Priority: customStopLoss > trailingStopPrice > calculated default
+   * @param position - The position to get stop loss for
+   * @param currentPrice - Current market price for default calculation
+   * @returns Effective stop loss price
+   */
+  getEffectiveStopLossPrice(position: Position, currentPrice: number): number {
+    return (
+      position.customStopLoss ??
+      position.trailingStopPrice ??
+      this.calculateStopLoss(position, currentPrice)
+    );
+  }
+
+  /**
+   * Get effective take profit price for a position
+   * Priority: customTakeProfit > calculated default
+   * @param position - The position to get take profit for
+   * @param currentPrice - Current market price for default calculation
+   * @returns Effective take profit price
+   */
+  getEffectiveTakeProfitPrice(position: Position, currentPrice: number): number {
+    return position.customTakeProfit ?? this.calculateTakeProfit(position, currentPrice);
   }
 }

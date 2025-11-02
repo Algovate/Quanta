@@ -3,6 +3,14 @@ import { getConfig } from '../config/settings.js';
 import { createExchangeForMode, describeExchange } from './exchange-factory.js';
 import { createWorkflowDeps } from '../core/factories.js';
 import type { BacktestConfig } from '../types/index.js';
+import type { Exchange } from '../exchange/types.js';
+
+// Type guard to check if exchange supports order metadata
+function supportsOrderMetadata(exchange: Exchange): exchange is Exchange & {
+  setOrderMetadata: (orderId: string, source: string, reason: string) => void;
+} {
+  return typeof (exchange as any).setOrderMetadata === 'function';
+}
 
 export async function startTradingService(
   tradingManager: TradingManager,
@@ -64,6 +72,10 @@ export async function closePositionService(
   if (!target) throw new Error('Position not found');
   const oppositeSide = params.side === 'long' ? 'sell' : 'buy';
   const order = await exchange.placeOrder(params.symbol, oppositeSide, target.size);
+  // Set metadata for simulator exchange if applicable
+  if (supportsOrderMetadata(exchange) && order?.id) {
+    exchange.setOrderMetadata(order.id, 'manual', 'manual-close');
+  }
   tradingManager.pushOrder({
     id: order?.id ?? `${params.symbol}-${Date.now()}`,
     timestamp: Date.now(),
@@ -71,6 +83,8 @@ export async function closePositionService(
     side: oppositeSide,
     amount: target.size,
     status: order?.status ?? 'open',
+    source: 'manual',
+    reason: 'manual-close',
   });
   return order;
 }
@@ -95,6 +109,10 @@ export async function placeOrderService(
     params.price,
     params.leverage
   );
+  // Set metadata for simulator exchange if applicable
+  if (supportsOrderMetadata(exchange) && order?.id) {
+    exchange.setOrderMetadata(order.id, 'manual', 'manual-order');
+  }
   tradingManager.pushOrder({
     id: order?.id ?? `${params.symbol}-${Date.now()}`,
     timestamp: Date.now(),
@@ -103,6 +121,8 @@ export async function placeOrderService(
     amount: params.amount,
     price: params.price,
     status: order?.status ?? 'open',
+    source: 'manual',
+    reason: 'manual-order',
   });
   return order;
 }

@@ -7,6 +7,13 @@ import { TradingManager } from '../web/trading-manager.js';
 import type { OrderEvent } from '../web/types.js';
 import { getConfig } from '../config/settings.js';
 
+// Type guard to check if exchange is SimulatorExchange with metadata support
+function isSimulatorExchange(exchange: Exchange): exchange is Exchange & {
+  setOrderMetadata: (orderId: string, source: string, reason: string) => void;
+} {
+  return typeof (exchange as any).setOrderMetadata === 'function';
+}
+
 export interface OrderResult {
   success: boolean;
   order?: Order;
@@ -56,7 +63,11 @@ export class OrderExecutor {
         undefined,
         position.leverage
       );
-      this.pushOrderEvent(order, symbol, side, amount, undefined);
+      // Set metadata for simulator exchange if applicable
+      if (isSimulatorExchange(this.exchange)) {
+        this.exchange.setOrderMetadata?.(order.id, 'AI', 'partial-close');
+      }
+      this.pushOrderEvent(order, symbol, side, amount, 'AI', 'partial-close', undefined);
       if (order.status === 'filled' || order.status === 'open') {
         return { success: true, order };
       }
@@ -104,6 +115,8 @@ export class OrderExecutor {
     symbol: string,
     side: 'buy' | 'sell',
     amount: number,
+    source: string,
+    reason: string,
     price?: number
   ): void {
     try {
@@ -114,6 +127,8 @@ export class OrderExecutor {
         side,
         amount,
         status: order?.status ?? 'open',
+        source,
+        reason,
         ...(price !== undefined ? { price } : {}),
       };
       TradingManager.getInstance().pushOrder(event);
@@ -216,7 +231,11 @@ export class OrderExecutor {
       const leverage = sizing.leverage;
 
       const order = await this.exchange.placeOrder(symbol, side, amount, price, leverage);
-      this.pushOrderEvent(order, symbol, side, amount, price);
+      // Set metadata for simulator exchange if applicable
+      if (isSimulatorExchange(this.exchange)) {
+        this.exchange.setOrderMetadata?.(order.id, 'AI', 'signal');
+      }
+      this.pushOrderEvent(order, symbol, side, amount, 'AI', 'signal', price);
 
       // Check if order was actually filled
       if (order.status === 'filled') {
@@ -284,7 +303,11 @@ export class OrderExecutor {
       }
 
       const order = await this.exchange.placeOrder(symbol, side, exactAmount);
-      this.pushOrderEvent(order, symbol, side, exactAmount);
+      // Set metadata for simulator exchange if applicable
+      if (isSimulatorExchange(this.exchange)) {
+        this.exchange.setOrderMetadata?.(order.id, 'AI', 'signal');
+      }
+      this.pushOrderEvent(order, symbol, side, exactAmount, 'AI', 'signal');
 
       const realizedPnl =
         priceForPnl !== undefined
@@ -304,6 +327,8 @@ export class OrderExecutor {
   private async executePositionExit(
     position: Position,
     currentPrice: number,
+    source: string,
+    reason: string,
     context: string
   ): Promise<OrderResult> {
     try {
@@ -312,19 +337,45 @@ export class OrderExecutor {
       const amount = position.size;
 
       const order = await this.exchange.placeOrder(symbol, side, amount, currentPrice);
-      this.pushOrderEvent(order, symbol, side, amount, currentPrice);
+      // Set metadata for simulator exchange if applicable
+      if (isSimulatorExchange(this.exchange)) {
+        this.exchange.setOrderMetadata?.(order.id, source, reason);
+      }
+      this.pushOrderEvent(order, symbol, side, amount, source, reason, currentPrice);
       return { success: true, order };
     } catch (error) {
       return this.handleError(context, error);
     }
   }
 
-  async executeStopLoss(position: Position, currentPrice: number): Promise<OrderResult> {
-    return this.executePositionExit(position, currentPrice, 'stop loss');
+  async executeStopLoss(
+    position: Position,
+    currentPrice: number,
+    source?: string,
+    reason?: string
+  ): Promise<OrderResult> {
+    return this.executePositionExit(
+      position,
+      currentPrice,
+      source ?? 'stop-loss',
+      reason ?? 'Stop loss triggered',
+      'stop loss'
+    );
   }
 
-  async executeTakeProfit(position: Position, currentPrice: number): Promise<OrderResult> {
-    return this.executePositionExit(position, currentPrice, 'take profit');
+  async executeTakeProfit(
+    position: Position,
+    currentPrice: number,
+    source?: string,
+    reason?: string
+  ): Promise<OrderResult> {
+    return this.executePositionExit(
+      position,
+      currentPrice,
+      source ?? 'take-profit',
+      reason ?? 'Take profit triggered',
+      'take profit'
+    );
   }
 
   async cancelOrder(orderId: string, symbol: string): Promise<boolean> {

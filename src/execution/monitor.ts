@@ -266,15 +266,14 @@ export class PositionMonitorService implements PositionMonitor {
               this.riskManager.applyBreakevenStop(position);
               st.breakevenApplied = true;
               if (this.logger.getConfig().level <= LogLevel.INFO) {
-                // Determine stop loss price (priority: customStopLoss > trailingStopPrice > calculated default)
-                const stopLossPrice =
-                  position.customStopLoss ??
-                  position.trailingStopPrice ??
-                  this.riskManager.calculateStopLoss(position, currentPrice);
-                // Determine take profit price (priority: customTakeProfit > calculated default)
-                const takeProfitPrice =
-                  position.customTakeProfit ??
-                  this.riskManager.calculateTakeProfit(position, currentPrice);
+                const stopLossPrice = this.riskManager.getEffectiveStopLossPrice(
+                  position,
+                  currentPrice
+                );
+                const takeProfitPrice = this.riskManager.getEffectiveTakeProfitPrice(
+                  position,
+                  currentPrice
+                );
                 this.logger.info(
                   `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${stopLossPrice.toFixed(2)} tp=@${takeProfitPrice.toFixed(2)}`
                 );
@@ -488,13 +487,30 @@ export class PositionMonitorService implements PositionMonitor {
     reason: string
   ): Promise<void> {
     try {
+      // Determine source and reason based on the reason string
+      let source: string;
+      let orderReason: string;
+
       if (reason.includes('Stop loss') || reason.includes('Emergency')) {
-        await this.orderExecutor.executeStopLoss(position, currentPrice);
+        source = 'stop-loss';
+        orderReason = reason.includes('Emergency')
+          ? 'Emergency stop loss triggered'
+          : 'Stop loss triggered';
+        await this.orderExecutor.executeStopLoss(position, currentPrice, source, orderReason);
       } else if (reason.includes('Take profit')) {
-        await this.orderExecutor.executeTakeProfit(position, currentPrice);
+        source = 'take-profit';
+        orderReason = 'Take profit triggered';
+        await this.orderExecutor.executeTakeProfit(position, currentPrice, source, orderReason);
+      } else if (reason.includes('flat-auto-close')) {
+        source = 'auto-close';
+        orderReason = reason;
+        // Default to stop loss execution for auto-close
+        await this.orderExecutor.executeStopLoss(position, currentPrice, source, orderReason);
       } else {
         // Default to stop loss for unknown reasons
-        await this.orderExecutor.executeStopLoss(position, currentPrice);
+        source = 'stop-loss';
+        orderReason = 'Stop loss triggered';
+        await this.orderExecutor.executeStopLoss(position, currentPrice, source, orderReason);
       }
       // Emit a concise, context-rich close log with consistent formatting
       const formattedLog = this.formatPositionCloseLog(position, currentPrice, reason);

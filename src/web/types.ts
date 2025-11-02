@@ -20,6 +20,8 @@ export interface OrderEvent {
   amount: number;
   price?: number;
   status: string;
+  source: string;
+  reason: string;
 }
 
 export interface RiskSnapshot {

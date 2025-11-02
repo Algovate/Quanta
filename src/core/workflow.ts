@@ -2276,15 +2276,14 @@ export class TradingWorkflow {
       const minutes = Math.floor((holdingTime % (1000 * 60 * 60)) / (1000 * 60));
       const timeText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
-      // Determine stop loss price (priority: customStopLoss > trailingStopPrice > calculated default)
-      const stopLossPrice =
-        position.customStopLoss ??
-        position.trailingStopPrice ??
-        this.riskManager.calculateStopLoss(position, position.entryPrice);
-      // Determine take profit price (priority: customTakeProfit > calculated default)
-      const takeProfitPrice =
-        position.customTakeProfit ??
-        this.riskManager.calculateTakeProfit(position, position.entryPrice);
+      const stopLossPrice = this.riskManager.getEffectiveStopLossPrice(
+        position,
+        position.entryPrice
+      );
+      const takeProfitPrice = this.riskManager.getEffectiveTakeProfitPrice(
+        position,
+        position.entryPrice
+      );
 
       const stopLossPercent = Math.abs(
         ((stopLossPrice - position.entryPrice) / position.entryPrice) * 100

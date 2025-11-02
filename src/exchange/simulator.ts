@@ -14,6 +14,11 @@ import { PositionUpdateManager } from './position-manager.js';
 const MAX_COMPLETED_TRADES = 1000; // Keep last 1000 trades
 const MAX_ORDERS_HISTORY = 500; // Keep last 500 orders
 
+interface OrderMetadata {
+  source: string;
+  reason: string;
+}
+
 export class SimulatorExchange implements Exchange {
   private account: Account;
   private positions: Position[];
@@ -23,6 +28,7 @@ export class SimulatorExchange implements Exchange {
   private completedTrades: CompletedTrade[] = [];
   private logger = Logger.getInstance('SimulatorExchange');
   private positionManager: PositionUpdateManager;
+  private orderMetadata: Map<string, OrderMetadata> = new Map();
 
   constructor(initialBalance: number = 10000, dataSourceExchange?: Exchange) {
     this.account = {
@@ -217,10 +223,77 @@ export class SimulatorExchange implements Exchange {
 
     this.orders.push(order);
 
+    // Try to infer source from call stack (fallback to 'AI' for simulator context)
+    // This will be overridden by explicit metadata if set via setOrderMetadata
+    if (!this.orderMetadata.has(order.id)) {
+      // Infer from calling context - check if we can determine the source
+      const source = this.inferOrderSource();
+      this.orderMetadata.set(order.id, {
+        source,
+        reason: source === 'AI' ? 'signal' : 'unknown',
+      });
+    }
+
     // Execute the order immediately to simulate real exchange behavior
     await this.executeOrder(order, leverage);
 
     return order;
+  }
+
+  /**
+   * Set metadata for an order (source and reason)
+   * This allows external code (like OrderExecutor) to specify the order source
+   */
+  setOrderMetadata(orderId: string, source: string, reason: string): void {
+    this.orderMetadata.set(orderId, { source, reason });
+  }
+
+  /**
+   * Infer order source from calling context
+   * Checks the call stack to determine where the order came from
+   */
+  private inferOrderSource(): string {
+    try {
+      const stack = new Error().stack;
+      if (!stack) return 'AI';
+
+      // Check call stack for known patterns
+      if (stack.includes('OrderExecutor') && stack.includes('executeSignal')) {
+        return 'AI';
+      }
+      if (stack.includes('OrderExecutor') && stack.includes('executeStopLoss')) {
+        return 'stop-loss';
+      }
+      if (stack.includes('OrderExecutor') && stack.includes('executeTakeProfit')) {
+        return 'take-profit';
+      }
+      if (stack.includes('executePositionClose') || stack.includes('PositionMonitor')) {
+        // This could be stop-loss, take-profit, or auto-close
+        // We'll use the metadata set by monitor.ts if available
+        return 'stop-loss'; // Default fallback
+      }
+      if (stack.includes('api-service') || stack.includes('placeOrderService')) {
+        return 'manual';
+      }
+
+      // Default for simulator context (usually AI signals)
+      return 'AI';
+    } catch {
+      // If stack trace analysis fails, default to AI
+      return 'AI';
+    }
+  }
+
+  /**
+   * Get metadata for an order, with fallback to defaults
+   */
+  private getOrderMetadata(orderId: string): OrderMetadata {
+    return (
+      this.orderMetadata.get(orderId) || {
+        source: 'AI',
+        reason: 'signal',
+      }
+    );
   }
 
   async cancelOrder(orderId: string, _symbol: string): Promise<boolean> {
@@ -411,6 +484,7 @@ export class SimulatorExchange implements Exchange {
         order.status = 'open';
         // Emit open status so UI knows it's still pending
         try {
+          const metadata = this.getOrderMetadata(order.id);
           TradingManager.getInstance().pushOrder({
             id: order.id,
             timestamp: Date.now(),
@@ -419,6 +493,8 @@ export class SimulatorExchange implements Exchange {
             amount: order.amount,
             price: order.price,
             status: order.status,
+            source: metadata.source,
+            reason: metadata.reason,
           });
         } catch {
           // TradingManager might not be initialized in backtest mode
@@ -465,11 +541,16 @@ export class SimulatorExchange implements Exchange {
 
       // Prevent memory leak: keep only last N orders
       if (this.orders.length > MAX_ORDERS_HISTORY) {
-        this.orders.shift(); // Remove oldest order
+        const removedOrder = this.orders.shift(); // Remove oldest order
+        // Also clean up metadata for removed order
+        if (removedOrder) {
+          this.orderMetadata.delete(removedOrder.id);
+        }
       }
 
       // Emit filled status
       try {
+        const metadata = this.getOrderMetadata(order.id);
         TradingManager.getInstance().pushOrder({
           id: order.id,
           timestamp: Date.now(),
@@ -478,6 +559,8 @@ export class SimulatorExchange implements Exchange {
           amount: order.amount,
           price: order.price,
           status: order.status,
+          source: metadata.source,
+          reason: metadata.reason,
         });
       } catch {
         // TradingManager might not be initialized in backtest mode
@@ -487,6 +570,7 @@ export class SimulatorExchange implements Exchange {
       // Insufficient margin - reject order
       order.status = 'rejected';
       try {
+        const metadata = this.getOrderMetadata(order.id);
         TradingManager.getInstance().pushOrder({
           id: order.id,
           timestamp: Date.now(),
@@ -495,6 +579,8 @@ export class SimulatorExchange implements Exchange {
           amount: order.amount,
           price: order.price,
           status: order.status,
+          source: metadata.source,
+          reason: metadata.reason,
         });
       } catch {
         // TradingManager might not be initialized in backtest mode
