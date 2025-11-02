@@ -2276,20 +2276,27 @@ export class TradingWorkflow {
       const minutes = Math.floor((holdingTime % (1000 * 60 * 60)) / (1000 * 60));
       const timeText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
-      // Calculate stop loss and take profit levels
-      const stopLoss = this.riskManager.calculateStopLoss(position, position.entryPrice);
-      const takeProfit = this.riskManager.calculateTakeProfit(position, position.entryPrice);
+      // Determine stop loss price (priority: customStopLoss > trailingStopPrice > calculated default)
+      const stopLossPrice =
+        position.customStopLoss ??
+        position.trailingStopPrice ??
+        this.riskManager.calculateStopLoss(position, position.entryPrice);
+      // Determine take profit price (priority: customTakeProfit > calculated default)
+      const takeProfitPrice =
+        position.customTakeProfit ??
+        this.riskManager.calculateTakeProfit(position, position.entryPrice);
+
       const stopLossPercent = Math.abs(
-        ((stopLoss - position.entryPrice) / position.entryPrice) * 100
+        ((stopLossPrice - position.entryPrice) / position.entryPrice) * 100
       );
       const takeProfitPercent = Math.abs(
-        ((takeProfit - position.entryPrice) / position.entryPrice) * 100
+        ((takeProfitPrice - position.entryPrice) / position.entryPrice) * 100
       );
       const rrRatio = takeProfitPercent / stopLossPercent;
 
       console.log(
         chalk.gray(
-          `      ${position.symbol.replace('/USDT', '')}: Holding ${timeText} | R/R ${rrRatio.toFixed(1)}x | SL: ${position.side === 'long' ? '-' : '+'}${stopLossPercent.toFixed(1)}% | TP: ${position.side === 'long' ? '+' : '-'}${takeProfitPercent.toFixed(1)}%`
+          `      ${position.symbol.replace('/USDT', '')}: Holding ${timeText} | R/R ${rrRatio.toFixed(1)}x | SL: @$${stopLossPrice.toFixed(2)} (${position.side === 'long' ? '-' : '+'}${stopLossPercent.toFixed(1)}%) | TP: @$${takeProfitPrice.toFixed(2)} (${position.side === 'long' ? '+' : '-'}${takeProfitPercent.toFixed(1)}%)`
         )
       );
     });

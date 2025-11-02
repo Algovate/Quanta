@@ -266,8 +266,17 @@ export class PositionMonitorService implements PositionMonitor {
               this.riskManager.applyBreakevenStop(position);
               st.breakevenApplied = true;
               if (this.logger.getConfig().level <= LogLevel.INFO) {
+                // Determine stop loss price (priority: customStopLoss > trailingStopPrice > calculated default)
+                const stopLossPrice =
+                  position.customStopLoss ??
+                  position.trailingStopPrice ??
+                  this.riskManager.calculateStopLoss(position, currentPrice);
+                // Determine take profit price (priority: customTakeProfit > calculated default)
+                const takeProfitPrice =
+                  position.customTakeProfit ??
+                  this.riskManager.calculateTakeProfit(position, currentPrice);
                 this.logger.info(
-                  `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${position.trailingStopPrice?.toFixed(2)}`
+                  `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${stopLossPrice.toFixed(2)} tp=@${takeProfitPrice.toFixed(2)}`
                 );
               }
               decisions.push({
