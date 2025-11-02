@@ -12,6 +12,8 @@ import {
   buildTraceInputs,
   buildTraceOutputs,
 } from './tracing.js';
+import { loadPromptGroup, renderTemplate, type PromptGroup } from './prompt-loader.js';
+import { getConfig } from '../config/settings.js';
 
 export interface AIResponse {
   coin: string;
@@ -66,8 +68,15 @@ export class OpenRouterClient {
   private temperature: number;
   private logger: Logger;
   private circuitBreaker: CircuitBreaker;
+  private promptGroupName: string;
+  private promptGroup: PromptGroup | null = null;
 
-  constructor(apiKey: string, model: string = 'deepseek/deepseek-chat', temperature: number = 0.7) {
+  constructor(
+    apiKey: string,
+    model: string = 'deepseek/deepseek-chat',
+    temperature: number = 0.7,
+    promptGroupName?: string
+  ) {
     this.apiKey = apiKey;
     this.model = model;
     this.temperature = temperature;
@@ -77,8 +86,33 @@ export class OpenRouterClient {
       resetTimeout: 60000, // 1 minute
       halfOpenMaxAttempts: 2,
     });
+    // Get prompt group name from parameter or config
+    this.promptGroupName = promptGroupName ?? getConfig().ai.prompt.activeGroup;
     // Initialize LangChain tracing from config
     initLangSmithTracing();
+  }
+
+  /**
+   * Load the prompt group if not already loaded
+   * @throws Error if the prompt group cannot be loaded
+   */
+  private ensurePromptGroupLoaded(): void {
+    if (!this.promptGroup) {
+      try {
+        this.promptGroup = loadPromptGroup(this.promptGroupName);
+        this.logger.info(`Loaded prompt group: ${this.promptGroupName}`);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : `Failed to load prompt group "${this.promptGroupName}"`;
+        this.logger.error(`Failed to load prompt group: ${errorMessage}`, error);
+        throw new Error(
+          `Cannot load prompt group "${this.promptGroupName}". ` +
+            `Please ensure the prompt configuration file exists at config/prompts/${this.promptGroupName}.json`
+        );
+      }
+    }
   }
 
   async generateTradingSignal(
@@ -155,89 +189,21 @@ export class OpenRouterClient {
   }
 
   private buildSystemPrompt(context: AIContext): string {
-    return `You are an expert cryptocurrency trader managing a live perpetual futures portfolio.
-
-## HARD CONSTRAINTS
-
-- Tradable coins: ${context.tradableCoins.join(', ')}
-- Maximum ${context.maxPositions} concurrent positions
-- Maximum risk per trade: ${(context.maxRiskPerTrade * 100).toFixed(0)}% of account value
-- Leverage range: ${context.minLeverage}x to ${context.maxLeverage}x
-- Default stop loss: ${(context.defaultStopLoss * 100).toFixed(1)}%
-
-## ANTI-OVERTRADING PRINCIPLES:
-
-- Trend persistence: do not flip bias on a single candle or short blip
-- Position stability: keep direction unless a strong reversal is confirmed
-- Reversal confirmation: require 2–3 indicators aligned
-- Cost awareness: avoid unnecessary adjustments; each trade has cost
-
-## DECISION WEIGHTS:
-
-- Technicals: 60% > Sentiment: 30% > Risk: 10%
-- Sentiment confirms/contradicts technicals; on divergence follow technicals
-- If sentiment lags, reduce its weight; favor real-time indicators
-- Trend-following: act promptly on clear trends; BTC may have slight long bias.
-
-## DECISION FRAMEWORK
-
-CRITICAL: Your actions depend on whether a position exists for each coin:
-
-1. **For coins WITH positions**: You can only choose:
-  - "CLOSE" - Close the position immediately (use when stop loss hit, profit target reached, or trend reversal)
-  - "HOLD" - Continue holding the position
-
-2. **For coins WITHOUT positions**: You can only choose:
-  - "LONG" - Open a long position
-  - "SHORT" - Open a short position
-
-NEVER try to open a LONG when already holding LONG, or SHORT when holding SHORT.
-
-## OUTPUT FORMAT
-
-You MUST respond with ONLY valid JSON in this exact format:
-
-{
-  "signals": [
-    {
-      "coin": "BTC",
-      "action": "LONG|SHORT|CLOSE|HOLD",
-      "confidence": 0.85,
-      "reasoning": "Brief explanation of your trading rationale",
-      "entry_price": 45000,
-      "position_size": 0.1,
-      "stop_loss": 0.03,
-      "profit_target": 0.06,
-      "invalidation_condition": "Price breaks below key support at $44000",
-      "leverage": 10
+    this.ensurePromptGroupLoaded();
+    if (!this.promptGroup) {
+      throw new Error('Prompt group not loaded');
     }
-  ]
-}
 
-Field Guidelines:
-- confidence: 0.0-1.0 (higher for stronger setups, use >0.6 for entries)
-- position_size: Coin quantity (e.g., 0.1 BTC, 5 ETH)
-- stop_loss: Decimal (e.g., 0.03 = 3% stop loss from entry)
-- profit_target: Decimal (e.g., 0.06 = 6% profit target from entry, should be 1.5-3x stop loss)
-- invalidation_condition: Clear technical condition that invalidates the trade
+    const templateContext = {
+      tradableCoins: context.tradableCoins.join(', '),
+      maxPositions: context.maxPositions,
+      maxRiskPerTrade: (context.maxRiskPerTrade * 100).toFixed(0),
+      minLeverage: context.minLeverage,
+      maxLeverage: context.maxLeverage,
+      defaultStopLoss: (context.defaultStopLoss * 100).toFixed(1),
+    };
 
-## THINKING PROCESS
-
-Before outputting JSON, analyze each coin step by step:
-
-1. For coins WITH positions:
-  - Review current PnL and exit plan.
-  - Assess if stop loss or profit target is hit
-  - Check if trend has reversed
-  - Decide: CLOSE now or HOLD
-
-2. For coins WITHOUT positions:
-  - Analyze technical indicators (RSI, MACD, EMA trends)
-  - Check market structure and price action
-  - Assess entry timing and risk/reward
-  - Decide: LONG, SHORT, or skip
-
-IMPORTANT: You must respond with ONLY the JSON object. No other text before or after.`;
+    return renderTemplate(this.promptGroup.system, templateContext);
   }
 
   private buildUserPrompt(
@@ -247,6 +213,11 @@ IMPORTANT: You must respond with ONLY the JSON object. No other text before or a
     context: AIContext,
     enrichedPositions?: EnrichedPositionInfo[]
   ): string {
+    this.ensurePromptGroupLoaded();
+    if (!this.promptGroup) {
+      throw new Error('Prompt group not loaded');
+    }
+
     const elapsedMinutes = Math.floor((context.currentTime - context.startTime) / 60000);
     const currentTime = new Date(context.currentTime).toISOString();
 
@@ -265,33 +236,36 @@ IMPORTANT: You must respond with ONLY the JSON object. No other text before or a
       technicalState: true,
     };
 
+    // Build formatted sections
+    const candlesTA = sections.candlesTA
+      ? `CANDLES & TECHNICAL ANALYSIS (per coin):\n${this.formatMarketDataDetailed(marketData, candles3m, candles4h)}`
+      : '';
+
+    const accountInfo = this.formatAccountDataDetailed(account);
+    const positionsInfo = this.formatPositionDataDetailed(existingPositions, enrichedPositions);
+
     const sentimentSection = sections.sentiment ? this.formatDerivedSentiment(grouped) : '';
+    const sentimentInfo = sections.sentiment
+      ? `MARKET SENTIMENT (DERIVED):\n${sentimentSection}`
+      : '';
+
     const techStateSection = sections.technicalState ? this.formatTechnicalState(grouped) : '';
+    const technicalState = sections.technicalState
+      ? `CURRENT TECHNICAL STATE (SUMMARY):\n${techStateSection}`
+      : '';
 
-    const userPrompt = `
-Market Snapshot
-- Time elapsed: ${elapsedMinutes} minutes
-- Current time: ${currentTime}
-- Invocations: ${context.invokeCount}
+    const templateContext = {
+      elapsedMinutes,
+      currentTime,
+      invokeCount: context.invokeCount,
+      candlesTA,
+      accountInfo,
+      positionsInfo,
+      sentimentInfo,
+      technicalState,
+    };
 
-ALL PRICE/SIGNAL DATA IS ORDERED: OLDEST → NEWEST
-
-${sections.candlesTA ? `CANDLES & TECHNICAL ANALYSIS (per coin):\n${this.formatMarketDataDetailed(marketData, candles3m, candles4h)}` : ''}
-
-ACCOUNT INFORMATION & PERFORMANCE:
-${this.formatAccountDataDetailed(account)}
-
-CURRENT LIVE POSITIONS & PERFORMANCE:
-${this.formatPositionDataDetailed(existingPositions, enrichedPositions)}
-
- ${sections.sentiment ? `MARKET SENTIMENT (DERIVED):\n${sentimentSection}` : ''}
-
- ${sections.technicalState ? `CURRENT TECHNICAL STATE (SUMMARY):\n${techStateSection}` : ''}
-
-Generate trading signals based on this data. Respond with JSON only.
-`;
-
-    return userPrompt;
+    return renderTemplate(this.promptGroup.user, templateContext);
   }
 
   private formatMarketDataDetailed(

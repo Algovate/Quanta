@@ -673,43 +673,98 @@ Usage:
 
 ### AI Prompt Context (Configurable)
 
-The AI receives a structured prompt that can be customized via `ai.prompt`:
+The AI receives prompts from externalized prompt group configurations stored in `config/prompts/`. Each prompt group defines:
 
-- **Candles & Technical Analysis** (per coin)
+- **System Prompt**: Instructions, constraints, decision frameworks, and output format requirements
+- **User Prompt**: Dynamic market data, account information, and position details
+
+The active prompt group is specified via `ai.prompt.activeGroup` in the configuration.
+
+**Prompt Group Structure:**
+
+Prompt groups use Mustache-style template variables (e.g., `{{variableName}}`) that are replaced at runtime with actual values.
+
+**System Prompt Variables:**
+
+- `{{tradableCoins}}`: Comma-separated list of tradable coins
+- `{{maxPositions}}`: Maximum concurrent positions
+- `{{maxRiskPerTrade}}`: Maximum risk per trade (%)
+- `{{minLeverage}}` / `{{maxLeverage}}`: Leverage range
+- `{{defaultStopLoss}}`: Default stop loss (%)
+
+**User Prompt Variables:**
+
+- `{{elapsedMinutes}}`: Runtime in minutes
+- `{{currentTime}}`: Current timestamp (ISO)
+- `{{invokeCount}}`: Number of AI invocations
+- `{{candlesTA}}`: Formatted candles & technical analysis (configurable)
+- `{{accountInfo}}`: Account information and performance
+- `{{positionsInfo}}`: Current positions and performance
+- `{{sentimentInfo}}`: Derived market sentiment (configurable)
+- `{{technicalState}}`: Technical state summary (configurable)
+
+**User Prompt Sections (Configurable):**
+
+The user prompt includes optional sections that can be enabled/disabled via `ai.prompt.sections`:
+
+- **Candles & Technical Analysis** (`sections.candlesTA`)
   - Multi-timeframe candles: 3m (default last 10) and 4h (default last 5)
   - Indicators: EMA20/50, MACD, RSI14, ATR14, Bollinger (if available), Volume metrics
-  - Toggle: `sections.candlesTA`
 
-- **Market Sentiment (Derived)**
+- **Market Sentiment (Derived)** (`sections.sentiment`)
   - Derived from EMA alignment, MACD vs Signal, RSI14 zones, Bollinger %B, overall trend
   - Outputs sentiment (bullish/bearish/neutral) with score and drivers
-  - Toggle: `sections.sentiment`
 
-- **Current Technical State (Summary)**
+- **Current Technical State (Summary)** (`sections.technicalState`)
   - One-line summary: trend | EMA alignment | MACD relation | RSI zone | volatility
-  - Toggle: `sections.technicalState`
 
-Candles per timeframe are configurable via:
+**Configuration:**
 
 ```json
 {
   "ai": {
     "prompt": {
-      "candles": { "m3": 10, "h4": 5 }
+      "activeGroup": "default",
+      "candles": { "m3": 10, "h4": 5 },
+      "sections": {
+        "candlesTA": true,
+        "sentiment": true,
+        "technicalState": true
+      }
     }
   }
 }
 ```
 
-Environment overrides:
+**Environment Variables:**
 
 ```bash
+PROMPT_ACTIVE_GROUP=default
 PROMPT_CANDLES_3M=10
 PROMPT_CANDLES_4H=5
 PROMPT_SECTIONS_CANDLES_TA=true
 PROMPT_SECTIONS_SENTIMENT=true
 PROMPT_SECTIONS_TECH_STATE=true
 ```
+
+See `config/prompts/README.md` for details on creating custom prompt groups.
+
+**Viewing Prompts:**
+
+You can view prompts using the CLI command:
+
+```bash
+# View current active prompt group
+quanta prompts view
+
+# View rendered prompts with example values
+quanta prompts view --rendered
+
+# List all available prompt groups
+quanta prompts view --list
+```
+
+See [Command Reference](commands.md#prompt-commands) for complete documentation.
 
 **High (0.7-1.0)**
 

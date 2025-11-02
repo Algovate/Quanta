@@ -42,6 +42,8 @@
     },
     "prompt": {
       "_comment": "Controls what the AI sees in the prompt",
+      "activeGroup": "default",
+      "_comment_activeGroup": "Name of the prompt group to use (must exist in config/prompts/{activeGroup}.json)",
       "candles": {
         "m3": 10,
         "h4": 5

@@ -103,6 +103,33 @@ Simulation is now configured under the `simulation` section of `config/config.js
 }
 ```
 
+## Prompt Groups
+
+The AI trading agent uses externalized prompt configurations stored in `config/prompts/` directory. Each prompt group is a JSON file containing:
+
+- `metadata`: Group name, description, and version
+- `system`: System prompt template with Mustache-style variables (e.g., `{{tradableCoins}}`)
+- `user`: User prompt template with Mustache-style variables
+
+The active prompt group is specified via `ai.prompt.activeGroup` in the configuration file or `PROMPT_ACTIVE_GROUP` environment variable.
+
+**Viewing Prompts:**
+
+You can view the current prompts using the CLI command:
+
+```bash
+# View current active prompt group
+quanta prompts view
+
+# View rendered prompts with example values  
+quanta prompts view --rendered
+
+# List all available prompt groups
+quanta prompts view --list
+```
+
+See `config/prompts/README.md` for details on creating and using prompt groups, and [Command Reference](commands.md#prompt-commands) for complete command documentation.
+
 ## Configuration Priority
 
 ### For Trading Commands
@@ -133,7 +160,8 @@ OPENROUTER_API_KEY=your_key
 AI_MODEL=deepseek/deepseek-chat-v3-0324
 AI_TEMPERATURE=0.7
 
-# AI Prompt (optional)
+# AI Prompt
+PROMPT_ACTIVE_GROUP=default
 PROMPT_CANDLES_3M=10
 PROMPT_CANDLES_4H=5
 PROMPT_SECTIONS_CANDLES_TA=true

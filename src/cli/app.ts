@@ -10,6 +10,7 @@ import {
   SimulateCommands,
   ServerCommands,
   LogCommands,
+  PromptCommands,
 } from './commands/index.js';
 
 // Get version from package.json
@@ -64,6 +65,10 @@ export class CLIApplication {
     // Log commands
     const log = this.program.command('log').description('Log query and analysis');
     LogCommands.register(log);
+
+    // Prompt commands
+    const prompts = this.program.command('prompts').description('Prompt group management');
+    PromptCommands.register(prompts);
 
     // Help command
     HelpCommand.register(this.program);

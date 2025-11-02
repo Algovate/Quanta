@@ -12,6 +12,7 @@ quanta
 ├── simulate   Simulation and demonstration (1 sub-command)
 ├── server     Web server for trading UI (3 sub-commands)
 ├── log        Log query and analysis (7 sub-commands)
+├── prompts    Prompt group management (1 sub-command)
 └── help       Show help information
 ```
 
@@ -970,6 +971,141 @@ Cleaning up old log data
 - Cleanup by days permanently deletes data (cannot be recovered)
 - Cleanup by cycles archives data to L3 (can still be accessed, but compressed)
 - L0 (memory cache) is automatically managed and doesn't need manual cleanup
+
+---
+
+## Prompt Commands
+
+### `prompts view` - View Prompt Group Content
+
+View the content of a prompt group, either as raw templates or rendered with example values.
+
+```bash
+quanta prompts view [options]
+
+Options:
+  -g, --group <name>      Prompt group name (default: from config)
+  -r, --rendered          Show rendered prompts with example values
+  -s, --system-only       Show only system prompt
+  -u, --user-only         Show only user prompt
+  --list                  List all available prompt groups
+```
+
+**Examples:**
+
+```bash
+# View current active prompt group (raw templates)
+quanta prompts view
+
+# View a specific prompt group
+quanta prompts view --group default
+
+# View rendered prompts with example values
+quanta prompts view --rendered
+
+# View only system prompt
+quanta prompts view --system-only
+
+# View only user prompt
+quanta prompts view --user-only
+
+# List all available prompt groups
+quanta prompts view --list
+```
+
+**Output Format:**
+
+Raw mode (default):
+
+```
+📝 Prompt Group: default
+   Description: Default trading prompt with balanced risk and technical analysis focus
+   Version: 1.0.0
+
+=== SYSTEM PROMPT (RAW) ===
+
+You are an expert cryptocurrency trader...
+
+=== USER PROMPT (RAW) ===
+
+Market Snapshot
+- Time elapsed: {{elapsedMinutes}} minutes
+...
+
+📌 Template Variables:
+
+  System prompt variables:
+    {{defaultStopLoss}}
+    {{maxLeverage}}
+    {{maxPositions}}
+    {{maxRiskPerTrade}}
+    {{minLeverage}}
+    {{tradableCoins}}
+
+  User prompt variables:
+    {{accountInfo}}
+    {{candlesTA}}
+    {{currentTime}}
+    {{elapsedMinutes}}
+    {{invokeCount}}
+    {{positionsInfo}}
+    {{sentimentInfo}}
+    {{technicalState}}
+```
+
+Rendered mode (`--rendered`):
+
+```
+📝 Prompt Group: default
+
+Using example values for rendering:
+
+  tradableCoins: BTC, ETH, SOL
+  maxPositions: 6
+  maxRiskPerTrade: 5
+  minLeverage: 5
+  maxLeverage: 40
+  defaultStopLoss: 5.0
+  elapsedMinutes: 15
+  currentTime: 2025-01-15T10:30:00.000Z
+  invokeCount: 5
+  candlesTA: [Example: CANDLES & TECHNICAL ANALYSIS section would appear here]
+  accountInfo: [Example: ACCOUNT INFORMATION section would appear here]
+  positionsInfo: [Example: POSITIONS section would appear here]
+  sentimentInfo: [Example: SENTIMENT section would appear here]
+  technicalState: [Example: TECHNICAL STATE section would appear here]
+
+────────────────────────────────────────────────────────────────────────────────
+
+=== SYSTEM PROMPT (RENDERED) ===
+
+You are an expert cryptocurrency trader managing a live perpetual futures portfolio.
+
+## HARD CONSTRAINTS
+
+- Tradable coins: BTC, ETH, SOL
+- Maximum 6 concurrent positions
+...
+```
+
+**List Mode (`--list`):**
+
+```
+📋 Available Prompt Groups:
+
+  default ✓ (active)
+  conservative
+  aggressive
+```
+
+**Notes:**
+
+- By default, shows the active prompt group from configuration (`ai.prompt.activeGroup`)
+- Use `--group` to view a specific prompt group
+- Raw mode shows the template with `{{variables}}` placeholders
+- Rendered mode shows prompts with example values filled in
+- Use `--system-only` or `--user-only` to focus on a specific prompt type
+- Use `--list` to see all available prompt groups and identify the active one
 
 ---
 

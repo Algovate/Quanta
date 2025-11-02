@@ -164,26 +164,22 @@ const ConfigSchema = z.object({
     model: z.string().default('deepseek/deepseek-chat'),
     temperature: z.number().min(0).max(2).default(0.7),
     tracing: AITracingSchema.optional(),
-    prompt: z
-      .object({
-        candles: z
-          .object({
-            m3: z.number().int().min(1).max(200).default(10),
-            h4: z.number().int().min(1).max(200).default(5),
-          })
-          .default({ m3: 10, h4: 5 }),
-        sections: z
-          .object({
-            candlesTA: z.boolean().default(true),
-            sentiment: z.boolean().default(true),
-            technicalState: z.boolean().default(true),
-          })
-          .default({ candlesTA: true, sentiment: true, technicalState: true }),
-      })
-      .default({
-        candles: { m3: 10, h4: 5 },
-        sections: { candlesTA: true, sentiment: true, technicalState: true },
-      }),
+    prompt: z.object({
+      activeGroup: z.string(),
+      candles: z
+        .object({
+          m3: z.number().int().min(1).max(200).default(10),
+          h4: z.number().int().min(1).max(200).default(5),
+        })
+        .default({ m3: 10, h4: 5 }),
+      sections: z
+        .object({
+          candlesTA: z.boolean().default(true),
+          sentiment: z.boolean().default(true),
+          technicalState: z.boolean().default(true),
+        })
+        .default({ candlesTA: true, sentiment: true, technicalState: true }),
+    }),
   }),
   trading: z.object({
     coins: z.array(z.string()).default(['BTC', 'ETH', 'SOL']),
@@ -326,6 +322,7 @@ const DEFAULT_CONFIG: Partial<Config> = {
       },
     },
     prompt: {
+      activeGroup: 'default',
       candles: { m3: 10, h4: 5 },
       sections: { candlesTA: true, sentiment: true, technicalState: true },
     },
@@ -450,6 +447,7 @@ function parseEnvConfig(): Partial<Config> {
         },
       },
       prompt: {
+        activeGroup: process.env.PROMPT_ACTIVE_GROUP || 'default',
         candles: {
           m3: parseIntegerEnv(process.env.PROMPT_CANDLES_3M, 10),
           h4: parseIntegerEnv(process.env.PROMPT_CANDLES_4H, 5),
