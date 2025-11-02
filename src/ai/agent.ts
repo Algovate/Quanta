@@ -25,6 +25,20 @@ export interface AIResponse {
   invalidation_condition?: string;
 }
 
+export interface EnrichedPositionInfo {
+  position: Position;
+  effectiveStopLoss: number;
+  effectiveTakeProfit: number;
+  currentPrice: number;
+  distanceToStopLoss: number; // Percentage: positive = safe, negative = triggered
+  distanceToTakeProfit: number; // Percentage: positive = not reached, negative = exceeded
+  hasTrailingStop: boolean;
+  hasCustomStopLoss: boolean;
+  hasCustomTakeProfit: boolean;
+  tp1Executed: boolean; // Whether TP1 (partial close) has been executed
+  rMultiple: number; // Current R-multiple relative to initial risk
+}
+
 export interface AIContext {
   startTime: number;
   currentTime: number;
@@ -71,12 +85,19 @@ export class OpenRouterClient {
     marketData: MarketData[],
     account: Account,
     existingPositions: Position[],
-    context: AIContext
+    context: AIContext,
+    enrichedPositions?: EnrichedPositionInfo[]
   ): Promise<TradingSignal[]> {
     const tracingConfig = getTracingConfig();
 
     // Build prompt before tracing so it can be included in trace inputs
-    const prompt = this.buildPrompt(marketData, account, existingPositions, context);
+    const prompt = this.buildPrompt(
+      marketData,
+      account,
+      existingPositions,
+      context,
+      enrichedPositions
+    );
 
     // Prepare inputs for traceable to capture (includes system/user/full prompt when enabled)
     const traceableInputs = buildTraceInputs(
@@ -117,10 +138,17 @@ export class OpenRouterClient {
     marketData: MarketData[],
     account: Account,
     existingPositions: Position[],
-    context: AIContext
+    context: AIContext,
+    enrichedPositions?: EnrichedPositionInfo[]
   ): string {
     const systemPrompt = this.buildSystemPrompt(context);
-    const userPrompt = this.buildUserPrompt(marketData, account, existingPositions, context);
+    const userPrompt = this.buildUserPrompt(
+      marketData,
+      account,
+      existingPositions,
+      context,
+      enrichedPositions
+    );
 
     // Use explicit separator to avoid brittle substring splits later
     return `${systemPrompt}\n\n---USER---\n${userPrompt}`;
@@ -216,7 +244,8 @@ IMPORTANT: You must respond with ONLY the JSON object. No other text before or a
     marketData: MarketData[],
     account: Account,
     existingPositions: Position[],
-    context: AIContext
+    context: AIContext,
+    enrichedPositions?: EnrichedPositionInfo[]
   ): string {
     const elapsedMinutes = Math.floor((context.currentTime - context.startTime) / 60000);
     const currentTime = new Date(context.currentTime).toISOString();
@@ -253,7 +282,7 @@ ACCOUNT INFORMATION & PERFORMANCE:
 ${this.formatAccountDataDetailed(account)}
 
 CURRENT LIVE POSITIONS & PERFORMANCE:
-${this.formatPositionDataDetailed(existingPositions)}
+${this.formatPositionDataDetailed(existingPositions, enrichedPositions)}
 
  ${sections.sentiment ? `MARKET SENTIMENT (DERIVED):\n${sentimentSection}` : ''}
 
@@ -469,41 +498,98 @@ Balance: ${account.balance.toFixed(2)}
 Used Margin: ${account.usedMargin.toFixed(2)}`;
   }
 
-  private formatPositionDataDetailed(positions: Position[]): string {
+  private formatPositionDataDetailed(
+    positions: Position[],
+    enrichedPositions?: EnrichedPositionInfo[]
+  ): string {
     if (positions.length === 0) {
       return 'No existing positions.';
     }
 
+    // Create a map of enriched positions by symbol for quick lookup
+    const enrichedMap = new Map<string, EnrichedPositionInfo>();
+    if (enrichedPositions) {
+      enrichedPositions.forEach(ep => {
+        enrichedMap.set(ep.position.symbol, ep);
+      });
+    }
+
     const positionsJson = positions.map(pos => {
-      // Calculate stop loss and profit target (simplified estimates)
+      const enriched = enrichedMap.get(pos.symbol);
       const entryPrice = pos.entryPrice;
       const pnlPercent = (pos.unrealizedPnl / (pos.size * entryPrice)) * 100;
 
-      // Estimate exit plan based on risk/reward
-      const stopLossPercent = 0.03; // 3%
-      const profitTargetPercent = 0.06; // 6%
+      // Use enriched data if available, otherwise fall back to estimates
+      if (enriched) {
+        // Determine stop loss/take profit status
+        const stopLossStatus =
+          enriched.distanceToStopLoss < 0
+            ? 'TRIGGERED'
+            : enriched.distanceToStopLoss < 1
+              ? 'CLOSE'
+              : enriched.distanceToStopLoss < 3
+                ? 'NEAR'
+                : 'SAFE';
+        const takeProfitStatus =
+          enriched.distanceToTakeProfit < 0
+            ? 'EXCEEDED'
+            : enriched.distanceToTakeProfit < 1
+              ? 'CLOSE'
+              : enriched.distanceToTakeProfit < 3
+                ? 'NEAR'
+                : 'FAR';
 
-      const stopLoss =
-        pos.side === 'long'
-          ? entryPrice * (1 - stopLossPercent)
-          : entryPrice * (1 + stopLossPercent);
+        return {
+          symbol: pos.symbol,
+          quantity: pos.size,
+          entry_price: entryPrice,
+          current_price: enriched.currentPrice,
+          unrealized_pnl: pos.unrealizedPnl,
+          pnl_percent: pnlPercent,
+          r_multiple: enriched.rMultiple,
+          exit_plan: {
+            stop_loss: enriched.effectiveStopLoss,
+            take_profit: enriched.effectiveTakeProfit,
+            stop_loss_distance: `${enriched.distanceToStopLoss.toFixed(2)}%`,
+            stop_loss_status: stopLossStatus,
+            take_profit_distance: `${enriched.distanceToTakeProfit.toFixed(2)}%`,
+            take_profit_status: takeProfitStatus,
+          },
+          exit_features: {
+            has_trailing_stop: enriched.hasTrailingStop,
+            has_custom_stop_loss: enriched.hasCustomStopLoss,
+            has_custom_take_profit: enriched.hasCustomTakeProfit,
+            tp1_executed: enriched.tp1Executed,
+          },
+        };
+      } else {
+        // Fallback to estimated values when enriched data is not available
+        const stopLossPercent = 0.03; // 3%
+        const profitTargetPercent = 0.06; // 6%
 
-      const profitTarget =
-        pos.side === 'long'
-          ? entryPrice * (1 + profitTargetPercent)
-          : entryPrice * (1 - profitTargetPercent);
+        const stopLoss =
+          pos.side === 'long'
+            ? entryPrice * (1 - stopLossPercent)
+            : entryPrice * (1 + stopLossPercent);
 
-      return {
-        symbol: pos.symbol,
-        quantity: pos.size,
-        entry_price: entryPrice,
-        unrealized_pnl: pos.unrealizedPnl,
-        pnl_percent: pnlPercent,
-        exit_plan: {
-          stop_loss: stopLoss,
-          profit_target: profitTarget,
-        },
-      };
+        const profitTarget =
+          pos.side === 'long'
+            ? entryPrice * (1 + profitTargetPercent)
+            : entryPrice * (1 - profitTargetPercent);
+
+        return {
+          symbol: pos.symbol,
+          quantity: pos.size,
+          entry_price: entryPrice,
+          unrealized_pnl: pos.unrealizedPnl,
+          pnl_percent: pnlPercent,
+          exit_plan: {
+            stop_loss: stopLoss,
+            take_profit: profitTarget,
+            note: 'Estimated values (enriched data not available)',
+          },
+        };
+      }
     });
 
     return JSON.stringify(positionsJson, null, 2);

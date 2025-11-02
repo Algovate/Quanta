@@ -1,6 +1,6 @@
 import { Exchange } from '../exchange/types.js';
 import { MarketDataProvider, MarketData } from '../data/market.js';
-import { OpenRouterClient, AIContext } from '../ai/agent.js';
+import { OpenRouterClient, AIContext, EnrichedPositionInfo } from '../ai/agent.js';
 import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
@@ -713,6 +713,29 @@ export class TradingWorkflow {
         return;
       }
 
+      // 2.5. Refresh snapshot after monitoring (monitor may have closed positions)
+      // This ensures AI signal generation and signal execution use the latest position state
+      this.unifiedLogger.startStage(cycleOperationId, 'refresh_snapshot_after_monitoring', {});
+      const refreshStartTime = Date.now();
+      const { account: updatedAccount, positions: updatedPositions } =
+        await this.snapshotService.getSnapshot();
+      const refreshDuration = Date.now() - refreshStartTime;
+      this.unifiedLogger.recordAPILatency('exchange.getAccount', refreshDuration);
+      this.unifiedLogger.completeStage(cycleOperationId, 'refresh_snapshot_after_monitoring', {
+        positionsCount: updatedPositions.length,
+        positionsDiff: positions.length - updatedPositions.length,
+        duration: refreshDuration,
+      });
+
+      // Log if positions changed after monitoring
+      if (positions.length !== updatedPositions.length) {
+        this.logger.info('Positions changed after monitoring', {
+          before: positions.length,
+          after: updatedPositions.length,
+          closed: positions.length - updatedPositions.length,
+        });
+      }
+
       // 3. Get market data for all coins
       this.emitLog('info', chalk.gray('⏳ Fetching market data...'));
       this.unifiedLogger.startStage(cycleOperationId, 'fetch_market_data', {
@@ -933,11 +956,88 @@ export class TradingWorkflow {
       let signalError: Error | undefined;
 
       try {
+        // Calculate enriched position information for AI
+        // This provides accurate stop-loss/take-profit prices and exit status
+        const enrichedPositions: EnrichedPositionInfo[] = [];
+        for (const position of updatedPositions) {
+          // Get current price from ticker cache or market data
+          let currentPrice: number | undefined = tickerCache.get(position.symbol)?.price;
+
+          // If not in cache, try to get from market data
+          if (!currentPrice) {
+            const positionMarketData = allMarketData.find(md => md.coin === position.symbol);
+            if (positionMarketData) {
+              currentPrice = positionMarketData.currentPrice;
+            }
+          }
+
+          // If still no price, skip enrichment for this position
+          if (!currentPrice || !isFinite(currentPrice) || currentPrice <= 0) {
+            this.logger.warn(`Cannot enrich position ${position.symbol}: invalid current price`);
+            continue;
+          }
+
+          // Calculate effective stop loss and take profit prices
+          const effectiveStopLoss = this.riskManager.getEffectiveStopLossPrice(
+            position,
+            currentPrice
+          );
+          const effectiveTakeProfit = this.riskManager.getEffectiveTakeProfitPrice(
+            position,
+            currentPrice
+          );
+
+          // Calculate distance to stop loss/take profit as percentage
+          let distanceToStopLoss: number;
+          let distanceToTakeProfit: number;
+
+          if (position.side === 'long') {
+            distanceToStopLoss = ((currentPrice - effectiveStopLoss) / effectiveStopLoss) * 100;
+            distanceToTakeProfit = ((effectiveTakeProfit - currentPrice) / currentPrice) * 100;
+          } else {
+            // For short positions, stop loss is above entry, take profit is below
+            distanceToStopLoss = ((effectiveStopLoss - currentPrice) / effectiveStopLoss) * 100;
+            distanceToTakeProfit = ((currentPrice - effectiveTakeProfit) / currentPrice) * 100;
+          }
+
+          // Check for trailing stop, custom stop loss/take profit
+          const hasTrailingStop =
+            position.trailingStopPrice !== undefined && position.trailingStopPrice !== null;
+          const hasCustomStopLoss =
+            position.customStopLoss !== undefined && position.customStopLoss !== null;
+          const hasCustomTakeProfit =
+            position.customTakeProfit !== undefined && position.customTakeProfit !== null;
+
+          // Get TP1 status from position monitor
+          const tp1Executed = this.positionMonitor.getTp1Status(position.symbol);
+
+          // Calculate R-multiple
+          const rMultiple = this.riskManager.computeRMultiple(position, currentPrice);
+
+          enrichedPositions.push({
+            position,
+            effectiveStopLoss,
+            effectiveTakeProfit,
+            currentPrice,
+            distanceToStopLoss,
+            distanceToTakeProfit,
+            hasTrailingStop,
+            hasCustomStopLoss,
+            hasCustomTakeProfit,
+            tp1Executed,
+            rMultiple,
+          });
+        }
+
+        // Use updated positions and account after monitoring
+        // This ensures AI sees the latest state (positions closed by monitor, account updated by closed positions)
+        // Pass enriched position information for accurate exit decision making
         signals = await this.aiAgent.generateTradingSignal(
           allMarketData,
-          account,
-          positions,
-          context
+          updatedAccount,
+          updatedPositions,
+          context,
+          enrichedPositions
         );
         this.state.totalSignals += signals.length;
         const signalDuration = Date.now() - signalStartTime;
@@ -1090,9 +1190,10 @@ export class TradingWorkflow {
       // Track trades before execution to compute per-cycle tradeCount delta
       const tradesBefore = this.state.totalTrades;
       // Use fresh positions array that gets updated after each signal execution
-      // This ensures each signal sees the current state (positions opened by previous signals)
-      let currentPositions = positions;
-      let currentAccount = account;
+      // Start with updated positions from after monitoring (monitor may have closed positions)
+      // This ensures each signal sees the current state (positions opened by previous signals, or closed by monitor)
+      let currentPositions = updatedPositions;
+      let currentAccount = updatedAccount;
 
       // Start execute_signals stage BEFORE executing signals
       // This ensures the stage exists when executeSignal tries to record validation checks
@@ -1194,7 +1295,8 @@ export class TradingWorkflow {
       });
 
       // 5.5. Refresh account and positions after executing signals using a single snapshot
-      const { account: updatedAccount, positions: updatedPositions } =
+      // This is the final state after all signal executions
+      const { account: finalAccount, positions: finalPositions } =
         await this.snapshotService.getSnapshot();
 
       const executeDuration = Date.now() - executeStartTime;
@@ -1303,10 +1405,10 @@ export class TradingWorkflow {
       });
 
       // Aggregate once per cycle for reuse
-      const aggregates = aggregatePositionMetrics(updatedPositions);
+      const aggregates = aggregatePositionMetrics(finalPositions);
 
       // 6. Update performance metrics with latest data
-      this.updatePerformanceMetrics(updatedAccount, aggregates);
+      this.updatePerformanceMetrics(finalAccount, aggregates);
 
       // Record cycle execution time
       const cycleDuration = Date.now() - cycleStartTime;
@@ -1314,7 +1416,7 @@ export class TradingWorkflow {
 
       // 7. Log cycle summary with latest data
       const tradeCountCycle = this.state.totalTrades - tradesBefore;
-      this.logCycleSummary(updatedAccount, updatedPositions, signals, aggregates, {
+      this.logCycleSummary(finalAccount, finalPositions, signals, aggregates, {
         rejectedSignalsCycle: this.state.rejectedSignalsCycle,
         tradeCountCycle,
       });
@@ -1327,12 +1429,12 @@ export class TradingWorkflow {
       this.unifiedLogger.createSnapshot(
         this.state.cycleCount,
         {
-          equity: updatedAccount.equity,
-          balance: updatedAccount.balance,
+          equity: finalAccount.equity,
+          balance: finalAccount.balance,
           marginUsed: 0, // Account type doesn't have marginUsed, calculate from positions if needed
-          availableMargin: updatedAccount.equity, // Use equity as available margin
+          availableMargin: finalAccount.equity, // Use equity as available margin
         },
-        updatedPositions.map(p => ({
+        finalPositions.map(p => ({
           symbol: p.symbol,
           side: p.side,
           size: p.size,
@@ -1343,7 +1445,7 @@ export class TradingWorkflow {
         recentOperations
       );
       this.unifiedLogger.completeStage(cycleOperationId, 'create_snapshot', {
-        positionsCount: updatedPositions.length,
+        positionsCount: finalPositions.length,
       });
 
       // Prepare per-cycle action distribution

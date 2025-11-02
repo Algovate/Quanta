@@ -601,6 +601,16 @@ export class PositionMonitorService implements PositionMonitor {
   }
 
   /**
+   * Get TP1 execution status for a position
+   * @param symbol - Position symbol
+   * @returns true if TP1 has been executed, false otherwise
+   */
+  getTp1Status(symbol: string): boolean {
+    const state = this.stateBySymbol.get(symbol);
+    return state?.tp1Done ?? false;
+  }
+
+  /**
    * Calculate portfolio correlation and diversification metrics
    */
   private calculatePortfolioMetrics(positions: Position[]): {
