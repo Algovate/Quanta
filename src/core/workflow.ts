@@ -15,6 +15,7 @@ import chalk from 'chalk';
 import { ExchangeSnapshotService } from './exchange-snapshot.js';
 import { getConfig } from '../config/settings.js';
 import { UnifiedLogger } from '../logging/index.js';
+import { formatUTCTimeCompact, formatUTCLogTime } from '../utils/time.js';
 
 // Decision information types for signal execution
 interface SignalDecisionInfo {
@@ -234,14 +235,14 @@ export class TradingWorkflow {
     if (last3m) {
       logs.push(
         chalk.gray(
-          `       [3m] close=$${last3m.close.toFixed(2)} @ ${new Date(last3m.timestamp).toLocaleTimeString()}`
+          `       [3m] close=$${last3m.close.toFixed(2)} @ ${formatUTCTimeCompact(last3m.timestamp)}`
         )
       );
     }
     if (last4h) {
       logs.push(
         chalk.gray(
-          `       [4h] close=$${last4h.close.toFixed(2)} @ ${new Date(last4h.timestamp).toLocaleString()}`
+          `       [4h] close=$${last4h.close.toFixed(2)} @ ${formatUTCLogTime(last4h.timestamp)}`
         )
       );
     }
@@ -262,7 +263,7 @@ export class TradingWorkflow {
     } else if (tickerPrice !== undefined) {
       logs.push(
         chalk.gray(
-          `       ticker: $${tickerPrice.toFixed(2)} @ ${new Date(tickerTimestamp ?? Date.now()).toLocaleTimeString()}`
+          `       ticker: $${tickerPrice.toFixed(2)} @ ${formatUTCTimeCompact(tickerTimestamp ?? Date.now())}`
         )
       );
     }

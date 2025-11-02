@@ -121,7 +121,7 @@ You can view the current prompts using the CLI command:
 # View current active prompt group
 quanta prompts view
 
-# View rendered prompts with example values  
+# View rendered prompts with example values
 quanta prompts view --rendered
 
 # List all available prompt groups

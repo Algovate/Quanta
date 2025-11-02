@@ -15,7 +15,7 @@ import {
   type PerformanceMetrics,
 } from '../types/index.js';
 import { PerformanceAnalytics } from '../analytics/index.js';
-import { Logger } from '../utils/index.js';
+import { Logger, parseUTCDateString } from '../utils/index.js';
 import cliProgress from 'cli-progress';
 
 // Constants
@@ -142,9 +142,9 @@ export class BacktestEngine {
     this.rng = this.createRng(config.seed);
     this.callbacks = callbacks;
 
-    // Convert dates to timestamps
-    this.startTime = new Date(config.startDate).getTime();
-    this.endTime = new Date(config.endDate).getTime();
+    // Convert dates to timestamps (using UTC to ensure consistency across timezones)
+    this.startTime = parseUTCDateString(config.startDate);
+    this.endTime = parseUTCDateString(config.endDate);
 
     if (this.startTime >= this.endTime) {
       throw new Error('Start date must be before end date');

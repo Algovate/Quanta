@@ -132,7 +132,8 @@ export class TestCommands {
       latestPrice = ticker.price;
       console.log(chalk.green('✅ Ticker data retrieved:'));
       console.log(`   Current Price: $${latestPrice.toFixed(2)}`);
-      console.log(`   Timestamp: ${new Date(ticker.timestamp ?? Date.now()).toLocaleString()}`);
+      const { formatUTCTime } = await import('../../utils/time.js');
+      console.log(`   Timestamp: ${formatUTCTime(ticker.timestamp ?? Date.now())}`);
     } catch (error: any) {
       console.log(chalk.yellow(`⚠️  Ticker data unavailable: ${error?.message || String(error)}`));
     }
@@ -145,10 +146,11 @@ export class TestCommands {
       console.log(chalk.green(`✅ Retrieved ${klines.length} K-lines`));
 
       // Show latest candles
+      const { formatUTCTimeCompact } = await import('../../utils/time.js');
       if (klines.length >= 3) {
         console.log(chalk.gray('\n📈 Latest 3 candles:'));
         klines.slice(-3).forEach((kline, index) => {
-          const time = new Date(kline.timestamp).toLocaleTimeString();
+          const time = formatUTCTimeCompact(kline.timestamp);
           console.log(
             `   ${index + 1}. ${time}: O:$${kline.open.toFixed(2)} H:$${kline.high.toFixed(2)} L:$${kline.low.toFixed(2)} C:$${kline.close.toFixed(2)} V:${kline.volume.toFixed(2)}`
           );
@@ -156,7 +158,7 @@ export class TestCommands {
       } else if (klines.length > 0) {
         console.log(chalk.gray('\n📈 Latest candle:'));
         const kline = klines[klines.length - 1];
-        const time = new Date(kline.timestamp).toLocaleTimeString();
+        const time = formatUTCTimeCompact(kline.timestamp);
         console.log(
           `   ${time}: O:$${kline.open.toFixed(2)} H:$${kline.high.toFixed(2)} L:$${kline.low.toFixed(2)} C:$${kline.close.toFixed(2)} V:${kline.volume.toFixed(2)}`
         );
@@ -379,11 +381,12 @@ export class TestCommands {
         // Test ticker (spot check)
         try {
           const ticker = await exchange.getTicker(symbol);
+          const { formatUTCTimeCompact: formatTickerTime } = await import('../../utils/time.js');
           console.log(
             chalk.green(
-              `✅ Ticker: $${(ticker.price ?? 0).toFixed(2)} @ ${new Date(
+              `✅ Ticker: $${(ticker.price ?? 0).toFixed(2)} @ ${formatTickerTime(
                 ticker.timestamp ?? Date.now()
-              ).toLocaleTimeString()}`
+              )}`
             )
           );
         } catch (e: any) {

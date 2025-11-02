@@ -19,13 +19,15 @@ export class OKXExchange implements Exchange {
     this.isTestnet = testnet;
 
     // Configure OKX exchange options
+    // Note: adjustForTimeDifference: true ensures CCXT handles timezone adjustments
+    // and returns timestamps in UTC milliseconds, ensuring consistent timezone handling
     const exchangeOptions: Record<string, unknown> = {
       apiKey,
       secret: apiSecret,
       password: process.env.OKX_PASSPHRASE, // OKX requires passphrase
       options: {
         defaultType: 'swap',
-        adjustForTimeDifference: true,
+        adjustForTimeDifference: true, // Ensures UTC timestamps from CCXT
       },
       enableRateLimit: true,
       timeout: 30000, // 30 second timeout

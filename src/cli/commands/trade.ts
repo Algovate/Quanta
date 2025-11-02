@@ -397,30 +397,40 @@ export class TradeCommands {
       const startD = subMonths(endD, 4);
       startStr = format(startD, 'yyyy-MM-dd');
       endStr = format(endD, 'yyyy-MM-dd');
-    } else if (startStr && !endStr) {
-      const s = new Date(startStr);
-      if (isNaN(s.getTime())) throw new Error(`Invalid start date: ${startStr}. Use YYYY-MM-DD`);
-      endStr = format(addMonths(s, 4), 'yyyy-MM-dd');
-    } else if (!startStr && endStr) {
-      const e = new Date(endStr);
-      if (isNaN(e.getTime())) throw new Error(`Invalid end date: ${endStr}. Use YYYY-MM-DD`);
-      startStr = format(subMonths(e, 4), 'yyyy-MM-dd');
     }
 
-    // Validate dates
-    const startDate = new Date(startStr as string);
-    const endDate = new Date(endStr as string);
+    // Import UTC date parser for consistent timezone handling
+    const { parseUTCDateString } = await import('../../utils/time.js');
 
-    if (isNaN(startDate.getTime())) {
-      throw new Error(`Invalid start date: ${startStr}. Use format YYYY-MM-DD`);
-    }
+    try {
+      if (startStr && !endStr) {
+        // Validate start date using UTC parser
+        parseUTCDateString(startStr);
+        // Calculate end date from start (using date-fns which handles calendar months correctly)
+        const s = new Date(startStr + 'T00:00:00Z'); // Parse as UTC for date-fns
+        endStr = format(addMonths(s, 4), 'yyyy-MM-dd');
+      } else if (!startStr && endStr) {
+        // Validate end date using UTC parser
+        parseUTCDateString(endStr);
+        // Calculate start date from end (using date-fns which handles calendar months correctly)
+        const e = new Date(endStr + 'T00:00:00Z'); // Parse as UTC for date-fns
+        startStr = format(subMonths(e, 4), 'yyyy-MM-dd');
+      }
 
-    if (isNaN(endDate.getTime())) {
-      throw new Error(`Invalid end date: ${endStr}. Use format YYYY-MM-DD`);
-    }
+      // Validate dates using UTC parser to ensure consistent timezone handling
+      const startTimestamp = parseUTCDateString(startStr as string);
+      const endTimestamp = parseUTCDateString(endStr as string);
 
-    if (startDate >= endDate) {
-      throw new Error('Start date must be before end date');
+      if (startTimestamp >= endTimestamp) {
+        throw new Error('Start date must be before end date');
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Invalid')) {
+        throw error; // Re-throw validation errors as-is
+      }
+      throw new Error(
+        `Invalid date format. Use YYYY-MM-DD. ${error instanceof Error ? error.message : String(error)}`
+      );
     }
 
     const initialBalance = parseFloat(options.initialBalance);
@@ -430,8 +440,8 @@ export class TradeCommands {
     }
 
     const backtestConfig = {
-      startDate: format(startDate, 'yyyy-MM-dd'),
-      endDate: format(endDate, 'yyyy-MM-dd'),
+      startDate: startStr as string,
+      endDate: endStr as string,
       initialBalance,
       coins,
       cyclePeriod: 180000, // 3 minutes

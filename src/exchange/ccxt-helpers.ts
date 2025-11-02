@@ -51,10 +51,16 @@ export async function retry<T>(
   );
 }
 
-/** Map a CCXT OHLCV tuple to our Candlestick */
+/**
+ * Map a CCXT OHLCV tuple to our Candlestick.
+ *
+ * Note: CCXT returns timestamps in UTC milliseconds since epoch.
+ * The adjustForTimeDifference option in exchange configs ensures
+ * consistent UTC timezone handling across exchanges.
+ */
 export function mapOHLCV(candle: number[]): Candlestick {
   return {
-    timestamp: candle[0],
+    timestamp: candle[0], // UTC milliseconds since epoch
     open: candle[1],
     high: candle[2],
     low: candle[3],
@@ -63,13 +69,18 @@ export function mapOHLCV(candle: number[]): Candlestick {
   };
 }
 
-/** Compute a safe mid-like price from a ticker */
+/**
+ * Compute a safe mid-like price from a ticker.
+ *
+ * Note: CCXT ticker.timestamp is in UTC milliseconds since epoch.
+ * Falls back to Date.now() (also UTC) if timestamp is missing.
+ */
 export function safeTickerMid(ticker: ccxt.Ticker): { price: number; ts: number } {
   const bid = (ticker.bid as number) ?? 0;
   const ask = (ticker.ask as number) ?? 0;
   const lastLike = (ticker.last as number) ?? (ticker.close as number) ?? 0;
   const price = bid && ask ? (bid + ask) / 2 : lastLike;
-  const ts = ticker.timestamp || Date.now();
+  const ts = ticker.timestamp || Date.now(); // Both are UTC milliseconds
   return { price, ts };
 }
 

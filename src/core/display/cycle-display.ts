@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { Account, Position, TradingSignal } from '../../types/index.js';
 import { calculatePnlPercentVsMargin } from '../../execution/position-utils.js';
+import { formatUTCTimeCompact } from '../../utils/time.js';
 
 /**
  * Handles console display formatting for trading cycles
@@ -18,7 +19,7 @@ export class CycleDisplay {
    */
   formatCycleHeader(cycleCount: number): string {
     const header = chalk.bold.white(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    const title = chalk.bold.cyan(`  🔄 CYCLE ${cycleCount} - ${new Date().toLocaleTimeString()}`);
+    const title = chalk.bold.cyan(`  🔄 CYCLE ${cycleCount} - ${formatUTCTimeCompact(Date.now())}`);
     return `${header}\n${title}\n${header}`;
   }
 
