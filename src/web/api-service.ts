@@ -2,9 +2,9 @@ import { TradingManager } from './trading-manager.js';
 import { getConfig } from '../config/settings.js';
 import { createExchangeForMode, describeExchange } from './exchange-factory.js';
 import { createWorkflowDeps } from '../core/factories.js';
-import { UnifiedLogger } from '../logging/index.js';
 import type { BacktestConfig } from '../types/index.js';
 import type { Exchange } from '../exchange/types.js';
+import { createLogger } from './utils/logger.js';
 
 // Type guard to check if exchange supports order metadata
 function supportsOrderMetadata(exchange: Exchange): exchange is Exchange & {
@@ -22,8 +22,7 @@ export async function startTradingService(
   const exchange = await createExchangeForMode();
 
   // Log effective configuration and exchange selection (parity with CLI output)
-  const logger = UnifiedLogger.getInstance();
-  const loggerContext = 'TradingService';
+  const { logger, context: loggerContext } = createLogger('TradingService');
   try {
     logger.info('📊 Configuration:', {}, loggerContext);
     logger.info(`   Mode: ${config.mode || 'simulation'}`, {}, loggerContext);

@@ -267,6 +267,14 @@ export class StorageLayer {
       CREATE INDEX IF NOT EXISTS idx_symbol ON operations(symbol);
       CREATE INDEX IF NOT EXISTS idx_startTime ON operations(startTime);
       CREATE INDEX IF NOT EXISTS idx_parentOperationId ON operations(parentOperationId);
+      -- Composite indexes for common query patterns
+      CREATE INDEX IF NOT EXISTS idx_operations_cycleId_status ON operations(cycleId, status);
+      CREATE INDEX IF NOT EXISTS idx_operations_cycleId_type ON operations(cycleId, operationType);
+      CREATE INDEX IF NOT EXISTS idx_operations_traceId_status ON operations(traceId, status);
+      CREATE INDEX IF NOT EXISTS idx_operations_startTime_status ON operations(startTime, status);
+      CREATE INDEX IF NOT EXISTS idx_operations_startTime_type ON operations(startTime, operationType);
+      CREATE INDEX IF NOT EXISTS idx_operations_symbol_status ON operations(symbol, status);
+      CREATE INDEX IF NOT EXISTS idx_operations_type_status ON operations(operationType, status);
 
       CREATE TABLE IF NOT EXISTS text_logs (
         logId TEXT PRIMARY KEY,
@@ -274,9 +282,10 @@ export class StorageLayer {
         level TEXT NOT NULL,
         context TEXT NOT NULL,
         message TEXT NOT NULL,
-        formattedMessage TEXT NOT NULL,
         metadata TEXT,
         cycleId INTEGER,
+        operationId TEXT,
+        traceId TEXT,
         createdAt INTEGER NOT NULL
       );
 
@@ -284,6 +293,16 @@ export class StorageLayer {
       CREATE INDEX IF NOT EXISTS idx_text_logs_level ON text_logs(level);
       CREATE INDEX IF NOT EXISTS idx_text_logs_context ON text_logs(context);
       CREATE INDEX IF NOT EXISTS idx_text_logs_cycleId ON text_logs(cycleId);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_operationId ON text_logs(operationId);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_traceId ON text_logs(traceId);
+      -- Composite indexes for common query patterns
+      CREATE INDEX IF NOT EXISTS idx_text_logs_timestamp_cycleId ON text_logs(timestamp, cycleId);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_timestamp_level ON text_logs(timestamp, level);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_timestamp_context ON text_logs(timestamp, context);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_cycleId_level ON text_logs(cycleId, level);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_cycleId_context ON text_logs(cycleId, context);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_operationId_timestamp ON text_logs(operationId, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_traceId_timestamp ON text_logs(traceId, timestamp);
     `);
 
     // Migrate existing tables: add missing columns if they don't exist
@@ -326,6 +345,31 @@ export class StorageLayer {
 
       if (!columnNames.has('dataQuality')) {
         this.l1Database.exec('ALTER TABLE operations ADD COLUMN dataQuality TEXT');
+      }
+
+      // Migrate text_logs table
+      const textLogsTableInfo = this.l1Database
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='text_logs'")
+        .get();
+
+      if (textLogsTableInfo) {
+        const textLogsColumns = this.l1Database
+          .prepare('PRAGMA table_info(text_logs)')
+          .all() as Array<{ name: string }>;
+
+        const textLogsColumnNames = new Set(textLogsColumns.map(col => col.name));
+
+        // Add missing columns
+        if (!textLogsColumnNames.has('operationId')) {
+          this.l1Database.exec('ALTER TABLE text_logs ADD COLUMN operationId TEXT');
+        }
+
+        if (!textLogsColumnNames.has('traceId')) {
+          this.l1Database.exec('ALTER TABLE text_logs ADD COLUMN traceId TEXT');
+        }
+
+        // Note: We don't remove formattedMessage column if it exists to avoid data loss
+        // It will just be ignored in future reads/writes
       }
     } catch (error) {
       console.error('Failed to migrate L1 tables:', error);
@@ -420,8 +464,8 @@ export class StorageLayer {
     try {
       const stmt = this.l1Database.prepare(`
         INSERT OR REPLACE INTO text_logs (
-          logId, timestamp, level, context, message, formattedMessage, metadata, cycleId, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          logId, timestamp, level, context, message, metadata, cycleId, operationId, traceId, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       stmt.run(
@@ -430,9 +474,10 @@ export class StorageLayer {
         log.level,
         log.context,
         log.message,
-        log.formattedMessage,
         log.metadata ? JSON.stringify(log.metadata) : null,
-        log.cycleId || null,
+        log.cycleId ?? null,
+        log.operationId ?? null,
+        log.traceId ?? null,
         Date.now()
       );
     } catch (error) {
@@ -529,7 +574,7 @@ export class StorageLayer {
       const offset = options.offset || 0;
 
       const query = `
-        SELECT logId, timestamp, level, context, message, formattedMessage, metadata, cycleId
+        SELECT logId, timestamp, level, context, message, metadata, cycleId, operationId, traceId
         FROM text_logs
         ${whereClause}
         ORDER BY timestamp DESC
@@ -542,9 +587,10 @@ export class StorageLayer {
         level: string;
         context: string;
         message: string;
-        formattedMessage: string;
         metadata: string | null;
         cycleId: number | null;
+        operationId: string | null;
+        traceId: string | null;
       }>;
 
       return rows.map(row => ({
@@ -553,9 +599,10 @@ export class StorageLayer {
         level: row.level as 'info' | 'warn' | 'error' | 'debug',
         context: row.context,
         message: row.message,
-        formattedMessage: row.formattedMessage,
         metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
         cycleId: row.cycleId || undefined,
+        operationId: row.operationId || undefined,
+        traceId: row.traceId || undefined,
       }));
     } catch (error) {
       console.error('Failed to get text logs from L1:', error);

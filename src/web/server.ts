@@ -2,7 +2,6 @@ import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import http from 'http';
-import { UnifiedLogger } from '../logging/index.js';
 import { TradingManager } from './trading-manager.js';
 import { HealthCheckService } from './health-check.js';
 import type { OutboundMessage } from './types.js';
@@ -14,9 +13,9 @@ import {
   registerBacktestRoutes,
 } from './routes/index.js';
 import { createPriceCache, createKlineCache } from './utils/cache.js';
+import { createLogger } from './utils/logger.js';
 
-const logger = UnifiedLogger.getInstance();
-const loggerContext = 'Server';
+const { logger, context: loggerContext } = createLogger('Server');
 
 export class APIServer {
   private app: express.Application;

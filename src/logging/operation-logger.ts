@@ -21,6 +21,7 @@ import type {
   DataQualityMetrics,
   ValidationCheck,
   DecisionMetrics,
+  ExecutionDetails,
 } from './types.js';
 import { normalizeError } from './utils.js';
 
@@ -355,6 +356,25 @@ export class OperationLogger {
     }
 
     stage.decisionMetrics = metrics;
+  }
+
+  /**
+   * Add execution details to a stage
+   */
+  addExecutionDetails(operationId: string, stageName: string, execution: ExecutionDetails): void {
+    const operation = this.activeOperations.get(operationId);
+    if (!operation) {
+      console.warn(`Operation ${operationId} not found for execution details`);
+      return;
+    }
+
+    const stage = operation.stages.find(s => s.stage === stageName);
+    if (!stage) {
+      console.warn(`Stage ${stageName} not found in operation ${operationId}`);
+      return;
+    }
+
+    stage.execution = execution;
   }
 
   /**

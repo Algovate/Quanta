@@ -77,6 +77,21 @@ export interface DecisionMetrics {
   factors?: Record<string, any>;
 }
 
+export interface ExecutionDetails {
+  orderId?: string;
+  expectedPrice?: number;
+  actualPrice?: number;
+  slippage?: number;
+  slippageAbs?: number;
+  realizedPnl?: number;
+  fees?: number;
+  sizing?: {
+    suggestedSize?: number;
+    leverage?: number;
+    riskAmount?: number;
+  };
+}
+
 export interface OperationStage {
   stage: string;
   startTime: number;
@@ -90,6 +105,7 @@ export interface OperationStage {
   dataQuality?: DataQualityInfo;
   validationChecks?: ValidationCheck[];
   decisionMetrics?: DecisionMetrics;
+  execution?: ExecutionDetails; // Execution details for order execution stages
 }
 
 export interface ErrorInfo {
@@ -275,7 +291,34 @@ export interface TextLog {
   level: 'info' | 'warn' | 'error' | 'debug';
   context: string;
   message: string; // Plain text (for querying)
-  formattedMessage: string; // Formatted with ANSI codes (for console display)
+  formattedMessage?: string; // Optional: Formatted with ANSI codes (for console display, not stored in DB)
   metadata?: Record<string, any>;
-  cycleId?: number;
+  cycleId: number; // Required: Link to cycle
+  operationId?: string; // Link to operation
+  traceId?: string; // Link to trace/cycle
+}
+
+export interface APICallLog {
+  apiCallId: string;
+  timestamp: number;
+  endpoint: string;
+  method: string;
+  request: {
+    url: string;
+    headers?: Record<string, string>;
+    body?: Record<string, any>;
+    params?: Record<string, any>;
+  };
+  response: {
+    status?: number;
+    statusText?: string;
+    headers?: Record<string, string>;
+    body?: Record<string, any>;
+    data?: any;
+  };
+  latency: number;
+  error?: ErrorInfo;
+  cycleId: number;
+  operationId?: string;
+  traceId?: string;
 }

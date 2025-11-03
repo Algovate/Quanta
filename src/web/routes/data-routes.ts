@@ -1,15 +1,14 @@
 import { Router, Request, Response } from 'express';
 import type * as ccxt from 'ccxt';
-import { UnifiedLogger } from '../../logging/index.js';
 import { getConfig } from '../../config/settings.js';
 import { TradingManager } from '../trading-manager.js';
 import type { Exchange } from '../../exchange/types.js';
 import { resolveExchange, isNonCCXTExchange } from '../utils/exchange-utils.js';
 import { normalizeSymbolParam } from '../utils/symbol-normalization.js';
 import { parseQueryLimit } from '../utils/error-handler.js';
+import { createLogger } from '../utils/logger.js';
 
-const logger = UnifiedLogger.getInstance();
-const loggerContext = 'DataRoutes';
+const { logger, context: loggerContext } = createLogger('DataRoutes');
 
 /**
  * Check if exchange has underlying CCXT instance and access it

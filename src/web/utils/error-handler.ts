@@ -3,10 +3,9 @@
  */
 
 import { Response } from 'express';
-import { UnifiedLogger } from '../../logging/index.js';
+import { createLogger } from './logger.js';
 
-const logger = UnifiedLogger.getInstance();
-const loggerContext = 'ErrorHandler';
+const { logger, context: loggerContext } = createLogger('ErrorHandler');
 
 export interface ApiError {
   message: string;

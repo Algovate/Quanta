@@ -102,12 +102,28 @@ export function registerTradeRoutes(router: Router, tradingManager: TradingManag
         });
       }
 
+      // Validate numeric parameters
+      const amount = Number(body.amount);
+      if (!isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ error: 'Invalid amount: must be a positive number' });
+      }
+
+      const price = body.price ? Number(body.price) : undefined;
+      if (price !== undefined && (!isFinite(price) || price <= 0)) {
+        return res.status(400).json({ error: 'Invalid price: must be a positive number' });
+      }
+
+      const leverage = body.leverage ? Number(body.leverage) : undefined;
+      if (leverage !== undefined && (!isFinite(leverage) || leverage <= 0)) {
+        return res.status(400).json({ error: 'Invalid leverage: must be a positive number' });
+      }
+
       const order = await placeOrderService(tradingManager, {
         symbol: body.symbol,
         side: body.side,
-        amount: Number(body.amount),
-        price: body.price ? Number(body.price) : undefined,
-        leverage: body.leverage ? Number(body.leverage) : undefined,
+        amount,
+        price,
+        leverage,
       });
       res.json({ success: true, order });
     } catch (error) {
@@ -130,6 +146,15 @@ export function registerTradeRoutes(router: Router, tradingManager: TradingManag
       }
 
       const { symbol, side, stopLoss, takeProfit } = req.body as ExitPlanBody;
+
+      // Validate numeric parameters if provided
+      if (stopLoss !== undefined && (!isFinite(Number(stopLoss)) || Number(stopLoss) <= 0)) {
+        return res.status(400).json({ error: 'Invalid stopLoss: must be a positive number' });
+      }
+
+      if (takeProfit !== undefined && (!isFinite(Number(takeProfit)) || Number(takeProfit) <= 0)) {
+        return res.status(400).json({ error: 'Invalid takeProfit: must be a positive number' });
+      }
 
       tradingManager.setCustomExitPlan(symbol, side, stopLoss, takeProfit);
 

@@ -1,14 +1,13 @@
 import { Router, Request, Response } from 'express';
-import { UnifiedLogger } from '../../logging/index.js';
 import { getConfig } from '../../config/settings.js';
 import { sendErrorResponse, validateRequiredQuery } from '../utils/error-handler.js';
 import { parseSymbolsQuery, normalizeSymbolForExchange } from '../utils/symbol-normalization.js';
 import { isPriceCacheValid, isKlineCacheValid, type KlineCacheEntry } from '../utils/cache.js';
 import { resolveExchange } from '../utils/exchange-utils.js';
 import type { TradingManager } from '../trading-manager.js';
+import { createLogger } from '../utils/logger.js';
 
-const logger = UnifiedLogger.getInstance();
-const loggerContext = 'MarketRoutes';
+const { logger, context: loggerContext } = createLogger('MarketRoutes');
 
 /**
  * Register market data routes

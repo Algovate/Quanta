@@ -1,10 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { parseUTCDateString } from '../../utils/index.js';
-import { UnifiedLogger } from '../../logging/index.js';
 import { runBacktestService } from '../api-service.js';
+import { createLogger } from '../utils/logger.js';
 
-const logger = UnifiedLogger.getInstance();
-const loggerContext = 'BacktestRoutes';
+const { logger, context: loggerContext } = createLogger('BacktestRoutes');
 
 /**
  * Register backtest routes

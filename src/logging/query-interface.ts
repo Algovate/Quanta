@@ -144,11 +144,13 @@ export class QueryInterface {
     operations = Array.from(opsMap.values());
 
     // Apply filters
-    if (options.startTime) {
-      operations = operations.filter(op => op.startTime >= options.startTime!);
+    if (options.startTime !== undefined) {
+      const startTime = options.startTime;
+      operations = operations.filter(op => op.startTime >= startTime);
     }
-    if (options.endTime) {
-      operations = operations.filter(op => op.startTime <= options.endTime!);
+    if (options.endTime !== undefined) {
+      const endTime = options.endTime;
+      operations = operations.filter(op => op.startTime <= endTime);
     }
     if (options.cycleId !== undefined) {
       operations = operations.filter(op => op.cycleId === options.cycleId);
@@ -405,10 +407,10 @@ export class QueryInterface {
     limit?: number;
     offset?: number;
   }): Promise<{ logs: TextLog[]; total: number; hasMore: boolean }> {
-    // Get from L0 cache first
-    let logs = this.storageLayer.getTextLogsFromL0(10000);
+    // Get from L0 cache first (has formattedMessage)
+    const l0Logs = this.storageLayer.getTextLogsFromL0(10000);
 
-    // Get from L1 database
+    // Get from L1 database (may not have formattedMessage)
     const l1Logs = await this.storageLayer.getTextLogsFromL1({
       context: options.context,
       level: options.level,
@@ -419,17 +421,33 @@ export class QueryInterface {
     });
 
     // Combine L0 and L1, deduplicate by logId
+    // Strategy: Prefer L0 entries (they have formattedMessage) but merge with L1 for completeness
     const logsMap = new Map<string, TextLog>();
-    for (const log of logs) {
+
+    // Add all L1 logs first (they have more historical entries)
+    for (const log of l1Logs) {
       logsMap.set(log.logId, log);
     }
-    for (const log of l1Logs) {
-      if (!logsMap.has(log.logId)) {
+
+    // Override with L0 logs if they exist (preserve formattedMessage and other L0 fields)
+    // L0 logs are fresher and have formattedMessage
+    for (const log of l0Logs) {
+      const existing = logsMap.get(log.logId);
+      if (existing) {
+        // Merge: Keep L1 data but restore formattedMessage from L0
+        // Also update other fields from L0 if log is more recent
+        existing.formattedMessage = log.formattedMessage || existing.formattedMessage;
+        if (log.timestamp >= existing.timestamp) {
+          // L0 log is same or newer, prefer its fields
+          Object.assign(existing, log);
+        }
+      } else {
+        // L0 log not in L1 yet, add it
         logsMap.set(log.logId, log);
       }
     }
 
-    logs = Array.from(logsMap.values());
+    let logs = Array.from(logsMap.values());
 
     // Sort by timestamp descending
     logs.sort((a, b) => b.timestamp - a.timestamp);
@@ -442,10 +460,12 @@ export class QueryInterface {
       logs = logs.filter(log => log.level === options.level);
     }
     if (options.since !== undefined) {
-      logs = logs.filter(log => log.timestamp >= options.since!);
+      const since = options.since;
+      logs = logs.filter(log => log.timestamp >= since);
     }
     if (options.until !== undefined) {
-      logs = logs.filter(log => log.timestamp <= options.until!);
+      const until = options.until;
+      logs = logs.filter(log => log.timestamp <= until);
     }
     if (options.cycleId !== undefined) {
       logs = logs.filter(log => log.cycleId === options.cycleId);

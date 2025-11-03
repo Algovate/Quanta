@@ -48,6 +48,15 @@ quanta trade start --mode live --coins BTC
 
 **Startup Output:**
 
+The command displays minimal startup information:
+
+```
+🏆 Quanta Trading System
+Mode: paper | Coins: BTC, ETH, SOL
+✔ Trading system initialized
+🚀 Trading started. Use "quanta log console" to view detailed output.
+```
+
 Configuration display includes:
 
 ```
@@ -72,6 +81,19 @@ Risk parameter validation:
 
 - Parameters within the allowed range are shown without warnings
 - Only adjusted parameters show warning messages
+
+**Note:** Detailed cycle summaries (account status, risk status, positions, etc.) are no longer displayed directly in the console. Use `quanta log console` to view detailed output:
+
+```bash
+# View detailed console output
+quanta log console
+
+# Follow in real-time (like tail -f)
+quanta log console --follow
+
+# View with specific context or level
+quanta log console --context Workflow --level info
+```
 
 ---
 
@@ -510,7 +532,7 @@ quanta config init
 
 ### `log console` - View Console Output
 
-View console output logs captured during `trade start` and `server start` commands.
+View console output logs captured during `trade start` and `server start` commands. This is the primary way to view detailed cycle summaries, account status, risk metrics, and other operational details after starting the trading system.
 
 ```bash
 quanta log console [options]
@@ -551,7 +573,15 @@ quanta log console --format raw
 
 **Output:**
 
-The command displays console output exactly as it appeared during startup, preserving chalk formatting and colors:
+The command displays console output exactly as it appeared during operation, preserving chalk formatting and colors. This includes:
+
+- **Cycle summaries** with runtime, signals, executed trades, and efficiency metrics
+- **Account status** with equity, available margin, leverage, and P&L information
+- **Risk status** with margin usage, risk levels, and diversification metrics
+- **Position details** with entry prices, stop-loss, take-profit, and unrealized P&L
+- All operational logs from the trading system
+
+Example output format:
 
 ```
 🏆 Quanta Trading System
@@ -566,6 +596,18 @@ AI-powered quantitative trading with real-time decision making
 
 🚀 Starting trading workflow...
 Press Ctrl+C to stop
+
+📊 Cycle Summary:
+   Runtime: 0m 9s | Total Cycles: 1
+   AI Signals: 3 | Executed: 0 | Rejected (cycle: 0, total: 0)
+   Open Positions: 0/6
+
+💰 Account Status:
+   Equity: $10000.00 | Available: $10000.00 | Used: $0.00
+   Total P&L: $0.00 (0.00%) | Unrealized: $0.00 (0.00%)
+
+⚠️  Risk Status:
+   Margin Usage: 0.00% | Limit: 30% | Positions: 0/6
 ```
 
 **Follow Mode:**
@@ -1190,6 +1232,9 @@ quanta simulate cycle --coins BTC,ETH,SOL --verbose
 
 # Start trading
 quanta trade start --mode simulation --coins BTC,ETH,SOL
+
+# View detailed output (cycle summaries, account status, positions, etc.)
+quanta log console --follow
 
 # Monitor status
 quanta trade status

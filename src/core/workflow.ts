@@ -12,7 +12,7 @@ import { validateAccount } from '../utils/account-validation.js';
 import { CycleLogger, CycleDisplay } from './display/index.js';
 import chalk from 'chalk';
 import { ExchangeSnapshotService } from './exchange-snapshot.js';
-import { getConfig } from '../config/settings.js';
+// import { getConfig } from '../config/settings.js'; // Removed - no longer used
 import { UnifiedLogger } from '../logging/index.js';
 import { formatUTCTimeCompact, formatUTCLogTime } from '../utils/time.js';
 
@@ -110,7 +110,6 @@ export class TradingWorkflow {
   private nextTimeout?: NodeJS.Timeout;
   private isCycleRunning: boolean = false;
   private isPaused: boolean = false;
-  private logger: UnifiedLogger;
   private readonly loggerContext = 'Workflow';
   private cycleLogger: CycleLogger;
   private cycleDisplay: CycleDisplay;
@@ -120,6 +119,11 @@ export class TradingWorkflow {
   private barDrivenEnabled: boolean = false;
   private barUnsubscribe?: () => void;
   private unifiedLogger: UnifiedLogger;
+  private originalConsole: {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  };
   // Optional getter to retrieve custom exit plans
   private getCustomExitPlans?: (
     symbol: string,
@@ -145,13 +149,13 @@ export class TradingWorkflow {
       forceMarketOrders: forceMarket,
     });
     this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor);
-    this.logger = UnifiedLogger.getInstance();
-    this.cycleLogger = new CycleLogger();
-    this.cycleDisplay = new CycleDisplay();
-    this.isBackgroundMode = this.logger.isBackgroundMode();
-    this.snapshotService = new ExchangeSnapshotService(this.exchange);
     this.unifiedLogger = UnifiedLogger.getInstance();
     this.unifiedLogger.initialize();
+    this.originalConsole = this.unifiedLogger.getOriginalConsole();
+    this.cycleLogger = new CycleLogger();
+    this.cycleDisplay = new CycleDisplay();
+    this.isBackgroundMode = this.unifiedLogger.isBackgroundMode();
+    this.snapshotService = new ExchangeSnapshotService(this.exchange);
 
     this.state = {
       isRunning: false,
@@ -202,6 +206,15 @@ export class TradingWorkflow {
    */
   private emitLog(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
     this.cycleLogger.log(level, message);
+  }
+
+  /**
+   * Log structured output to console (bypasses interception)
+   * Use this for structured outputs that are already logged to operation logs.
+   * This prevents duplicate storage in text logs while maintaining console display.
+   */
+  private logToConsole(...args: unknown[]): void {
+    this.originalConsole.log(...args);
   }
 
   /**
@@ -378,7 +391,7 @@ export class TradingWorkflow {
 
     // Log to structured logger for file output (background mode only to avoid buffering delays)
     if (this.isBackgroundMode) {
-      this.logger.info(
+      this.unifiedLogger.info(
         'AI Signal Generation',
         {
           signalCount: signals.length,
@@ -578,7 +591,7 @@ export class TradingWorkflow {
       // This ensures P&L calculations are correct even if the cycle fails later
       if (this.state.cycleCount === 1 && this.state.initialBalance === 0 && account.equity > 0) {
         this.state.initialBalance = account.equity;
-        this.logger.info(
+        this.unifiedLogger.info(
           'Initial balance set for P&L tracking',
           {
             initialBalance: this.state.initialBalance,
@@ -760,7 +773,7 @@ export class TradingWorkflow {
 
       // Log if positions changed after monitoring
       if (positions.length !== updatedPositions.length) {
-        this.logger.info(
+        this.unifiedLogger.info(
           'Positions changed after monitoring',
           {
             before: positions.length,
@@ -803,14 +816,14 @@ export class TradingWorkflow {
             tickerCache.set(symbol, { price, timestamp: Date.now() });
             return price;
           }
-          this.logger.warn(
+          this.unifiedLogger.warn(
             `Invalid price from ticker for ${symbol}: ${price}`,
             {},
             this.loggerContext
           );
           return undefined;
         } catch (error) {
-          this.logger.debug(
+          this.unifiedLogger.debug(
             `Failed to fetch ticker for ${symbol}`,
             error instanceof Error ? { error: error.message } : { error: String(error) },
             this.loggerContext
@@ -941,7 +954,7 @@ export class TradingWorkflow {
           'warn',
           `⚠️  No market data available - skipping signal generation for this cycle`
         );
-        this.logger.warn(
+        this.unifiedLogger.warn(
           'Cycle aborted due to insufficient market data',
           {
             cycleCount: this.state.cycleCount,
@@ -1020,7 +1033,7 @@ export class TradingWorkflow {
 
           // If still no price, skip enrichment for this position
           if (!currentPrice || !isFinite(currentPrice) || currentPrice <= 0) {
-            this.logger.warn(
+            this.unifiedLogger.warn(
               `Cannot enrich position ${position.symbol}: invalid current price`,
               {},
               this.loggerContext
@@ -1231,7 +1244,7 @@ export class TradingWorkflow {
             tickerCache.set(symbol, { price, timestamp: Date.now() });
             return price;
           }
-          this.logger.warn(
+          this.unifiedLogger.warn(
             `Invalid price from ticker for ${symbol}: ${price}`,
             {},
             this.loggerContext
@@ -1275,7 +1288,7 @@ export class TradingWorkflow {
             'warn',
             `⚠️  ${signal.coin}: Skipping signal execution - price unavailable (${currentPrice === undefined ? 'undefined' : `$${currentPrice.toFixed(2)}`})`
           );
-          this.logger.warn(
+          this.unifiedLogger.warn(
             'Signal execution skipped due to unavailable price',
             {
               coin: signal.coin,
@@ -1330,7 +1343,7 @@ export class TradingWorkflow {
             currentPositions = snapshot.positions;
             currentAccount = snapshot.account;
           } catch (error) {
-            this.logger.warn(
+            this.unifiedLogger.warn(
               'Failed to refresh positions after signal execution - aborting remaining signals',
               {
                 coin: signal.coin,
@@ -1758,7 +1771,25 @@ export class TradingWorkflow {
             : 0;
         const slippageAbs = Math.abs(slippage);
 
-        // Record execution validation
+        // Record execution details to stage for direct queryability
+        this.unifiedLogger.recordExecutionDetails(cycleOperationId, 'execute_signals', {
+          orderId: result.order.id,
+          expectedPrice: currentPrice,
+          actualPrice,
+          slippage,
+          slippageAbs,
+          realizedPnl: result.realizedPnl,
+          fees: result.fees,
+          sizing: sizing
+            ? {
+                suggestedSize: sizing.suggestedSize,
+                leverage: sizing.leverage,
+                riskAmount: sizing.riskAmount,
+              }
+            : undefined,
+        });
+
+        // Also record execution validation check for validation logic
         this.unifiedLogger.recordValidationCheck(cycleOperationId, 'execute_signals', {
           name: 'execution_price_validation',
           passed: slippageAbs <= 5, // 5% tolerance
@@ -1789,7 +1820,7 @@ export class TradingWorkflow {
           const ref = currentPrice;
           const relDiff = ref ? Math.abs(actualPrice - ref) / ref : 0;
           if (relDiff > 0.05) {
-            this.logger.warn(
+            this.unifiedLogger.warn(
               'Symbol/price mismatch suspected',
               {
                 coin: signal.coin,
@@ -2010,7 +2041,7 @@ export class TradingWorkflow {
     } else {
       // If initialBalance is not set, use 0 as default (prevents incorrect calculations)
       this.state.totalPnl = 0;
-      this.logger.warn(
+      this.unifiedLogger.warn(
         'Cannot calculate total P&L: initial balance not set',
         {
           cycleCount: this.state.cycleCount,
@@ -2122,7 +2153,7 @@ export class TradingWorkflow {
     const validation = validateAccount(account, positions, totalMarginUsed);
     if (!validation.isValid) {
       if (validation.equityCheck && !validation.equityCheck.isValid) {
-        this.logger.warn(
+        this.unifiedLogger.warn(
           'Equity calculation mismatch detected in cycle summary',
           {
             cycle: this.state.cycleCount,
@@ -2140,7 +2171,7 @@ export class TradingWorkflow {
         }
       }
       if (validation.marginCheck && !validation.marginCheck.isValid) {
-        this.logger.warn(
+        this.unifiedLogger.warn(
           'Available margin calculation mismatch detected in cycle summary',
           {
             cycle: this.state.cycleCount,
@@ -2177,9 +2208,9 @@ export class TradingWorkflow {
     runtimeMinutes: number,
     runtimeSeconds: number
   ): void {
-    if (!this.isBackgroundMode) return;
+    // Always log structured summary (removed background mode check)
 
-    this.logger.info(
+    this.unifiedLogger.info(
       'Cycle Summary',
       {
         cycle: this.state.cycleCount,
@@ -2221,7 +2252,7 @@ export class TradingWorkflow {
     positions: Position[],
     signals: TradingSignal[],
     aggregates: PositionAggregates,
-    cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number }
+    _cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number }
   ): void {
     const runtime = Date.now() - this.state.startTime;
     const runtimeMinutes = Math.floor(runtime / (1000 * 60));
@@ -2251,30 +2282,25 @@ export class TradingWorkflow {
       runtimeSeconds
     );
 
-    // Console output with formatting (only if not background mode)
-    if (!this.isBackgroundMode) {
-      this.logConsoleCycleSummary(
-        account,
-        positions,
-        signals,
-        aggregates,
-        pnlMetrics,
-        cycleMetrics,
-        runtimeMinutes,
-        runtimeSeconds
-      );
-    }
+    // Console output suppressed - use "quanta log console" to view detailed output
+    // All information is already logged via logStructuredCycleSummary()
   }
 
+  // Removed logConsoleCycleSummary and related helper methods
+  // All cycle summary information is now logged via logStructuredCycleSummary()
+  // Users can view detailed output using "quanta log console"
+
   /**
-   * Log console cycle summary output
+   * @deprecated Console output suppressed - use "quanta log console" instead
    */
-  private logConsoleCycleSummary(
-    account: Account,
-    positions: Position[],
-    signals: TradingSignal[],
-    aggregates: PositionAggregates,
-    pnlMetrics: {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-expect-error - Deprecated method, kept for reference
+  private _logConsoleCycleSummary(
+    _account: Account,
+    _positions: Position[],
+    _signals: TradingSignal[],
+    _aggregates: PositionAggregates,
+    _pnlMetrics: {
       totalPnl: number;
       totalPnlPercent: number;
       totalPnlColor: (str: string) => string;
@@ -2286,60 +2312,22 @@ export class TradingWorkflow {
       cyclePnlColor: (str: string) => string;
       realizedCyclePnl: number;
     },
-    cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number },
-    runtimeMinutes: number,
-    runtimeSeconds: number
+    _cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number },
+    _runtimeMinutes: number,
+    _runtimeSeconds: number
   ): void {
-    console.log(`\n📊 Cycle Summary:`);
-    console.log(
-      `   Runtime: ${runtimeMinutes}m ${runtimeSeconds}s | Total Cycles: ${this.state.cycleCount}`
-    );
-
-    // Signal efficiency
-    const actionableSignalsCycle = cycleMetrics.rejectedSignalsCycle + cycleMetrics.tradeCountCycle;
-    const cycleEfficiency =
-      actionableSignalsCycle > 0
-        ? ((cycleMetrics.tradeCountCycle / actionableSignalsCycle) * 100).toFixed(0)
-        : '100';
-
-    const totalActionableSignals = this.state.totalTrades + this.state.rejectedSignals;
-    const cumulativeEfficiency =
-      totalActionableSignals > 0
-        ? ((this.state.totalTrades / totalActionableSignals) * 100).toFixed(0)
-        : '100';
-
-    const efficiencyColor =
-      parseFloat(cumulativeEfficiency) >= 80
-        ? chalk.green
-        : parseFloat(cumulativeEfficiency) >= 50
-          ? chalk.yellow
-          : chalk.red;
-
-    console.log(
-      `   AI Signals: ${signals.length} | Executed: ${this.state.totalTrades} | Rejected (cycle: ${cycleMetrics.rejectedSignalsCycle}, total: ${this.state.rejectedSignals}) | Efficiency (cycle: ${cycleEfficiency}%, cumulative: ${efficiencyColor(cumulativeEfficiency + '%')})`
-    );
-    console.log(`   Open Positions: ${positions.length}/${this.config.maxPositions}`);
-
-    // Account status
-    this.logAccountStatus(account, aggregates, pnlMetrics);
-
-    // Risk status
-    this.logRiskStatus(account, positions, aggregates);
-
-    // Positions display
-    this.logPositions(positions);
-
-    // Countdown
-    this.logCycleCountdown();
+    // Method body removed - console output suppressed, use "quanta log console" instead
   }
 
   /**
-   * Log account status section
+   * @deprecated Removed - console output suppressed, use "quanta log console" instead
    */
-  private logAccountStatus(
-    account: Account,
-    aggregates: PositionAggregates,
-    pnlMetrics: {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-expect-error - Deprecated method, kept for reference
+  private _logAccountStatus(
+    _account: Account,
+    _aggregates: PositionAggregates,
+    _pnlMetrics: {
       totalPnl: number;
       totalPnlPercent: number;
       totalPnlColor: (str: string) => string;
@@ -2352,155 +2340,38 @@ export class TradingWorkflow {
       realizedCyclePnl: number;
     }
   ): void {
-    const accountBlock = this.cycleDisplay.formatAccountStatus({
-      account,
-      totalMarginUsed: aggregates.totalMarginUsed,
-      totalUnleveredExposure: aggregates.totalUnleveredExposure,
-      pnl: {
-        totalPnl: pnlMetrics.totalPnl,
-        totalPnlPercent: pnlMetrics.totalPnlPercent,
-        unrealizedPnl: pnlMetrics.unrealizedPnl,
-        unrealizedPnlPercent: pnlMetrics.unrealizedPnlPercent,
-        realizedCyclePnl: pnlMetrics.realizedCyclePnl,
-        cyclePnlChange: pnlMetrics.cyclePnlChange,
-        cyclePnlPercent: pnlMetrics.cyclePnlPercent,
-      },
-      previousEquity: this.state.cycleCount > 1 ? this.state.previousEquity : undefined,
-    });
-    console.log(accountBlock);
+    // Method body removed - console output suppressed, use "quanta log console" instead
   }
 
   /**
-   * Log risk status section
+   * @deprecated Removed - console output suppressed, use "quanta log console" instead
    */
-  private logRiskStatus(
-    account: Account,
-    positions: Position[],
-    aggregates: PositionAggregates
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-expect-error - Deprecated method, kept for reference
+  private _logRiskStatus(
+    _account: Account,
+    _positions: Position[],
+    _aggregates: PositionAggregates
   ): void {
-    console.log(chalk.magenta(`\n⚠️  Risk Status:`));
-
-    const maxMarginLimit = this.config.riskParams.maxTotalRisk * 100; // Convert to percentage
-    const marginUsage =
-      positions.length > 0 && account.equity > 0
-        ? (aggregates.totalMarginUsed / account.equity) * 100
-        : 0;
-
-    // Get additional risk metrics from position monitor
-    const positionSummary = this.positionMonitor.getPositionSummary(positions);
-    const averageLeverage = positionSummary.averageLeverage.toFixed(2);
-    // Override risk label using margin usage thresholds for consistency
-    let riskLabel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
-    if (marginUsage >= 20) riskLabel = 'HIGH';
-    else if (marginUsage >= 10) riskLabel = 'MEDIUM';
-    const riskLevelColor =
-      riskLabel === 'HIGH' ? chalk.red : riskLabel === 'MEDIUM' ? chalk.yellow : chalk.green;
-
-    console.log(
-      `   Margin Usage: ${marginUsage.toFixed(2)}% | Limit: ${maxMarginLimit.toFixed(0)}% | Positions: ${positions.length}/${this.config.maxPositions}`
-    );
-
-    // Funding drag warning for swap/perp markets (phase 1: warn-only)
-    try {
-      const cfg = getConfig();
-      const mt = (cfg.exchange?.marketType || '').toLowerCase();
-      const fundingWarnings = (cfg as any)?.trading?.funding?.warnings !== false;
-      if ((mt === 'swap' || mt === 'perp' || mt === 'perpetual') && fundingWarnings) {
-        const estDailyFunding = 0.0003; // 0.03% daily conservative baseline
-        console.log(
-          chalk.gray(
-            `   Note: Perp funding can impact P&L. Est. daily funding drag baseline: ${(estDailyFunding * 100).toFixed(2)}% of notional (varies by market/direction)`
-          )
-        );
-      }
-    } catch {
-      // ignore config read errors
-    }
-
-    if (positions.length > 0) {
-      console.log(
-        `   Risk Level: ${riskLevelColor(riskLabel)} (margin ${marginUsage.toFixed(2)}%) | Avg Leverage: ${averageLeverage}x`
-      );
-
-      // Display diversification metrics
-      if (positions.length > 1) {
-        const divScore = positionSummary.diversificationScore;
-        const corrScore = positionSummary.correlationScore;
-        const divColor = divScore > 0.7 ? chalk.green : divScore > 0.4 ? chalk.yellow : chalk.red;
-        const corrColor =
-          corrScore > 0.7 ? chalk.red : corrScore > 0.4 ? chalk.yellow : chalk.green;
-
-        console.log(
-          `   Diversification: ${divColor((divScore * 100).toFixed(0) + '%')} | Correlation: ${corrColor((corrScore * 100).toFixed(0) + '%')}`
-        );
-      }
-    }
+    // Method body removed - console output suppressed, use "quanta log console" instead
   }
 
   /**
-   * Log positions table and details
+   * @deprecated Removed - console output suppressed, use "quanta log console" instead
    */
-  private logPositions(positions: Position[]): void {
-    if (positions.length === 0) {
-      console.log(`\n   No open positions`);
-      return;
-    }
-
-    // Use CycleDisplay to format the positions table consistently
-    const table = this.cycleDisplay.formatPositionsTable(positions);
-    console.log(table);
-
-    // Display individual position metrics
-    console.log(chalk.gray(`\n   📊 Position Details:`));
-    positions.forEach(position => {
-      const holdingTime = Date.now() - position.timestamp;
-      const hours = Math.floor(holdingTime / (1000 * 60 * 60));
-      const minutes = Math.floor((holdingTime % (1000 * 60 * 60)) / (1000 * 60));
-      const timeText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-
-      const stopLossPrice = this.riskManager.getEffectiveStopLossPrice(
-        position,
-        position.entryPrice
-      );
-      const takeProfitPrice = this.riskManager.getEffectiveTakeProfitPrice(
-        position,
-        position.entryPrice
-      );
-
-      const stopLossPercent = Math.abs(
-        ((stopLossPrice - position.entryPrice) / position.entryPrice) * 100
-      );
-      const takeProfitPercent = Math.abs(
-        ((takeProfitPrice - position.entryPrice) / position.entryPrice) * 100
-      );
-      const rrRatio = takeProfitPercent / stopLossPercent;
-
-      console.log(
-        chalk.gray(
-          `      ${position.symbol.replace('/USDT', '')}: Holding ${timeText} | R/R ${rrRatio.toFixed(1)}x | SL: @$${stopLossPrice.toFixed(2)} (${position.side === 'long' ? '-' : '+'}${stopLossPercent.toFixed(1)}%) | TP: @$${takeProfitPrice.toFixed(2)} (${position.side === 'long' ? '+' : '-'}${takeProfitPercent.toFixed(1)}%)`
-        )
-      );
-    });
-
-    // Win rate
-    console.log(`\n   Win Rate: ${this.state.winRate.toFixed(1)}%`);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-expect-error - Deprecated method, kept for reference
+  private _logPositions(_positions: Position[]): void {
+    // Method body removed - console output suppressed
   }
 
   /**
-   * Log cycle countdown
+   * @deprecated Removed - console output suppressed, use "quanta log console" instead
    */
-  private logCycleCountdown(): void {
-    const elapsed = Date.now() - this.state.lastUpdate;
-    const remaining = Math.max(0, this.config.cyclePeriod - elapsed);
-    const remainingSeconds = Math.floor(remaining / 1000);
-    const minutes = Math.floor(remainingSeconds / 60);
-    const seconds = remainingSeconds % 60;
-    const countdownText = minutes > 0 ? `${minutes}m ${seconds}s` : `${remainingSeconds}s`;
-
-    console.log(chalk.gray(`\n────────────────────────────────────────────────────────`));
-    console.log(
-      chalk.cyan(`⏱️  Next cycle in ${countdownText}`) + chalk.gray(` | Press Ctrl+C to stop`)
-    );
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-expect-error - Deprecated method, kept for reference
+  private _logCycleCountdown(): void {
+    // Method body removed - console output suppressed
   }
 
   /**
@@ -2560,19 +2431,19 @@ export class TradingWorkflow {
       winRate: this.state.winRate,
     };
 
-    this.logger.info('Final Report', report, this.loggerContext);
+    this.unifiedLogger.info('Final Report', report, this.loggerContext);
 
-    // Console output (only if not background mode)
+    // Structured output - bypass interception (already in operation logs)
     if (!this.isBackgroundMode) {
-      console.log('\n📈 FINAL REPORT');
-      console.log('='.repeat(50));
-      console.log(`Runtime: ${runtimeMinutes} minutes`);
-      console.log(`Cycles: ${this.state.cycleCount}`);
-      console.log(`Total Signals: ${this.state.totalSignals}`);
-      console.log(`Total Trades: ${this.state.totalTrades}`);
-      console.log(`Total PnL: $${this.state.totalPnl.toFixed(2)}`);
-      console.log(`Win Rate: ${this.state.winRate.toFixed(1)}%`);
-      console.log('='.repeat(50));
+      this.logToConsole('\n📈 FINAL REPORT');
+      this.logToConsole('='.repeat(50));
+      this.logToConsole(`Runtime: ${runtimeMinutes} minutes`);
+      this.logToConsole(`Cycles: ${this.state.cycleCount}`);
+      this.logToConsole(`Total Signals: ${this.state.totalSignals}`);
+      this.logToConsole(`Total Trades: ${this.state.totalTrades}`);
+      this.logToConsole(`Total PnL: $${this.state.totalPnl.toFixed(2)}`);
+      this.logToConsole(`Win Rate: ${this.state.winRate.toFixed(1)}%`);
+      this.logToConsole('='.repeat(50));
     }
   }
 

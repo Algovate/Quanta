@@ -148,6 +148,9 @@ export class LogCommands {
     verbose?: boolean;
     detail?: boolean;
   }): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+
     try {
       const query = QueryInterface.getInstance();
       const result = await query.queryOperations({
@@ -162,29 +165,29 @@ export class LogCommands {
       });
 
       if (options.format === 'json') {
-        console.log(JSON.stringify(result, null, 2));
+        originalConsole.log(JSON.stringify(result, null, 2));
         return;
       }
 
       if (result.operations.length === 0) {
-        console.log(chalk.yellow('⚠️  No operations found matching the criteria'));
+        originalConsole.log(chalk.yellow('⚠️  No operations found matching the criteria'));
         return;
       }
 
       const isVerbose = options.verbose || options.detail;
       const limit = options.limit && !isNaN(options.limit) ? options.limit : 50;
 
-      console.log(chalk.cyan('📋 Operations Query Results'));
-      console.log(
+      originalConsole.log(chalk.cyan('📋 Operations Query Results'));
+      originalConsole.log(
         chalk.gray(
           `Found ${result.total} operations${result.hasMore ? ' (showing first ' + result.operations.length + ')' : ''}\n`
         )
       );
 
       if (isVerbose) {
-        this.formatOperationsDetailed(result.operations, limit);
+        this.formatOperationsDetailed(result.operations, limit, originalConsole);
       } else {
-        this.formatOperationsTable(result.operations, limit);
+        this.formatOperationsTable(result.operations, limit, originalConsole);
       }
     } finally {
       // Always cleanup resources before exiting
@@ -197,6 +200,9 @@ export class LogCommands {
     type?: string;
     format?: string;
   }): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+
     try {
       const query = QueryInterface.getInstance();
       const stats = await query.getStatistics({
@@ -205,43 +211,43 @@ export class LogCommands {
       });
 
       if (options.format === 'json') {
-        console.log(JSON.stringify(stats, null, 2));
+        originalConsole.log(JSON.stringify(stats, null, 2));
         return;
       }
 
-      console.log(chalk.cyan('📊 Operation Statistics'));
-      console.log(chalk.gray('Overall system statistics\n'));
+      originalConsole.log(chalk.cyan('📊 Operation Statistics'));
+      originalConsole.log(chalk.gray('Overall system statistics\n'));
 
-      console.log(chalk.blue('📈 Summary:'));
-      console.log(`   Total Operations: ${stats.totalOperations}`);
-      console.log(`   Completed: ${chalk.green(stats.completedOperations)}`);
-      console.log(`   Failed: ${chalk.red(stats.failedOperations)}`);
+      originalConsole.log(chalk.blue('📈 Summary:'));
+      originalConsole.log(`   Total Operations: ${stats.totalOperations}`);
+      originalConsole.log(`   Completed: ${chalk.green(stats.completedOperations)}`);
+      originalConsole.log(`   Failed: ${chalk.red(stats.failedOperations)}`);
       const errorRateColor =
         stats.errorRate > 0.1 ? 'red' : stats.errorRate > 0.05 ? 'yellow' : 'green';
-      console.log(
+      originalConsole.log(
         `   Error Rate: ${chalk[errorRateColor]((stats.errorRate * 100).toFixed(2) + '%')}`
       );
-      console.log('');
+      originalConsole.log('');
 
-      console.log(chalk.blue('⏱️  Performance:'));
-      console.log(`   Average Duration: ${this.formatDuration(stats.averageDuration)}`);
-      console.log(`   Min Duration: ${this.formatDuration(stats.minDuration)}`);
-      console.log(`   Max Duration: ${this.formatDuration(stats.maxDuration)}`);
-      console.log('');
+      originalConsole.log(chalk.blue('⏱️  Performance:'));
+      originalConsole.log(`   Average Duration: ${this.formatDuration(stats.averageDuration)}`);
+      originalConsole.log(`   Min Duration: ${this.formatDuration(stats.minDuration)}`);
+      originalConsole.log(`   Max Duration: ${this.formatDuration(stats.maxDuration)}`);
+      originalConsole.log('');
 
-      console.log(chalk.blue('📦 By Status:'));
+      originalConsole.log(chalk.blue('📦 By Status:'));
       for (const [status, count] of Object.entries(stats.byStatus)) {
         const color = status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'yellow';
-        console.log(`   ${status}: ${chalk[color](count.toString())}`);
+        originalConsole.log(`   ${status}: ${chalk[color](count.toString())}`);
       }
-      console.log('');
+      originalConsole.log('');
 
       if (Object.keys(stats.operationTypes).length > 0) {
-        console.log(chalk.blue('🔧 By Operation Type:'));
+        originalConsole.log(chalk.blue('🔧 By Operation Type:'));
         for (const [type, count] of Object.entries(stats.operationTypes).sort(
           (a, b) => b[1] - a[1]
         )) {
-          console.log(`   ${type}: ${count}`);
+          originalConsole.log(`   ${type}: ${count}`);
         }
       }
     } finally {
@@ -251,43 +257,46 @@ export class LogCommands {
   }
 
   private static async showTrace(traceId: string, options: { format?: string }): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+
     try {
       const query = QueryInterface.getInstance();
       const trace = await query.getTrace(traceId);
 
       if (!trace) {
-        console.log(chalk.red(`❌ Trace not found: ${traceId}`));
+        originalConsole.log(chalk.red(`❌ Trace not found: ${traceId}`));
         return;
       }
 
       if (options.format === 'json') {
-        console.log(JSON.stringify(trace, null, 2));
+        originalConsole.log(JSON.stringify(trace, null, 2));
         return;
       }
 
-      console.log(chalk.cyan('🔍 Trace Details'));
-      console.log(chalk.gray(`Trace ID: ${traceId}\n`));
+      originalConsole.log(chalk.cyan('🔍 Trace Details'));
+      originalConsole.log(chalk.gray(`Trace ID: ${traceId}\n`));
 
-      console.log(chalk.blue('📋 Trace Info:'));
-      console.log(`   Trace ID: ${trace.traceId}`);
-      console.log(`   Cycle ID: ${trace.cycleId}`);
-      console.log(`   Status: ${this.formatStatus(trace.status)}`);
+      originalConsole.log(chalk.blue('📋 Trace Info:'));
+      originalConsole.log(`   Trace ID: ${trace.traceId}`);
+      originalConsole.log(`   Cycle ID: ${trace.cycleId}`);
+      originalConsole.log(`   Status: ${this.formatStatus(trace.status)}`);
       if (trace.duration) {
-        console.log(`   Duration: ${this.formatDuration(trace.duration)}`);
+        originalConsole.log(`   Duration: ${this.formatDuration(trace.duration)}`);
       }
-      console.log(`   Operations: ${trace.operations.length}`);
-      console.log('');
+      originalConsole.log(`   Operations: ${trace.operations.length}`);
+      originalConsole.log('');
 
       if (trace.rootOperation) {
-        console.log(chalk.blue('🌳 Root Operation:'));
-        console.log(`   Operation ID: ${this.truncateId(trace.rootOperation.operationId)}`);
-        console.log(`   Type: ${trace.rootOperation.operationType}`);
-        console.log(`   Status: ${this.formatStatus(trace.rootOperation.status)}`);
-        console.log('');
+        originalConsole.log(chalk.blue('🌳 Root Operation:'));
+        originalConsole.log(`   Operation ID: ${this.truncateId(trace.rootOperation.operationId)}`);
+        originalConsole.log(`   Type: ${trace.rootOperation.operationType}`);
+        originalConsole.log(`   Status: ${this.formatStatus(trace.rootOperation.status)}`);
+        originalConsole.log('');
       }
 
-      console.log(chalk.blue('📝 Operations in Trace:'));
-      this.formatOperationsTable(trace.operations, trace.operations.length);
+      originalConsole.log(chalk.blue('📝 Operations in Trace:'));
+      this.formatOperationsTable(trace.operations, trace.operations.length, originalConsole);
     } finally {
       // Always cleanup resources before exiting
       this.cleanupResources();
@@ -298,6 +307,9 @@ export class LogCommands {
     term: string,
     options: { type?: string; status?: string; limit?: number; format?: string }
   ): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+
     try {
       const query = QueryInterface.getInstance();
       const limit = options.limit && !isNaN(options.limit) ? options.limit : 50;
@@ -308,19 +320,19 @@ export class LogCommands {
       });
 
       if (options.format === 'json') {
-        console.log(JSON.stringify(result, null, 2));
+        originalConsole.log(JSON.stringify(result, null, 2));
         return;
       }
 
       if (result.operations.length === 0) {
-        console.log(chalk.yellow(`⚠️  No operations found matching "${term}"`));
+        originalConsole.log(chalk.yellow(`⚠️  No operations found matching "${term}"`));
         return;
       }
 
-      console.log(chalk.cyan(`🔍 Search Results for "${term}"`));
-      console.log(chalk.gray(`Found ${result.total} operations\n`));
+      originalConsole.log(chalk.cyan(`🔍 Search Results for "${term}"`));
+      originalConsole.log(chalk.gray(`Found ${result.total} operations\n`));
 
-      this.formatOperationsTable(result.operations, limit);
+      this.formatOperationsTable(result.operations, limit, originalConsole);
     } finally {
       // Always cleanup resources before exiting
       this.cleanupResources();
@@ -331,6 +343,9 @@ export class LogCommands {
     snapshotId: string | undefined,
     options: { format?: string }
   ): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+
     try {
       let snapshot: SystemSnapshot | null = null;
       const storage = StorageLayer.getInstance();
@@ -338,7 +353,7 @@ export class LogCommands {
       if (snapshotId) {
         snapshot = await storage.getSnapshotById(snapshotId);
         if (!snapshot) {
-          console.log(chalk.red(`❌ Snapshot not found: ${snapshotId}`));
+          originalConsole.log(chalk.red(`❌ Snapshot not found: ${snapshotId}`));
           return;
         }
       } else {
@@ -359,56 +374,58 @@ export class LogCommands {
         }
 
         if (!snapshot) {
-          console.log(chalk.yellow('⚠️  No snapshots found'));
-          console.log(
+          originalConsole.log(chalk.yellow('⚠️  No snapshots found'));
+          originalConsole.log(
             chalk.gray('\n💡 Snapshots are created automatically during trading cycles.')
           );
-          console.log(
+          originalConsole.log(
             chalk.gray('   Run a trading cycle to create snapshots, or specify a snapshot ID:')
           );
-          console.log(chalk.gray('   quanta log snapshot <snapshot-id>'));
+          originalConsole.log(chalk.gray('   quanta log snapshot <snapshot-id>'));
           return;
         }
       }
 
       if (options.format === 'json') {
-        console.log(JSON.stringify(snapshot, null, 2));
+        originalConsole.log(JSON.stringify(snapshot, null, 2));
         return;
       }
 
-      console.log(chalk.cyan('📸 System Snapshot'));
-      console.log(chalk.gray(`Snapshot ID: ${snapshot.snapshotId}\n`));
+      originalConsole.log(chalk.cyan('📸 System Snapshot'));
+      originalConsole.log(chalk.gray(`Snapshot ID: ${snapshot.snapshotId}\n`));
 
-      console.log(chalk.blue('⏰ Timestamp:'));
-      console.log(`   ${this.formatTimestamp(snapshot.timestamp)}`);
-      console.log(`   Cycle ID: ${snapshot.cycleId}`);
-      console.log('');
+      originalConsole.log(chalk.blue('⏰ Timestamp:'));
+      originalConsole.log(`   ${this.formatTimestamp(snapshot.timestamp)}`);
+      originalConsole.log(`   Cycle ID: ${snapshot.cycleId}`);
+      originalConsole.log('');
 
-      console.log(chalk.blue('💰 Account:'));
-      console.log(`   Equity: $${snapshot.account.equity.toFixed(2)}`);
-      console.log(`   Balance: $${snapshot.account.balance.toFixed(2)}`);
-      console.log(`   Margin Used: $${snapshot.account.marginUsed.toFixed(2)}`);
-      console.log(`   Available Margin: $${snapshot.account.availableMargin.toFixed(2)}`);
-      console.log('');
+      originalConsole.log(chalk.blue('💰 Account:'));
+      originalConsole.log(`   Equity: $${snapshot.account.equity.toFixed(2)}`);
+      originalConsole.log(`   Balance: $${snapshot.account.balance.toFixed(2)}`);
+      originalConsole.log(`   Margin Used: $${snapshot.account.marginUsed.toFixed(2)}`);
+      originalConsole.log(`   Available Margin: $${snapshot.account.availableMargin.toFixed(2)}`);
+      originalConsole.log('');
 
-      console.log(chalk.blue('📊 Positions:'));
+      originalConsole.log(chalk.blue('📊 Positions:'));
       if (snapshot.positions.length === 0) {
-        console.log('   No open positions');
+        originalConsole.log('   No open positions');
       } else {
         snapshot.positions.forEach(pos => {
           const pnlColor = pos.unrealizedPnl >= 0 ? 'green' : 'red';
-          console.log(
+          originalConsole.log(
             `   ${pos.symbol} ${pos.side.toUpperCase()}: ${pos.size} @ $${pos.entryPrice.toFixed(2)} | P&L: ${chalk[pnlColor](`$${pos.unrealizedPnl.toFixed(2)}`)}`
           );
         });
       }
-      console.log('');
+      originalConsole.log('');
 
       if (snapshot.systemMetrics) {
-        console.log(chalk.blue('💻 System Metrics:'));
+        originalConsole.log(chalk.blue('💻 System Metrics:'));
         const mem = snapshot.systemMetrics.memoryUsage;
-        console.log(`   Memory: ${mem.heapUsed}MB / ${mem.heapTotal}MB (RSS: ${mem.rss}MB)`);
-        console.log('');
+        originalConsole.log(
+          `   Memory: ${mem.heapUsed}MB / ${mem.heapTotal}MB (RSS: ${mem.rss}MB)`
+        );
+        originalConsole.log('');
       }
     } finally {
       // Always cleanup resources before exiting
@@ -417,19 +434,22 @@ export class LogCommands {
   }
 
   private static async showStorageStats(): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+
     try {
       const storage = StorageLayer.getInstance();
       const stats = await storage.getStats();
 
-      console.log(chalk.cyan('💾 Storage Statistics'));
-      console.log(chalk.gray('Log storage layer information\n'));
+      originalConsole.log(chalk.cyan('💾 Storage Statistics'));
+      originalConsole.log(chalk.gray('Log storage layer information\n'));
 
-      console.log(chalk.blue('📦 Storage Layers:'));
-      console.log(`   L0 (Hot Cache): ${stats.l0Size} operations`);
-      console.log(`   L1 (Warm): ${stats.l1Cycles} cycles`);
-      console.log(`   L2 (Cold): ${stats.l2Cycles} cycles`);
-      console.log(`   L3 (Archive): ${stats.l3Cycles} cycles`);
-      console.log(`   Total Operations: ${stats.totalOperations}`);
+      originalConsole.log(chalk.blue('📦 Storage Layers:'));
+      originalConsole.log(`   L0 (Hot Cache): ${stats.l0Size} operations`);
+      originalConsole.log(`   L1 (Warm): ${stats.l1Cycles} cycles`);
+      originalConsole.log(`   L2 (Cold): ${stats.l2Cycles} cycles`);
+      originalConsole.log(`   L3 (Archive): ${stats.l3Cycles} cycles`);
+      originalConsole.log(`   Total Operations: ${stats.totalOperations}`);
     } finally {
       // Always cleanup resources before exiting
       this.cleanupResources();
@@ -442,15 +462,18 @@ export class LogCommands {
     force?: boolean;
     'dry-run'?: boolean;
   }): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+
     try {
       const storage = StorageLayer.getInstance();
       const dryRun = options['dry-run'] || false;
 
-      console.log(chalk.cyan('🧹 Log Cleanup'));
-      console.log(chalk.gray('Cleaning up old log data\n'));
+      originalConsole.log(chalk.cyan('🧹 Log Cleanup'));
+      originalConsole.log(chalk.gray('Cleaning up old log data\n'));
 
       if (dryRun) {
-        console.log(chalk.yellow('🔍 Dry-run mode: Showing what would be cleaned\n'));
+        originalConsole.log(chalk.yellow('🔍 Dry-run mode: Showing what would be cleaned\n'));
       }
 
       // Get cleanup preview
@@ -460,21 +483,21 @@ export class LogCommands {
       });
 
       if (preview.totalCyclesToClean === 0) {
-        console.log(chalk.green('✓ No logs to clean up'));
+        originalConsole.log(chalk.green('✓ No logs to clean up'));
         return;
       }
 
       // Show preview
-      console.log(chalk.blue('📋 Cleanup Preview:'));
-      console.log(`   L1 Cycles: ${preview.l1CyclesToClean.length}`);
-      console.log(`   L2 Cycles: ${preview.l2CyclesToClean.length}`);
-      console.log(`   L3 Cycles: ${preview.l3CyclesToClean.length}`);
-      console.log(`   Total Cycles: ${preview.totalCyclesToClean}`);
-      console.log(`   Estimated Operations: ${preview.estimatedOperationsToClean}`);
-      console.log('');
+      originalConsole.log(chalk.blue('📋 Cleanup Preview:'));
+      originalConsole.log(`   L1 Cycles: ${preview.l1CyclesToClean.length}`);
+      originalConsole.log(`   L2 Cycles: ${preview.l2CyclesToClean.length}`);
+      originalConsole.log(`   L3 Cycles: ${preview.l3CyclesToClean.length}`);
+      originalConsole.log(`   Total Cycles: ${preview.totalCyclesToClean}`);
+      originalConsole.log(`   Estimated Operations: ${preview.estimatedOperationsToClean}`);
+      originalConsole.log('');
 
       if (dryRun) {
-        console.log(
+        originalConsole.log(
           chalk.gray('Dry-run complete. Use without --dry-run to perform actual cleanup.')
         );
         return;
@@ -482,34 +505,34 @@ export class LogCommands {
 
       // Confirm cleanup
       if (!options.force) {
-        console.log(chalk.yellow('⚠️  This will permanently delete old log data.'));
-        console.log(chalk.gray('Use --force to skip confirmation\n'));
+        originalConsole.log(chalk.yellow('⚠️  This will permanently delete old log data.'));
+        originalConsole.log(chalk.gray('Use --force to skip confirmation\n'));
         // In a real implementation, you might want to use readline to get user confirmation
         // For now, we'll just proceed if force is not set
       }
 
       // Perform cleanup
-      console.log(chalk.blue('🧹 Cleaning up...\n'));
+      originalConsole.log(chalk.blue('🧹 Cleaning up...\n'));
 
       if (options.keepDays !== undefined) {
         const result = await storage.cleanupByDays(options.keepDays);
-        console.log(chalk.green('✓ Cleanup completed'));
-        console.log(`   Deleted Cycles: ${result.deletedCycles.length}`);
-        console.log(`   Deleted Operations: ${result.deletedOperations}`);
+        originalConsole.log(chalk.green('✓ Cleanup completed'));
+        originalConsole.log(`   Deleted Cycles: ${result.deletedCycles.length}`);
+        originalConsole.log(`   Deleted Operations: ${result.deletedOperations}`);
       } else if (options.maxCycles !== undefined) {
         await storage.cleanup(options.maxCycles);
-        console.log(chalk.green('✓ Cleanup completed'));
-        console.log(`   Kept ${options.maxCycles} most recent cycles`);
-        console.log(`   Archived older cycles to L3`);
+        originalConsole.log(chalk.green('✓ Cleanup completed'));
+        originalConsole.log(`   Kept ${options.maxCycles} most recent cycles`);
+        originalConsole.log(`   Archived older cycles to L3`);
       } else {
         // Default: keep 1000 cycles
         await storage.cleanup(1000);
-        console.log(chalk.green('✓ Cleanup completed'));
-        console.log(`   Kept 1000 most recent cycles (default)`);
-        console.log(`   Archived older cycles to L3`);
+        originalConsole.log(chalk.green('✓ Cleanup completed'));
+        originalConsole.log(`   Kept 1000 most recent cycles (default)`);
+        originalConsole.log(`   Archived older cycles to L3`);
       }
     } catch (error) {
-      console.error(chalk.red('❌ Cleanup failed:'), error);
+      originalConsole.error(chalk.red('❌ Cleanup failed:'), error);
       throw error;
     } finally {
       // Always cleanup resources before exiting
@@ -517,7 +540,11 @@ export class LogCommands {
     }
   }
 
-  private static formatOperationsTable(operations: OperationLog[], limit: number = 100): void {
+  private static formatOperationsTable(
+    operations: OperationLog[],
+    limit: number = 100,
+    originalConsole: { log: typeof console.log } = console
+  ): void {
     if (operations.length === 0) {
       return;
     }
@@ -659,8 +686,8 @@ export class LogCommands {
     const bottomBorder = buildBorder('└', '┴', '┘');
 
     // Table header
-    console.log(topBorder);
-    console.log(
+    originalConsole.log(topBorder);
+    originalConsole.log(
       chalk.gray('│ ') +
         chalk.cyan('Operation'.padEnd(colWidths.operation)) +
         chalk.gray(' │ ') +
@@ -679,7 +706,7 @@ export class LogCommands {
         chalk.cyan('Time'.padEnd(colWidths.time)) +
         chalk.gray(' │')
     );
-    console.log(sepLine);
+    originalConsole.log(sepLine);
 
     // Table rows
     for (const op of operations.slice(0, limit)) {
@@ -703,7 +730,7 @@ export class LogCommands {
         .substring(0, colWidths.time)
         .padEnd(colWidths.time);
 
-      console.log(
+      originalConsole.log(
         chalk.gray('│ ') +
           opId.padEnd(colWidths.operation) +
           chalk.gray(' │ ') +
@@ -724,10 +751,10 @@ export class LogCommands {
       );
     }
 
-    console.log(bottomBorder);
+    originalConsole.log(bottomBorder);
 
     if (operations.length > limit) {
-      console.log(
+      originalConsole.log(
         chalk.gray(
           `\n... and ${operations.length - limit} more operations (use --limit to see more)`
         )
@@ -735,7 +762,11 @@ export class LogCommands {
     }
   }
 
-  private static formatOperationsDetailed(operations: OperationLog[], limit: number = 50): void {
+  private static formatOperationsDetailed(
+    operations: OperationLog[],
+    limit: number = 50,
+    originalConsole: { log: typeof console.log } = console
+  ): void {
     if (operations.length === 0) {
       return;
     }
@@ -743,45 +774,49 @@ export class LogCommands {
     for (let i = 0; i < operations.length && i < limit; i++) {
       const op = operations[i];
 
-      console.log('');
-      console.log(chalk.cyan('━'.repeat(80)));
-      console.log(chalk.cyan(`📋 Operation ${i + 1}/${Math.min(operations.length, limit)}`));
-      console.log(chalk.gray('━'.repeat(80)));
+      originalConsole.log('');
+      originalConsole.log(chalk.cyan('━'.repeat(80)));
+      originalConsole.log(
+        chalk.cyan(`📋 Operation ${i + 1}/${Math.min(operations.length, limit)}`)
+      );
+      originalConsole.log(chalk.gray('━'.repeat(80)));
 
       // Basic Info
-      console.log(chalk.blue('🔹 Basic Information:'));
-      console.log(`   ID: ${chalk.yellow(op.operationId)}`);
-      console.log(`   Type: ${chalk.cyan(op.operationType)}`);
-      console.log(`   Status: ${this.formatStatus(op.status)}`);
-      console.log(`   Cycle ID: ${chalk.yellow(op.cycleId.toString())}`);
-      console.log(`   Trace ID: ${chalk.gray(op.traceId)}`);
+      originalConsole.log(chalk.blue('🔹 Basic Information:'));
+      originalConsole.log(`   ID: ${chalk.yellow(op.operationId)}`);
+      originalConsole.log(`   Type: ${chalk.cyan(op.operationType)}`);
+      originalConsole.log(`   Status: ${this.formatStatus(op.status)}`);
+      originalConsole.log(`   Cycle ID: ${chalk.yellow(op.cycleId.toString())}`);
+      originalConsole.log(`   Trace ID: ${chalk.gray(op.traceId)}`);
       if (op.symbol) {
-        console.log(`   Symbol: ${chalk.cyan(op.symbol)}`);
+        originalConsole.log(`   Symbol: ${chalk.cyan(op.symbol)}`);
       }
       if (op.parentOperationId) {
-        console.log(`   Parent: ${chalk.gray(this.truncateId(op.parentOperationId))}`);
+        originalConsole.log(`   Parent: ${chalk.gray(this.truncateId(op.parentOperationId))}`);
       }
 
       // Timing
-      console.log(chalk.blue('\n⏱️  Timing:'));
+      originalConsole.log(chalk.blue('\n⏱️  Timing:'));
       const startDate = new Date(op.startTime);
       const endDate = op.endTime ? new Date(op.endTime) : null;
-      console.log(
+      originalConsole.log(
         `   Start: ${chalk.cyan(this.formatTimestamp(op.startTime))} (${startDate.toISOString()})`
       );
       if (endDate) {
-        console.log(
+        originalConsole.log(
           `   End: ${chalk.cyan(this.formatTimestamp(op.endTime))} (${endDate.toISOString()})`
         );
-        console.log(`   Duration: ${chalk.yellow(this.formatDuration(op.endTime - op.startTime))}`);
+        originalConsole.log(
+          `   Duration: ${chalk.yellow(this.formatDuration(op.endTime - op.startTime))}`
+        );
       } else {
-        console.log(`   Status: ${chalk.yellow('Running...')}`);
+        originalConsole.log(`   Status: ${chalk.yellow('Running...')}`);
       }
 
       // Stages
       if (op.stages && op.stages.length > 0) {
-        console.log(chalk.blue('\n📊 Stages:'));
-        console.log(`   Total: ${chalk.cyan(op.stages.length.toString())}`);
+        originalConsole.log(chalk.blue('\n📊 Stages:'));
+        originalConsole.log(`   Total: ${chalk.cyan(op.stages.length.toString())}`);
         for (const stage of op.stages) {
           const stageStatus =
             stage.status === 'completed'
@@ -791,7 +826,9 @@ export class LogCommands {
                 : chalk.yellow('○');
           const stageDuration = stage.duration ? ` (${this.formatDuration(stage.duration)})` : '';
           const stageError = stage.error ? ` ${chalk.red('⚠ ' + stage.error.message)}` : '';
-          console.log(`   ${stageStatus} ${chalk.cyan(stage.stage)}${stageDuration}${stageError}`);
+          originalConsole.log(
+            `   ${stageStatus} ${chalk.cyan(stage.stage)}${stageDuration}${stageError}`
+          );
           // Show stage input/output if available
           if (stage.input && Object.keys(stage.input).length > 0) {
             const inputKeys = Object.keys(stage.input);
@@ -807,7 +844,7 @@ export class LogCommands {
               })
               .join(', ');
             if (inputPreview) {
-              console.log(
+              originalConsole.log(
                 chalk.gray(`      └─ ${inputPreview}${inputKeys.length > 2 ? '...' : ''}`)
               );
             }
@@ -826,7 +863,7 @@ export class LogCommands {
               })
               .join(', ');
             if (outputPreview) {
-              console.log(
+              originalConsole.log(
                 chalk.gray(`      └─ ${outputPreview}${outputKeys.length > 2 ? '...' : ''}`)
               );
             }
@@ -836,7 +873,7 @@ export class LogCommands {
 
       // Input/Output Summary
       if (op.input && Object.keys(op.input).length > 0) {
-        console.log(chalk.blue('\n📥 Input Summary:'));
+        originalConsole.log(chalk.blue('\n📥 Input Summary:'));
         const inputKeys = Object.keys(op.input);
         for (const key of inputKeys.slice(0, 5)) {
           const value = op.input[key];
@@ -844,15 +881,17 @@ export class LogCommands {
             typeof value === 'object'
               ? JSON.stringify(value).substring(0, 50) + '...'
               : String(value);
-          console.log(`   ${chalk.cyan(key)}: ${chalk.gray(displayValue.substring(0, 60))}`);
+          originalConsole.log(
+            `   ${chalk.cyan(key)}: ${chalk.gray(displayValue.substring(0, 60))}`
+          );
         }
         if (inputKeys.length > 5) {
-          console.log(chalk.gray(`   ... and ${inputKeys.length - 5} more fields`));
+          originalConsole.log(chalk.gray(`   ... and ${inputKeys.length - 5} more fields`));
         }
       }
 
       if (op.output && Object.keys(op.output).length > 0) {
-        console.log(chalk.blue('\n📤 Output Summary:'));
+        originalConsole.log(chalk.blue('\n📤 Output Summary:'));
         const outputKeys = Object.keys(op.output);
         for (const key of outputKeys.slice(0, 5)) {
           const value = op.output[key];
@@ -860,49 +899,55 @@ export class LogCommands {
             typeof value === 'object'
               ? JSON.stringify(value).substring(0, 50) + '...'
               : String(value);
-          console.log(`   ${chalk.cyan(key)}: ${chalk.gray(displayValue.substring(0, 60))}`);
+          originalConsole.log(
+            `   ${chalk.cyan(key)}: ${chalk.gray(displayValue.substring(0, 60))}`
+          );
         }
         if (outputKeys.length > 5) {
-          console.log(chalk.gray(`   ... and ${outputKeys.length - 5} more fields`));
+          originalConsole.log(chalk.gray(`   ... and ${outputKeys.length - 5} more fields`));
         }
       }
 
       // Error
       if (op.error) {
-        console.log(chalk.blue('\n❌ Error:'));
-        console.log(`   Type: ${chalk.red(op.error.type)}`);
-        console.log(`   Message: ${chalk.red(op.error.message)}`);
+        originalConsole.log(chalk.blue('\n❌ Error:'));
+        originalConsole.log(`   Type: ${chalk.red(op.error.type)}`);
+        originalConsole.log(`   Message: ${chalk.red(op.error.message)}`);
         if (op.error.stack) {
           const stackLines = op.error.stack.split('\n').slice(0, 3);
-          console.log(chalk.gray(`   Stack: ${stackLines.join(' → ')}`));
+          originalConsole.log(chalk.gray(`   Stack: ${stackLines.join(' → ')}`));
         }
       }
 
       // Metrics
       if (op.metrics) {
-        console.log(chalk.blue('\n📈 Metrics:'));
-        console.log(`   Duration: ${chalk.yellow(this.formatDuration(op.metrics.duration))}`);
+        originalConsole.log(chalk.blue('\n📈 Metrics:'));
+        originalConsole.log(
+          `   Duration: ${chalk.yellow(this.formatDuration(op.metrics.duration))}`
+        );
         if (op.metrics.resourceUsage) {
           if (op.metrics.resourceUsage.memory) {
-            console.log(
+            originalConsole.log(
               `   Memory: ${chalk.gray((op.metrics.resourceUsage.memory / 1024 / 1024).toFixed(2) + ' MB')}`
             );
           }
           if (op.metrics.resourceUsage.cpu) {
-            console.log(`   CPU: ${chalk.gray(op.metrics.resourceUsage.cpu.toFixed(2) + '%')}`);
+            originalConsole.log(
+              `   CPU: ${chalk.gray(op.metrics.resourceUsage.cpu.toFixed(2) + '%')}`
+            );
           }
         }
       }
 
       // Tags
       if (op.tags && op.tags.length > 0) {
-        console.log(chalk.blue('\n🏷️  Tags:'));
-        console.log(`   ${op.tags.map(t => chalk.gray(t)).join(', ')}`);
+        originalConsole.log(chalk.blue('\n🏷️  Tags:'));
+        originalConsole.log(`   ${op.tags.map(t => chalk.gray(t)).join(', ')}`);
       }
 
       // Decision Path (summary decisions - detailed info in Validation Checks)
       if (op.decisionPath && op.decisionPath.choices.length > 0) {
-        console.log(chalk.blue('\n🛤️  Decision Path:'));
+        originalConsole.log(chalk.blue('\n🛤️  Decision Path:'));
         for (const choice of op.decisionPath.choices) {
           const decisionColor =
             choice.confidence !== undefined && choice.threshold !== undefined
@@ -910,23 +955,27 @@ export class LogCommands {
                 ? 'green'
                 : 'yellow'
               : 'gray';
-          console.log(`   ${chalk.cyan(choice.step)}: ${chalk[decisionColor](choice.decision)}`);
+          originalConsole.log(
+            `   ${chalk.cyan(choice.step)}: ${chalk[decisionColor](choice.decision)}`
+          );
           // Display reason as single line (detailed info in Validation Checks)
           const reasonLines = choice.reason.split('\n').filter(line => line.trim());
           if (reasonLines.length > 0) {
-            console.log(`      └─ ${chalk.gray(reasonLines[0])}`);
+            originalConsole.log(`      └─ ${chalk.gray(reasonLines[0])}`);
             // Show additional summary lines if needed (max 2 more)
             for (const line of reasonLines.slice(1, 3)) {
               if (line.trim()) {
-                console.log(`      └─ ${chalk.gray(line.trim())}`);
+                originalConsole.log(`      └─ ${chalk.gray(line.trim())}`);
               }
             }
             if (reasonLines.length > 3) {
-              console.log(chalk.gray(`      └─ ... (see Validation Checks below for details)`));
+              originalConsole.log(
+                chalk.gray(`      └─ ... (see Validation Checks below for details)`)
+              );
             }
           }
           if (choice.confidence !== undefined) {
-            console.log(
+            originalConsole.log(
               `      └─ Confidence: ${chalk.yellow((choice.confidence * 100).toFixed(1) + '%')}`
             );
           }
@@ -938,19 +987,19 @@ export class LogCommands {
         for (const stage of op.stages) {
           // Stage validation checks (detailed verification information)
           if (stage.validationChecks && stage.validationChecks.length > 0) {
-            console.log(chalk.blue(`\n🔍 Validation Checks (${stage.stage}):`));
+            originalConsole.log(chalk.blue(`\n🔍 Validation Checks (${stage.stage}):`));
             for (const check of stage.validationChecks) {
               const checkStatus = check.passed ? chalk.green('✓') : chalk.red('✗');
-              console.log(`   ${checkStatus} ${chalk.cyan(check.name)}`);
+              originalConsole.log(`   ${checkStatus} ${chalk.cyan(check.name)}`);
               if (check.reason) {
-                console.log(`      └─ ${chalk.gray(check.reason)}`);
+                originalConsole.log(`      └─ ${chalk.gray(check.reason)}`);
               }
               if (check.threshold !== undefined && check.actual !== undefined) {
                 const thresholdStatus =
                   check.passed || (check.threshold && check.actual <= check.threshold)
                     ? 'green'
                     : 'red';
-                console.log(
+                originalConsole.log(
                   `      └─ Actual: ${chalk.yellow(check.actual.toString())}, Threshold: ${chalk[thresholdStatus](check.threshold.toString())}`
                 );
               }
@@ -958,7 +1007,7 @@ export class LogCommands {
               if (check.name === 'execution_price_validation' && check.details) {
                 const details = check.details;
                 if (details.expectedPrice !== undefined && details.actualPrice !== undefined) {
-                  console.log(
+                  originalConsole.log(
                     `      └─ Expected Price: ${chalk.cyan('$' + details.expectedPrice.toFixed(2))}, Actual Price: ${chalk.yellow('$' + details.actualPrice.toFixed(2))}`
                   );
                 }
@@ -970,21 +1019,23 @@ export class LogCommands {
                         ? 'yellow'
                         : 'red';
                   // slippage is already in percentage (0-100), not decimal (0-1)
-                  console.log(
+                  originalConsole.log(
                     `      └─ Slippage: ${chalk[slippageColor](Math.abs(details.slippage).toFixed(2) + '%')}`
                   );
                 }
                 if (details.orderId) {
-                  console.log(`      └─ Order ID: ${chalk.gray(details.orderId)}`);
+                  originalConsole.log(`      └─ Order ID: ${chalk.gray(details.orderId)}`);
                 }
                 if (details.realizedPnl !== undefined) {
                   const pnlColor = details.realizedPnl >= 0 ? 'green' : 'red';
-                  console.log(
+                  originalConsole.log(
                     `      └─ Realized P&L: ${chalk[pnlColor]('$' + details.realizedPnl.toFixed(2))}`
                   );
                 }
                 if (details.fees !== undefined) {
-                  console.log(`      └─ Fees: ${chalk.gray('$' + details.fees.toFixed(2))}`);
+                  originalConsole.log(
+                    `      └─ Fees: ${chalk.gray('$' + details.fees.toFixed(2))}`
+                  );
                 }
                 if (details.sizing) {
                   const sizing = details.sizing as {
@@ -993,7 +1044,7 @@ export class LogCommands {
                     riskAmount?: number;
                   };
                   if (sizing.suggestedSize !== undefined) {
-                    console.log(
+                    originalConsole.log(
                       `      └─ Size: ${chalk.cyan(sizing.suggestedSize.toFixed(4))}, Leverage: ${chalk.cyan((sizing.leverage || 1).toString() + 'x')}, Risk: ${chalk.cyan('$' + (sizing.riskAmount || 0).toFixed(2))}`
                     );
                   }
@@ -1001,33 +1052,35 @@ export class LogCommands {
               } else if (check.name === 'position_sizing' && check.details) {
                 const details = check.details;
                 if (details.suggestedSize !== undefined) {
-                  console.log(
+                  originalConsole.log(
                     `      └─ Suggested Size: ${chalk.cyan(details.suggestedSize.toString())}`
                   );
                 }
                 if (details.maxSize !== undefined) {
-                  console.log(`      └─ Max Size: ${chalk.cyan(details.maxSize.toString())}`);
+                  originalConsole.log(
+                    `      └─ Max Size: ${chalk.cyan(details.maxSize.toString())}`
+                  );
                 }
                 if (details.riskAmount !== undefined) {
-                  console.log(
+                  originalConsole.log(
                     `      └─ Risk Amount: ${chalk.cyan('$' + details.riskAmount.toFixed(2))}`
                   );
                 }
                 if (details.leverage !== undefined) {
-                  console.log(
+                  originalConsole.log(
                     `      └─ Leverage: ${chalk.cyan(details.leverage.toString() + 'x')}`
                   );
                 }
               } else if (check.name === 'signal_validation' && check.details) {
                 const details = check.details;
                 if (details.coin) {
-                  console.log(`      └─ Coin: ${chalk.cyan(details.coin)}`);
+                  originalConsole.log(`      └─ Coin: ${chalk.cyan(details.coin)}`);
                 }
                 if (details.action) {
-                  console.log(`      └─ Action: ${chalk.cyan(details.action)}`);
+                  originalConsole.log(`      └─ Action: ${chalk.cyan(details.action)}`);
                 }
                 if (details.confidence !== undefined) {
-                  console.log(
+                  originalConsole.log(
                     `      └─ Confidence: ${chalk.yellow((details.confidence * 100).toFixed(1) + '%')}`
                   );
                 }
@@ -1046,7 +1099,7 @@ export class LogCommands {
                   })
                   .join(', ');
                 if (detailPreview) {
-                  console.log(
+                  originalConsole.log(
                     chalk.gray(`      └─ ${detailPreview}${detailKeys.length > 3 ? '...' : ''}`)
                   );
                 }
@@ -1056,15 +1109,15 @@ export class LogCommands {
 
           // Stage decision metrics (statistical information for decision making)
           if (stage.decisionMetrics) {
-            console.log(chalk.blue(`\n🎯 Decision Metrics (${stage.stage}):`));
-            console.log(
+            originalConsole.log(chalk.blue(`\n🎯 Decision Metrics (${stage.stage}):`));
+            originalConsole.log(
               `   Confidence: ${chalk.yellow((stage.decisionMetrics.confidence * 100).toFixed(1) + '%')}`
             );
-            console.log(
+            originalConsole.log(
               `   Threshold: ${chalk.cyan((stage.decisionMetrics.threshold * 100).toFixed(1) + '%')}`
             );
             if (stage.decisionMetrics.reasoning) {
-              console.log(`   Reasoning: ${chalk.gray(stage.decisionMetrics.reasoning)}`);
+              originalConsole.log(`   Reasoning: ${chalk.gray(stage.decisionMetrics.reasoning)}`);
             }
             if (
               stage.decisionMetrics.factors &&
@@ -1083,7 +1136,7 @@ export class LogCommands {
                 })
                 .join(', ');
               if (factorPreview) {
-                console.log(
+                originalConsole.log(
                   chalk.gray(`   Factors: ${factorPreview}${factorKeys.length > 3 ? '...' : ''}`)
                 );
               }
@@ -1092,18 +1145,20 @@ export class LogCommands {
 
           // Stage data quality
           if (stage.dataQuality) {
-            console.log(chalk.blue(`\n📊 Data Quality (${stage.stage}):`));
-            console.log(
+            originalConsole.log(chalk.blue(`\n📊 Data Quality (${stage.stage}):`));
+            originalConsole.log(
               `   Freshness: ${chalk.yellow(this.formatDuration(stage.dataQuality.freshness))}`
             );
-            console.log(
+            originalConsole.log(
               `   Stale: ${stage.dataQuality.isStale ? chalk.red('Yes') : chalk.green('No')}`
             );
-            console.log(
+            originalConsole.log(
               `   Completeness: ${chalk.yellow((stage.dataQuality.completeness * 100).toFixed(1) + '%')}`
             );
             if (stage.dataQuality.gapsCount > 0) {
-              console.log(`   Gaps: ${chalk.yellow(stage.dataQuality.gapsCount.toString())}`);
+              originalConsole.log(
+                `   Gaps: ${chalk.yellow(stage.dataQuality.gapsCount.toString())}`
+              );
             }
           }
         }
@@ -1111,11 +1166,11 @@ export class LogCommands {
 
       // Validation Results (summary - aggregation of all stage-level Validation Checks)
       if (op.validationResults) {
-        console.log(chalk.blue('\n✅ Validation Results (Summary):'));
+        originalConsole.log(chalk.blue('\n✅ Validation Results (Summary):'));
         const overallStatus = op.validationResults.passed
           ? chalk.green('PASSED')
           : chalk.red('FAILED');
-        console.log(`   Overall: ${overallStatus}`);
+        originalConsole.log(`   Overall: ${overallStatus}`);
 
         // Group checks by name for summary
         const checkCounts: Record<string, { passed: number; failed: number }> = {};
@@ -1135,7 +1190,7 @@ export class LogCommands {
           const total = counts.passed + counts.failed;
           if (total > 0) {
             const status = counts.failed === 0 ? chalk.green('✓') : chalk.yellow('⚠');
-            console.log(
+            originalConsole.log(
               `   ${status} ${chalk.cyan(checkName)}: ${chalk.green(counts.passed.toString())} passed${counts.failed > 0 ? `, ${chalk.red(counts.failed.toString())} failed` : ''} (${total} total)`
             );
           }
@@ -1147,14 +1202,14 @@ export class LogCommands {
         const hasStageDataQuality = op.stages?.some(s => s.dataQuality) ?? false;
         // Only show operation-level if there's no stage-level data quality, or if it's different
         if (!hasStageDataQuality || (op.dataQuality.gaps && op.dataQuality.gaps.length > 0)) {
-          console.log(chalk.blue('\n📊 Data Quality (Operation-Level):'));
-          console.log(
+          originalConsole.log(chalk.blue('\n📊 Data Quality (Operation-Level):'));
+          originalConsole.log(
             `   Freshness: ${chalk.yellow(this.formatDuration(op.dataQuality.freshness.ageMs))}`
           );
-          console.log(
+          originalConsole.log(
             `   Stale: ${op.dataQuality.freshness.isStale ? chalk.red('Yes') : chalk.green('No')}`
           );
-          console.log(
+          originalConsole.log(
             `   Completeness: ${chalk.yellow(
               (
                 (op.dataQuality.completeness.actualItems /
@@ -1164,16 +1219,16 @@ export class LogCommands {
             )} (${op.dataQuality.completeness.actualItems}/${op.dataQuality.completeness.expectedItems})`
           );
           if (op.dataQuality.gaps && op.dataQuality.gaps.length > 0) {
-            console.log(`   Gaps: ${chalk.yellow(op.dataQuality.gaps.length.toString())}`);
+            originalConsole.log(`   Gaps: ${chalk.yellow(op.dataQuality.gaps.length.toString())}`);
             for (const gap of op.dataQuality.gaps.slice(0, 3)) {
               const fromDate = new Date(gap.missingFrom).toISOString();
               const toDate = new Date(gap.missingTo).toISOString();
-              console.log(
+              originalConsole.log(
                 `      └─ ${chalk.gray(gap.symbol)}/${chalk.gray(gap.timeframe)}: ${chalk.gray(fromDate)} → ${chalk.gray(toDate)}`
               );
             }
             if (op.dataQuality.gaps.length > 3) {
-              console.log(
+              originalConsole.log(
                 chalk.gray(`      └─ ... and ${op.dataQuality.gaps.length - 3} more gaps`)
               );
             }
@@ -1182,13 +1237,13 @@ export class LogCommands {
       }
 
       if (i < Math.min(operations.length, limit) - 1) {
-        console.log('');
+        originalConsole.log('');
       }
     }
 
     if (operations.length > limit) {
-      console.log('');
-      console.log(
+      originalConsole.log('');
+      originalConsole.log(
         chalk.gray(`... and ${operations.length - limit} more operations (use --limit to see more)`)
       );
     }
@@ -1256,15 +1311,16 @@ export class LogCommands {
     grep?: string;
     format?: string;
   }): Promise<void> {
+    const query = QueryInterface.getInstance();
+    const logger = UnifiedLogger.getInstance();
+
+    // Get original console to bypass interception when displaying logs
+    const originalConsole = logger.getOriginalConsole();
+
+    // Parse and validate level
+    const level = this.parseLogLevel(options.level);
+
     try {
-      const query = QueryInterface.getInstance();
-
-      // Parse level
-      const level =
-        options.level && ['info', 'warn', 'error', 'debug'].includes(options.level.toLowerCase())
-          ? (options.level.toLowerCase() as 'info' | 'warn' | 'error' | 'debug')
-          : undefined;
-
       // Query text logs
       const result = await query.queryTextLogs({
         context: options.context,
@@ -1273,114 +1329,171 @@ export class LogCommands {
         offset: 0,
       });
 
-      // Filter by grep pattern if specified
-      let logs = result.logs;
-      if (options.grep) {
-        const pattern = new RegExp(options.grep, 'i');
-        logs = logs.filter(log => pattern.test(log.message) || pattern.test(log.context));
-      }
+      // Filter logs by grep pattern if specified
+      const logs = this.filterLogsByGrep(result.logs, options.grep);
 
       // Display logs
       if (logs.length === 0) {
-        console.log(chalk.yellow('⚠️  No console output found matching the criteria'));
+        originalConsole.log(chalk.yellow('⚠️  No console output found matching the criteria'));
         return;
       }
 
-      // Logs are already sorted by timestamp DESC (newest first)
-      // For display, we want oldest first so they appear in chronological order
-      const sortedLogs = [...logs].reverse();
+      // Display initial logs (sorted chronologically)
+      this.displayLogs(logs, originalConsole, options.format);
 
-      for (const log of sortedLogs) {
-        if (options.format === 'raw') {
-          console.log(log.message);
-        } else {
-          // Use formatted message (with ANSI codes) for display
-          console.log(log.formattedMessage);
-        }
-      }
-
-      // Follow mode: Poll for new logs
-      if (options.follow) {
-        // In follow mode, wrap polling logic in try-finally to ensure cleanup on errors
-        let pollInterval: NodeJS.Timeout | undefined;
-        try {
-          console.log(chalk.gray('\n--- Following logs (press Ctrl+C to stop) ---\n'));
-
-          let lastTimestamp = logs.length > 0 ? logs[0].timestamp : Date.now();
-
-          pollInterval = setInterval(async () => {
-            try {
-              const newResult = await query.queryTextLogs({
-                context: options.context,
-                level,
-                since: lastTimestamp + 1, // Only get logs newer than last seen
-                limit: 100,
-              });
-
-              let newLogs = newResult.logs;
-              if (options.grep) {
-                const pattern = new RegExp(options.grep, 'i');
-                newLogs = newLogs.filter(
-                  log => pattern.test(log.message) || pattern.test(log.context)
-                );
-              }
-
-              // Sort by timestamp ascending (oldest first)
-              newLogs.sort((a, b) => a.timestamp - b.timestamp);
-
-              for (const log of newLogs) {
-                if (options.format === 'raw') {
-                  console.log(log.message);
-                } else {
-                  console.log(log.formattedMessage);
-                }
-                lastTimestamp = Math.max(lastTimestamp, log.timestamp);
-              }
-            } catch (error) {
-              console.error(chalk.red('Error polling logs:'), error);
-            }
-          }, 1000); // Poll every second
-
-          // Handle Ctrl+C
-          const sigintHandler = () => {
-            if (pollInterval) {
-              clearInterval(pollInterval);
-            }
-            this.cleanupResources();
-            console.log(chalk.yellow('\n\nStopped following logs.'));
-            process.exit(0);
-          };
-          process.on('SIGINT', sigintHandler);
-
-          // Keep process alive
-          await new Promise(() => {
-            // Never resolves, keeps process alive until SIGINT or error
-          });
-        } catch (error) {
-          // Handle any errors that occur during follow mode setup or execution
-          console.error(chalk.red('Error in follow mode:'), error);
-          throw error;
-        } finally {
-          // Ensure cleanup happens even if an error occurs
-          if (pollInterval) {
-            clearInterval(pollInterval);
-          }
-          // Cleanup resources (idempotent, safe to call multiple times)
-          this.cleanupResources();
-        }
-      } else {
-        console.log(
+      // Show info message for non-follow mode
+      if (!options.follow) {
+        originalConsole.log(
           chalk.gray(
             `\n--- Showing last ${logs.length} log entries (use --follow for real-time updates) ---`
           )
         );
       }
+
+      // Follow mode: Poll for new logs
+      if (options.follow) {
+        await this.startFollowMode({
+          query,
+          originalConsole,
+          options: {
+            context: options.context,
+            level,
+            grep: options.grep,
+            format: options.format,
+          },
+          initialTimestamp: logs.length > 0 ? logs[0].timestamp : Date.now(),
+        });
+      }
     } finally {
       // Always cleanup resources before exiting (only for non-follow mode)
-      // In follow mode, cleanup already happened in the inner finally block
+      // In follow mode, cleanup already happened in startFollowMode
       if (!options.follow) {
         this.cleanupResources();
       }
+    }
+  }
+
+  /**
+   * Parse and validate log level option
+   */
+  private static parseLogLevel(level?: string): 'info' | 'warn' | 'error' | 'debug' | undefined {
+    if (!level) {
+      return undefined;
+    }
+    const normalized = level.toLowerCase();
+    if (['info', 'warn', 'error', 'debug'].includes(normalized)) {
+      return normalized as 'info' | 'warn' | 'error' | 'debug';
+    }
+    return undefined;
+  }
+
+  /**
+   * Filter logs by grep pattern
+   */
+  private static filterLogsByGrep<T extends { message: string; context: string }>(
+    logs: T[],
+    grep?: string
+  ): T[] {
+    if (!grep) {
+      return logs;
+    }
+    const pattern = new RegExp(grep, 'i');
+    return logs.filter(log => pattern.test(log.message) || pattern.test(log.context));
+  }
+
+  /**
+   * Display logs to console
+   */
+  private static displayLogs(
+    logs: Array<{ message: string; formattedMessage?: string }>,
+    originalConsole: { log: typeof console.log },
+    format?: string
+  ): void {
+    // Logs are already sorted by timestamp DESC (newest first)
+    // For display, we want oldest first so they appear in chronological order
+    const sortedLogs = [...logs].reverse();
+
+    for (const log of sortedLogs) {
+      if (format === 'raw') {
+        originalConsole.log(log.message);
+      } else {
+        // Use formatted message (with ANSI codes) for display
+        originalConsole.log(log.formattedMessage || log.message);
+      }
+    }
+  }
+
+  /**
+   * Start follow mode to poll for new logs
+   */
+  private static async startFollowMode(options: {
+    query: QueryInterface;
+    originalConsole: { log: typeof console.log; error: typeof console.error };
+    options: {
+      context?: string;
+      level?: 'info' | 'warn' | 'error' | 'debug';
+      grep?: string;
+      format?: string;
+    };
+    initialTimestamp: number;
+  }): Promise<void> {
+    const { query, originalConsole, options: queryOptions, initialTimestamp } = options;
+    let pollInterval: NodeJS.Timeout | undefined;
+    let lastTimestamp = initialTimestamp;
+
+    try {
+      originalConsole.log(chalk.gray('\n--- Following logs (press Ctrl+C to stop) ---\n'));
+
+      pollInterval = setInterval(async () => {
+        try {
+          const newResult = await query.queryTextLogs({
+            context: queryOptions.context,
+            level: queryOptions.level,
+            since: lastTimestamp + 1, // Only get logs newer than last seen
+            limit: 100,
+          });
+
+          const newLogs = this.filterLogsByGrep(newResult.logs, queryOptions.grep);
+
+          // Sort by timestamp ascending (oldest first)
+          newLogs.sort((a, b) => a.timestamp - b.timestamp);
+
+          // Display new logs and update timestamp
+          for (const log of newLogs) {
+            this.displayLogs([log], originalConsole, queryOptions.format);
+            lastTimestamp = Math.max(lastTimestamp, log.timestamp);
+          }
+        } catch (error) {
+          originalConsole.error(chalk.red('Error polling logs:'), error);
+        }
+      }, 1000); // Poll every second
+
+      // Handle Ctrl+C
+      const sigintHandler = () => {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+        }
+        this.cleanupResources();
+        originalConsole.log(chalk.yellow('\n\nStopped following logs.'));
+        process.exit(0);
+      };
+      process.on('SIGINT', sigintHandler);
+
+      // Keep process alive
+      await new Promise(() => {
+        // Never resolves, keeps process alive until SIGINT or error
+      });
+    } catch (error) {
+      // Handle any errors that occur during follow mode setup or execution
+      originalConsole.error(chalk.red('Error in follow mode:'), error);
+      throw error;
+    } finally {
+      // Ensure cleanup happens even if an error occurs
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+      // Cleanup resources (idempotent, safe to call multiple times)
+      this.cleanupResources();
     }
   }
 

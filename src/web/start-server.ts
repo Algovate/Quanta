@@ -1,8 +1,7 @@
 import { APIServer } from './server.js';
-import { UnifiedLogger } from '../logging/index.js';
+import { createLogger } from './utils/logger.js';
 
-const logger = UnifiedLogger.getInstance();
-const loggerContext = 'Server';
+const { logger, context: loggerContext } = createLogger('Server');
 
 const port = parseInt(process.env.PORT || '3001', 10);
 const server = new APIServer(port);

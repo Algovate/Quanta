@@ -6,9 +6,10 @@ import { StreamingIngestion, type StreamingConfig } from '../data/index.js';
 import type { Exchange } from '../exchange/types.js';
 import type { MarketDataProvider } from '../data/market.js';
 import type { OpenRouterClient } from '../ai/agent.js';
-import { UnifiedLogger } from '../logging/index.js';
+import type { UnifiedLogger } from '../logging/index.js';
 import type { OrderEvent, RiskSnapshot, SignalEvent } from './types.js';
 import { EventBus } from '../core/event-bus.js';
+import { createLogger } from './utils/logger.js';
 
 export interface TradingState {
   isRunning: boolean;
@@ -32,7 +33,7 @@ export class TradingManager extends EventEmitter {
   private workflow: TradingWorkflow | null = null;
   private state: TradingState;
   private logger: UnifiedLogger;
-  private readonly context = 'TradingManager';
+  private readonly context: string;
   private signals: SignalEvent[] = [];
   private orders: OrderEvent[] = [];
   private equityHistory: Array<{ timestamp: number; equity: number }> = [];
@@ -51,7 +52,9 @@ export class TradingManager extends EventEmitter {
 
   private constructor() {
     super();
-    this.logger = UnifiedLogger.getInstance();
+    const { logger, context } = createLogger('TradingManager');
+    this.logger = logger;
+    this.context = context;
     this.state = {
       isRunning: false,
       cycleCount: 0,

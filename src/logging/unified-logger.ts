@@ -6,6 +6,7 @@
  * Metrics Collector, State Snapshot, Sampler, and Storage Layer.
  */
 
+import { AsyncLocalStorage } from 'async_hooks';
 import { OperationLogger } from './operation-logger.js';
 import { ErrorAggregator } from './error-aggregator.js';
 import { MetricsCollector } from './metrics-collector.js';
@@ -26,10 +27,52 @@ import type {
   DataQualityMetrics,
   DecisionMetrics,
   TextLog,
+  ExecutionDetails,
+  APICallLog,
 } from './types.js';
+import { normalizeError } from './utils.js';
+
+/**
+ * Operation context tracked via AsyncLocalStorage
+ */
+interface OperationContext {
+  operationId?: string;
+  traceId?: string;
+  cycleId?: number;
+}
 
 export class UnifiedLogger {
   private static instance: UnifiedLogger;
+
+  // Constants
+  private static readonly OPERATION_CONTEXT_MAP: Record<string, string> = {
+    trading_cycle: 'TradingCycle',
+    signal_generation: 'AISignal',
+    order_execution: 'Execution',
+    position_monitoring: 'Account',
+    account_sync: 'Account',
+    market_data: 'MarketData',
+  };
+
+  private static readonly SENSITIVE_HEADER_KEYS = [
+    'authorization',
+    'api-key',
+    'api-secret',
+    'x-api-key',
+    'cookie',
+    'token',
+  ];
+
+  private static readonly SENSITIVE_BODY_KEYS = [
+    'password',
+    'secret',
+    'apiKey',
+    'apiSecret',
+    'token',
+    'authorization',
+  ];
+
+  // Components
   private operationLogger: OperationLogger;
   private errorAggregator: ErrorAggregator;
   private metricsCollector: MetricsCollector;
@@ -37,6 +80,8 @@ export class UnifiedLogger {
   private sampler: Sampler;
   private storageLayer: StorageLayer;
   private storageOptimizer: StorageOptimizer;
+
+  // State
   private initialized: boolean = false;
   private consoleInterceptionEnabled: boolean = false;
   private originalConsole: {
@@ -45,6 +90,7 @@ export class UnifiedLogger {
     error: typeof console.error;
   };
   private isLoggingInternally: boolean = false;
+  private operationContextStorage: AsyncLocalStorage<OperationContext>;
 
   private constructor() {
     this.operationLogger = OperationLogger.getInstance();
@@ -54,6 +100,7 @@ export class UnifiedLogger {
     this.sampler = Sampler.getInstance();
     this.storageLayer = StorageLayer.getInstance();
     this.storageOptimizer = StorageOptimizer.getInstance();
+    this.operationContextStorage = new AsyncLocalStorage<OperationContext>();
 
     // Store original console methods
     this.originalConsole = {
@@ -148,94 +195,45 @@ export class UnifiedLogger {
   }
 
   /**
+   * Generate a unique log ID
+   */
+  private generateLogId(): string {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Get operation context from AsyncLocalStorage
+   */
+  private getOperationContext(): OperationContext | undefined {
+    return this.operationContextStorage.getStore();
+  }
+
+  /**
+   * Resolve context from operation type
+   */
+  private resolveContextFromOperation(operationType: string): string {
+    return UnifiedLogger.OPERATION_CONTEXT_MAP[operationType] || 'Console';
+  }
+
+  /**
    * Capture console output to text logs
    */
   private captureConsoleOutput(level: 'info' | 'warn' | 'error', message: string): void {
-    // Determine context based on message content
-    let context = 'Console';
-    const msg = message.toLowerCase();
-
-    // Trading cycle context
-    if (
-      msg.includes('cycle') ||
-      msg.includes('🔄') ||
-      msg.includes('cycle summary') ||
-      msg.includes('next cycle')
-    ) {
-      context = 'TradingCycle';
-    }
-    // Market data context
-    else if (
-      msg.includes('market data') ||
-      msg.includes('fetched') ||
-      msg.includes('candlestick') ||
-      msg.includes('ticker') ||
-      msg.includes('indicators') ||
-      msg.includes('ema') ||
-      msg.includes('rsi') ||
-      msg.includes('macd')
-    ) {
-      context = 'MarketData';
-    }
-    // AI signal context
-    else if (
-      msg.includes('ai signal') ||
-      msg.includes('generated') ||
-      msg.includes('signals:') ||
-      msg.includes('long') ||
-      msg.includes('short') ||
-      msg.includes('confidence:') ||
-      msg.includes('reasoning:')
-    ) {
-      context = 'AISignal';
-    }
-    // Execution context
-    else if (
-      msg.includes('executed') ||
-      msg.includes('position') ||
-      msg.includes('order') ||
-      msg.includes('leverage') ||
-      msg.includes('margin') ||
-      msg.includes('notional')
-    ) {
-      context = 'Execution';
-    }
-    // Account context
-    else if (
-      msg.includes('account') ||
-      msg.includes('equity') ||
-      msg.includes('available') ||
-      msg.includes('used') ||
-      msg.includes('p&l') ||
-      msg.includes('unrealized') ||
-      msg.includes('realized')
-    ) {
-      context = 'Account';
-    }
-    // Risk context
-    else if (
-      msg.includes('risk') ||
-      msg.includes('margin usage') ||
-      msg.includes('diversification') ||
-      msg.includes('correlation') ||
-      msg.includes('leverage') ||
-      msg.includes('exposure')
-    ) {
-      context = 'Risk';
-    }
-
-    // Store in tiered storage (skip console output to avoid recursion)
-    const logId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const plainMessage = this.stripAnsiCodes(message);
+    const opContext = this.getOperationContext();
+    const context = this.determineContext(opContext);
+    const cycleId = opContext?.cycleId ?? 0;
 
     const textLog: TextLog = {
-      logId,
+      logId: this.generateLogId(),
       timestamp: Date.now(),
       level,
       context,
-      message: plainMessage,
-      formattedMessage: message, // Keep ANSI codes for display
+      message: this.stripAnsiCodes(message),
+      formattedMessage: message, // Optional: Keep ANSI codes for display (not stored in DB)
       metadata: {},
+      cycleId,
+      operationId: opContext?.operationId,
+      traceId: opContext?.traceId,
     };
 
     // Store asynchronously
@@ -243,6 +241,22 @@ export class UnifiedLogger {
       // Use original console to avoid recursion
       this.originalConsole.error('Failed to store text log:', err);
     });
+  }
+
+  /**
+   * Determine context from operation context
+   */
+  private determineContext(opContext?: OperationContext): string {
+    if (!opContext?.operationId) {
+      return 'Console';
+    }
+
+    const operation = this.operationLogger.getOperation(opContext.operationId);
+    if (!operation) {
+      return 'Console';
+    }
+
+    return this.resolveContextFromOperation(operation.operationType);
   }
 
   /**
@@ -320,7 +334,8 @@ export class UnifiedLogger {
       // Update and store metrics snapshot
       const metricsSnapshot = this.metricsCollector.createSnapshot(snapshot.cycleId);
       this.storageLayer.storeMetricsSnapshot(metricsSnapshot).catch(err => {
-        console.error('Error storing metrics snapshot:', err);
+        // Use original console to avoid recursion
+        this.originalConsole.error('Error storing metrics snapshot:', err);
       });
     });
   }
@@ -345,7 +360,23 @@ export class UnifiedLogger {
     input: Record<string, any>,
     symbol?: string
   ): string {
-    return this.operationLogger.startOperation(traceContext, operationType, input, symbol);
+    const operationId = this.operationLogger.startOperation(
+      traceContext,
+      operationType,
+      input,
+      symbol
+    );
+
+    // Set operation context in AsyncLocalStorage for this operation
+    // Note: The context will be available in all async callbacks within the same async context
+    // The caller should run the operation within AsyncLocalStorage.run() if they want context tracking
+    this.operationContextStorage.enterWith({
+      operationId,
+      traceId: traceContext.traceId,
+      cycleId: traceContext.cycleId,
+    });
+
+    return operationId;
   }
 
   /**
@@ -384,6 +415,154 @@ export class UnifiedLogger {
    */
   recordAPILatency(endpoint: string, latency: number): void {
     this.metricsCollector.recordAPILatency(endpoint, latency);
+  }
+
+  /**
+   * Record full API call details (request/response)
+   */
+  recordAPICall(
+    endpoint: string,
+    method: string,
+    request: {
+      url: string;
+      headers?: Record<string, string>;
+      body?: Record<string, any>;
+      params?: Record<string, any>;
+    },
+    response: {
+      status?: number;
+      statusText?: string;
+      headers?: Record<string, string>;
+      body?: Record<string, any>;
+      data?: any;
+    },
+    latency: number,
+    error?: Error
+  ): void {
+    // Record latency for metrics
+    this.metricsCollector.recordAPILatency(endpoint, latency);
+
+    const opContext = this.getOperationContext();
+    if (!opContext?.operationId) {
+      return;
+    }
+
+    // Record full API call details as operation stage metadata
+    const apiCallLog: APICallLog = {
+      apiCallId: this.generateLogId(),
+      timestamp: Date.now(),
+      endpoint,
+      method,
+      request: {
+        url: request.url,
+        headers: this.sanitizeHeaders(request.headers),
+        body: request.body ? this.sanitizeBody(request.body) : undefined,
+        params: request.params,
+      },
+      response: {
+        status: response.status,
+        statusText: response.statusText,
+        headers: this.sanitizeHeaders(response.headers),
+        body: response.body ? this.sanitizeBody(response.body) : undefined,
+        data: response.data ? this.sanitizeBody(response.data) : undefined,
+      },
+      latency,
+      error: error ? normalizeError(error) : undefined,
+      cycleId: opContext.cycleId ?? 0,
+      operationId: opContext.operationId,
+      traceId: opContext.traceId,
+    };
+
+    // Store as metadata in the current operation stage
+    this.addAPICallToCurrentStage(opContext.operationId, apiCallLog);
+  }
+
+  /**
+   * Add API call log to the current operation stage
+   */
+  private addAPICallToCurrentStage(operationId: string, apiCallLog: APICallLog): void {
+    const operation = this.operationLogger.getOperation(operationId);
+    if (!operation?.stages.length) {
+      return;
+    }
+
+    const currentStage = operation.stages[operation.stages.length - 1];
+    if (!currentStage) {
+      return;
+    }
+
+    currentStage.metadata = {
+      ...(currentStage.metadata || {}),
+      apiCalls: [...(currentStage.metadata?.apiCalls || []), apiCallLog],
+    };
+  }
+
+  /**
+   * Check if a key matches any sensitive key pattern
+   * Uses exact match or prefix matching to avoid false positives
+   */
+  private isSensitiveKey(key: string, sensitiveKeys: readonly string[]): boolean {
+    const lowerKey = key.toLowerCase();
+    return sensitiveKeys.some(sk => {
+      // Exact match
+      if (lowerKey === sk) {
+        return true;
+      }
+      // Prefix match with separator (e.g., "authorization", "x-api-key")
+      if (lowerKey.startsWith(`${sk}-`) || lowerKey.startsWith(`${sk}_`)) {
+        return true;
+      }
+      // Contains as word (for headers like "X-Authorization-Header")
+      // This is more permissive but catches cases like "authorization-token"
+      if (lowerKey.includes(`-${sk}-`) || lowerKey.includes(`_${sk}_`)) {
+        return true;
+      }
+      return false;
+    });
+  }
+
+  /**
+   * Sanitize headers to remove sensitive information
+   */
+  private sanitizeHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
+    if (!headers) {
+      return undefined;
+    }
+
+    const sanitized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      sanitized[key] = this.isSensitiveKey(key, UnifiedLogger.SENSITIVE_HEADER_KEYS)
+        ? '[REDACTED]'
+        : value;
+    }
+
+    return sanitized;
+  }
+
+  /**
+   * Sanitize request/response body to remove sensitive information
+   */
+  private sanitizeBody(body: Record<string, any> | any[]): any {
+    if (Array.isArray(body)) {
+      return body.map(item => this.sanitizeBody(item));
+    }
+
+    if (typeof body !== 'object' || body === null) {
+      return body;
+    }
+
+    const sanitized: Record<string, any> = {};
+    for (const [key, value] of Object.entries(body)) {
+      if (this.isSensitiveKey(key, UnifiedLogger.SENSITIVE_BODY_KEYS)) {
+        sanitized[key] = '[REDACTED]';
+      } else if (typeof value === 'object' && value !== null) {
+        sanitized[key] = this.sanitizeBody(value);
+      } else {
+        sanitized[key] = value;
+      }
+    }
+
+    return sanitized;
   }
 
   /**
@@ -571,6 +750,17 @@ export class UnifiedLogger {
   }
 
   /**
+   * Record execution details to a stage
+   */
+  recordExecutionDetails(
+    operationId: string,
+    stageName: string,
+    execution: ExecutionDetails
+  ): void {
+    this.operationLogger.addExecutionDetails(operationId, stageName, execution);
+  }
+
+  /**
    * Record validation results to an operation
    */
   recordValidationResult(operationId: string, validationResults: ValidationResults): void {
@@ -698,19 +888,20 @@ export class UnifiedLogger {
     metadata?: Record<string, any>,
     context?: string
   ): void {
-    const logId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    // Extract plain text from formatted message (strip ANSI codes)
-    const plainMessage = this.stripAnsiCodes(message);
+    const opContext = this.getOperationContext();
+    const cycleId = opContext?.cycleId ?? 0;
 
     const textLog: TextLog = {
-      logId,
+      logId: this.generateLogId(),
       timestamp: Date.now(),
       level,
       context: context || 'UnifiedLogger',
-      message: plainMessage, // Plain text for querying
-      formattedMessage: message, // Formatted with ANSI codes for console display
+      message: this.stripAnsiCodes(message), // Plain text for querying
+      formattedMessage: message, // Optional: formatted with ANSI codes (not stored in DB)
       metadata: metadata || {},
+      cycleId,
+      operationId: opContext?.operationId,
+      traceId: opContext?.traceId,
     };
 
     // Store in tiered storage

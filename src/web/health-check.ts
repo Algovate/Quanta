@@ -1,7 +1,8 @@
 import { Exchange } from '../exchange/types.js';
 import { OpenRouterClient } from '../ai/agent.js';
 import { MarketDataProvider } from '../data/market.js';
-import { UnifiedLogger } from '../logging/index.js';
+import type { UnifiedLogger } from '../logging/index.js';
+import { createLogger } from './utils/logger.js';
 
 export interface HealthStatus {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -29,8 +30,8 @@ export interface ComponentHealth {
 }
 
 export class HealthCheckService {
-  private logger = UnifiedLogger.getInstance();
-  private readonly context = 'HealthCheck';
+  private logger: UnifiedLogger;
+  private readonly context: string;
   private startTime = Date.now();
   private totalChecks = 0;
   private consecutiveFailures = 0;
@@ -40,7 +41,11 @@ export class HealthCheckService {
     private exchange?: Exchange,
     private aiClient?: OpenRouterClient,
     private marketDataProvider?: MarketDataProvider
-  ) {}
+  ) {
+    const { logger, context } = createLogger('HealthCheck');
+    this.logger = logger;
+    this.context = context;
+  }
 
   /**
    * Perform a comprehensive health check of all system components

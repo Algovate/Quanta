@@ -63,8 +63,11 @@ quanta trade start --mode paper --coins BTC,ETH,SOL
 # Check current status
 quanta trade status
 
-# View in real-time
-quanta trade start --mode paper --coins BTC
+# View detailed output in real-time (cycle summaries, account status, positions, etc.)
+quanta log console --follow
+
+# View with specific filters
+quanta log console --follow --context Workflow --level info
 ```
 
 ### 3. Control Trading
