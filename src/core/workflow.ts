@@ -1504,8 +1504,8 @@ export class TradingWorkflow {
         {
           equity: finalAccount.equity,
           balance: finalAccount.balance,
-          marginUsed: 0, // Account type doesn't have marginUsed, calculate from positions if needed
-          availableMargin: finalAccount.equity, // Use equity as available margin
+          marginUsed: aggregates.totalMarginUsed, // Use actual margin used from positions
+          availableMargin: finalAccount.availableMargin, // Use actual available margin
         },
         finalPositions.map(p => ({
           symbol: p.symbol,
@@ -2206,12 +2206,14 @@ export class TradingWorkflow {
       unrealizedPnlPercent: number;
     },
     runtimeMinutes: number,
-    runtimeSeconds: number
+    runtimeSeconds: number,
+    formattedSummary?: string
   ): void {
     // Always log structured summary (removed background mode check)
+    // Include formatted summary in metadata so it can be displayed via "quanta log console"
 
     this.unifiedLogger.info(
-      'Cycle Summary',
+      formattedSummary || 'Cycle Summary',
       {
         cycle: this.state.cycleCount,
         runtime: `${runtimeMinutes}m ${runtimeSeconds}s`,
@@ -2242,9 +2244,97 @@ export class TradingWorkflow {
           unrealizedPnl: p.unrealizedPnl,
         })),
         winRate: this.state.winRate,
+        // Store formatted summary so it can be retrieved by "quanta log console"
+        _formattedSummary: formattedSummary,
       },
       this.loggerContext
     );
+  }
+
+  /**
+   * Calculate runtime metrics from start time
+   */
+  private calculateRuntimeMetrics(): {
+    minutes: number;
+    seconds: number;
+    string: string;
+  } {
+    const runtime = Date.now() - this.state.startTime;
+    const minutes = Math.floor(runtime / (1000 * 60));
+    const seconds = Math.floor((runtime / 1000) % 60);
+    return {
+      minutes,
+      seconds,
+      string: `${minutes}m ${seconds}s`,
+    };
+  }
+
+  /**
+   * Calculate cycle summary metrics (efficiency, margin usage, risk level, etc.)
+   */
+  private calculateCycleMetrics(
+    account: Account,
+    positions: Position[],
+    signals: TradingSignal[],
+    aggregates: PositionAggregates,
+    cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number }
+  ): {
+    signalsCount: number;
+    executedTrades: number;
+    rejectedSignals: number;
+    openPositions: number;
+    maxPositions: number;
+    efficiency: number;
+    marginUsage: number;
+    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    averageLeverage: number;
+  } {
+    const signalsCount = signals.length;
+    const executedTrades = cycleMetrics.tradeCountCycle;
+    const rejectedSignals = cycleMetrics.rejectedSignalsCycle;
+    const openPositions = positions.length;
+    const maxPositions = this.config.maxPositions;
+
+    const efficiency = signalsCount > 0 ? (executedTrades / signalsCount) * 100 : 0;
+    const totalMarginUsed = aggregates.totalMarginUsed;
+    const marginUsage = account.equity > 0 ? (totalMarginUsed / account.equity) * 100 : 0;
+
+    let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+    if (marginUsage >= 80) {
+      riskLevel = 'HIGH';
+    } else if (marginUsage >= 50) {
+      riskLevel = 'MEDIUM';
+    }
+
+    const averageLeverage =
+      positions.length > 0
+        ? positions.reduce((sum, p) => sum + (p.leverage || 1), 0) / positions.length
+        : 0;
+
+    return {
+      signalsCount,
+      executedTrades,
+      rejectedSignals,
+      openPositions,
+      maxPositions,
+      efficiency,
+      marginUsage,
+      riskLevel,
+      averageLeverage,
+    };
+  }
+
+  /**
+   * Calculate countdown to next cycle
+   */
+  private calculateNextCycleCountdown(): string {
+    const nextCycleTime = Date.now() + this.config.cyclePeriod;
+    const remainingMs = nextCycleTime - Date.now();
+    const remainingMinutes = Math.floor(remainingMs / (1000 * 60));
+    const remainingSeconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
+    return remainingMinutes > 0
+      ? `${remainingMinutes}m ${remainingSeconds}s`
+      : `${remainingSeconds}s`;
   }
 
   private logCycleSummary(
@@ -2252,21 +2342,33 @@ export class TradingWorkflow {
     positions: Position[],
     signals: TradingSignal[],
     aggregates: PositionAggregates,
-    _cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number }
+    cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number }
   ): void {
-    const runtime = Date.now() - this.state.startTime;
-    const runtimeMinutes = Math.floor(runtime / (1000 * 60));
-    const runtimeSeconds = Math.floor((runtime / 1000) % 60);
-
-    const totalMarginUsed = aggregates.totalMarginUsed;
-
-    // Calculate P&L metrics
+    const runtime = this.calculateRuntimeMetrics();
     const pnlMetrics = this.calculatePnLMetrics(account, aggregates);
+    const cycleMetricsData = this.calculateCycleMetrics(
+      account,
+      positions,
+      signals,
+      aggregates,
+      cycleMetrics
+    );
 
     // Validate account consistency
-    this.validateAccountConsistency(account, positions, totalMarginUsed);
+    this.validateAccountConsistency(account, positions, aggregates.totalMarginUsed);
 
-    // Log structured summary for background mode
+    // Format cycle summary for structured logs
+    const formattedSummary = this.formatCycleSummary(
+      runtime.string,
+      cycleMetricsData,
+      account,
+      positions,
+      aggregates,
+      pnlMetrics
+    );
+
+    // Log to structured logs (both CLI and API server modes)
+    // Users can view via "quanta log console --follow"
     this.logStructuredCycleSummary(
       account,
       positions,
@@ -2278,12 +2380,69 @@ export class TradingWorkflow {
         unrealizedPnl: pnlMetrics.unrealizedPnl,
         unrealizedPnlPercent: pnlMetrics.unrealizedPnlPercent,
       },
-      runtimeMinutes,
-      runtimeSeconds
+      runtime.minutes,
+      runtime.seconds,
+      formattedSummary
     );
+  }
 
-    // Console output suppressed - use "quanta log console" to view detailed output
-    // All information is already logged via logStructuredCycleSummary()
+  /**
+   * Format cycle summary for display
+   */
+  private formatCycleSummary(
+    runtimeString: string,
+    cycleMetrics: {
+      signalsCount: number;
+      executedTrades: number;
+      rejectedSignals: number;
+      openPositions: number;
+      maxPositions: number;
+      efficiency: number;
+      marginUsage: number;
+      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+      averageLeverage: number;
+    },
+    account: Account,
+    positions: Position[],
+    aggregates: PositionAggregates,
+    pnlMetrics: ReturnType<TradingWorkflow['calculatePnLMetrics']>
+  ): string | undefined {
+    try {
+      return this.cycleDisplay.formatCycleSummary({
+        runtime: runtimeString,
+        cycleCount: this.state.cycleCount,
+        signalsCount: cycleMetrics.signalsCount,
+        executedTrades: cycleMetrics.executedTrades,
+        rejectedSignals: cycleMetrics.rejectedSignals,
+        openPositions: cycleMetrics.openPositions,
+        maxPositions: cycleMetrics.maxPositions,
+        efficiency: cycleMetrics.efficiency,
+        account,
+        positions,
+        totalMarginUsed: aggregates.totalMarginUsed,
+        totalUnleveredExposure: aggregates.totalUnleveredExposure,
+        totalPnl: pnlMetrics.totalPnl,
+        totalPnlPercent: pnlMetrics.totalPnlPercent,
+        unrealizedPnl: pnlMetrics.unrealizedPnl,
+        unrealizedPnlPercent: pnlMetrics.unrealizedPnlPercent,
+        cyclePnl: pnlMetrics.cyclePnlChange,
+        cyclePnlPercent: pnlMetrics.cyclePnlPercent,
+        realizedCyclePnl: pnlMetrics.realizedCyclePnl,
+        marginUsage: cycleMetrics.marginUsage,
+        riskLevel: cycleMetrics.riskLevel,
+        averageLeverage: cycleMetrics.averageLeverage,
+        winRate: this.state.winRate,
+        countdown: this.calculateNextCycleCountdown(),
+        previousEquity: this.state.previousEquity,
+      });
+    } catch (error) {
+      this.unifiedLogger.error(
+        'Failed to format cycle summary',
+        error as Error,
+        this.loggerContext
+      );
+      return undefined;
+    }
   }
 
   // Removed logConsoleCycleSummary and related helper methods

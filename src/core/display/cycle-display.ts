@@ -104,7 +104,9 @@ export class CycleDisplay {
     }
 
     output += `   Equity: ${equityDisplay} | Available: $${account.availableMargin.toFixed(2)} | Used: $${totalMarginUsed.toFixed(2)}\n`;
-    output += `   Unlevered Exposure: $${totalUnleveredExposure.toFixed(2)} | Leverage: ${(totalUnleveredExposure / account.equity).toFixed(2)}x\n`;
+    const leverage =
+      account.equity > 0 ? (totalUnleveredExposure / account.equity).toFixed(2) : '0';
+    output += `   Unlevered Exposure: $${totalUnleveredExposure.toFixed(2)} | Leverage: ${leverage}x\n`;
 
     const totalPnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
     const unrealizedPnlColor = unrealizedPnl >= 0 ? chalk.green : chalk.red;

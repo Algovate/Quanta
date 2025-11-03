@@ -147,6 +147,7 @@ export class TradingManager extends EventEmitter {
     this.marketDataProvider = marketDataProvider;
     this.aiAgent = aiAgent;
 
+    // Create workflow - both CLI and API server modes use structured logs only
     this.workflow = new TradingWorkflow(exchange, marketDataProvider, aiAgent, config);
 
     // Set up custom exit plans getter
