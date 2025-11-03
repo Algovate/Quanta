@@ -588,19 +588,29 @@ Notes:
 
 ## Prompt Commands
 
+### `prompts list` - List Prompt Groups
+
+```bash
+quanta prompts list
+```
+
+Outputs available groups in `config/prompts`, marking the active one.
+
 ### `prompts view` - View Prompt Group Content
 
-View the content of a prompt group, either as raw templates or rendered with example values.
+View raw templates or rendered prompts.
 
 ```bash
 quanta prompts view [options]
 
 Options:
-  -g, --group <name>      Prompt group name (default: from config)
-  -r, --rendered          Show rendered prompts with example values
-  -s, --system-only       Show only system prompt
-  -u, --user-only         Show only user prompt
-  --list                  List all available prompt groups
+  -g, --group <name>       Prompt group name (default: from config)
+  -r, --rendered           Show rendered prompts with example values
+  -s, --system-only        Show only system prompt
+  -u, --user-only          Show only user prompt
+  --list                   List all available prompt groups (alias for `prompts list`)
+  --context <path.json>    Render using values from a JSON file
+  --vars                   Show template variables (and presence if context provided)
 ```
 
 **Examples:**
@@ -612,17 +622,17 @@ quanta prompts view
 # View a specific prompt group
 quanta prompts view --group default
 
-# View rendered prompts with example values
+# View rendered prompts (built-in example context)
 quanta prompts view --rendered
+
+# Render with a custom context file and show variable presence
+quanta prompts view --rendered --context config/prompts/context.dev.json --vars
 
 # View only system prompt
 quanta prompts view --system-only
 
-# View only user prompt
-quanta prompts view --user-only
-
 # List all available prompt groups
-quanta prompts view --list
+quanta prompts list
 ```
 
 **Output Format:**
@@ -700,14 +710,28 @@ You are an expert cryptocurrency trader managing a live perpetual futures portfo
 ...
 ```
 
-**List Mode (`--list`):**
+### `prompts diff` - Diff Prompt Groups
 
+Compare two groups either as raw templates or after rendering.
+
+```bash
+quanta prompts diff -g <left> --with <right> [options]
+
+Options:
+  -r, --rendered           Render before diffing
+  -s, --system-only        Diff only system prompt
+  -u, --user-only          Diff only user prompt
+  --context <path.json>    Render using values from a JSON file
 ```
-📋 Available Prompt Groups:
 
-  default ✓ (active)
-  conservative
-  aggressive
+Examples:
+
+```bash
+# Raw diff between groups
+quanta prompts diff -g default --with conservative
+
+# Rendered diff with explicit context
+quanta prompts diff -g default --with aggressive --rendered --context config/prompts/context.dev.json
 ```
 
 **Notes:**

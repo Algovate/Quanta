@@ -52,7 +52,16 @@ export async function getPositionsService(tradingManager: TradingManager) {
   const workflow = tradingManager.getWorkflow();
   if (!workflow) return [];
   const exchange = workflow.getExchange();
-  return exchange.getPositions();
+  const positions = await exchange.getPositions();
+  // Enrich positions with any custom exit plan configured via TradingManager
+  return positions.map(p => {
+    const custom = tradingManager.getCustomExitPlan(p.symbol, p.side);
+    return {
+      ...p,
+      customStopLoss: custom.stopLoss,
+      customTakeProfit: custom.takeProfit,
+    };
+  });
 }
 
 export async function getAccountService(tradingManager: TradingManager) {

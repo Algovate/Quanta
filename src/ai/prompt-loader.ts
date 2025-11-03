@@ -133,3 +133,44 @@ export function listPromptGroups(): string[] {
     return [];
   }
 }
+
+/**
+ * Extract variable names from a template string using Mustache-style {{var}} syntax
+ */
+const VARIABLE_REGEX = /\{\{(\w+)\}\}/g;
+
+export function extractTemplateVariables(template: string): string[] {
+  const variables = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = VARIABLE_REGEX.exec(template)) !== null) {
+    variables.add(match[1]);
+  }
+  return Array.from(variables).sort();
+}
+
+/**
+ * Extract variables from a prompt group, per section and combined
+ */
+export function extractGroupVariables(group: PromptGroup): {
+  system: string[];
+  user: string[];
+  all: string[];
+} {
+  const system = extractTemplateVariables(group.system);
+  const user = extractTemplateVariables(group.user);
+  const all = Array.from(new Set([...system, ...user])).sort();
+  return { system, user, all };
+}
+
+/**
+ * Render both system and user templates from a group
+ */
+export function renderGroup(
+  group: PromptGroup,
+  context: Record<string, any>
+): { system: string; user: string } {
+  return {
+    system: renderTemplate(group.system, context),
+    user: renderTemplate(group.user, context),
+  };
+}

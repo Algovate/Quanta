@@ -69,26 +69,33 @@ PROMPT_ACTIVE_GROUP=default
 3. Use `{{variableName}}` syntax for template variables
 4. Set `ai.prompt.activeGroup` in your config to use the new group
 
-## Viewing Prompts
-
-You can view the current prompts using the CLI command:
+## Viewing & Diffing Prompts
 
 ```bash
+# List groups
+quanta prompts list
+
 # View current active prompt group (raw templates)
 quanta prompts view
 
-# View rendered prompts with example values
-quanta prompts view --rendered
-
-# List all available prompt groups
-quanta prompts view --list
-
-# View a specific prompt group
+# View a specific group
 quanta prompts view --group default
 
-# View only system or user prompt
+# Rendered view (built-in example context)
+quanta prompts view --rendered
+
+# Render with custom context and show variable presence
+quanta prompts view --rendered --context config/prompts/context.dev.json --vars
+
+# Only system or only user
 quanta prompts view --system-only
 quanta prompts view --user-only
+
+# Diff two groups (raw)
+quanta prompts diff -g default --with conservative
+
+# Diff two groups (rendered with context)
+quanta prompts diff -g default --with aggressive --rendered --context config/prompts/context.dev.json
 ```
 
 See `docs/commands.md` for complete command documentation.

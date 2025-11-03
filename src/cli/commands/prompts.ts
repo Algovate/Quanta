@@ -4,8 +4,12 @@ import {
   loadPromptGroup,
   renderTemplate,
   listPromptGroups,
+  extractGroupVariables,
+  renderGroup,
   type PromptGroup,
 } from '../../ai/prompt-loader.js';
+import fs from 'fs';
+import path from 'path';
 import { getConfig } from '../../config/settings.js';
 import { handleAsync } from '../../utils/error-handler.js';
 import { UnifiedLogger } from '../../logging/index.js';
@@ -16,6 +20,17 @@ interface ViewPromptOptions {
   systemOnly: boolean;
   userOnly: boolean;
   list: boolean;
+  context?: string;
+  vars?: boolean;
+}
+
+interface DiffPromptOptions {
+  group: string;
+  with: string;
+  rendered: boolean;
+  systemOnly: boolean;
+  userOnly: boolean;
+  context?: string;
 }
 
 interface DisplayOptions {
@@ -36,11 +51,41 @@ export class PromptCommands {
       .option('-s, --system-only', 'Show only system prompt', false)
       .option('-u, --user-only', 'Show only user prompt', false)
       .option('--list', 'List all available prompt groups', false)
+      .option('--context <path.json>', 'Render using values from context JSON file')
+      .option('--vars', 'Show template variables and presence status', false)
       .action(async options => {
         await handleAsync(async () => {
           await PromptCommands.viewPrompt(options as ViewPromptOptions);
         }, 'PromptCommands.view');
       });
+
+    program
+      .command('list')
+      .description('List available prompt groups')
+      .action(async () => {
+        await handleAsync(async () => {
+          const logger = UnifiedLogger.getInstance();
+          const originalConsole = logger.getOriginalConsole();
+          PromptCommands.listPromptGroups(originalConsole);
+          logger.shutdown();
+        }, 'PromptCommands.list');
+      });
+
+    const diffCmd = program
+      .command('diff')
+      .description('Diff prompt groups (raw or rendered)')
+      .option('-g, --group <name>', 'Left group name', '')
+      .requiredOption('--with <name>', 'Right group name')
+      .option('-r, --rendered', 'Render before diffing', false)
+      .option('-s, --system-only', 'Diff only system prompt', false)
+      .option('-u, --user-only', 'Diff only user prompt', false)
+      .option('--context <path.json>', 'Render using values from context JSON file')
+      .action(async (options: any) => {
+        await handleAsync(async () => {
+          await PromptCommands.diffGroups(options as DiffPromptOptions);
+        }, 'PromptCommands.diff');
+      });
+    diffCmd.showHelpAfterError();
   }
 
   private static async viewPrompt(options: ViewPromptOptions): Promise<void> {
@@ -65,17 +110,21 @@ export class PromptCommands {
     };
 
     if (options.rendered) {
-      const exampleContext = PromptCommands.createExampleContext();
-      PromptCommands.displayExampleContext(exampleContext, originalConsole);
+      const exampleContext = PromptCommands.resolveContext(options.context, originalConsole);
       PromptCommands.displayRenderedPrompts(
         promptGroup,
         exampleContext,
         displayOptions,
         originalConsole
       );
+      if (options.vars) {
+        PromptCommands.displayVariablesWithPresence(promptGroup, exampleContext, displayOptions, originalConsole);
+      }
     } else {
       PromptCommands.displayRawPrompts(promptGroup, displayOptions, originalConsole);
-      PromptCommands.displayTemplateVariables(promptGroup, displayOptions, originalConsole);
+      if (options.vars) {
+        PromptCommands.displayTemplateVariables(promptGroup, displayOptions, originalConsole);
+      }
     }
 
     originalConsole.log('');
@@ -147,6 +196,35 @@ export class PromptCommands {
     };
   }
 
+  private static loadContextFromFile(filePath: string): Record<string, any> {
+    const resolved = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+    try {
+      const content = fs.readFileSync(resolved, 'utf-8');
+      return JSON.parse(content);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to load context from ${resolved}: ${message}`);
+    }
+  }
+
+  private static resolveContext(
+    contextPath: string | undefined,
+    originalConsole: { log: typeof console.log }
+  ): Record<string, string | number> {
+    if (contextPath) {
+      originalConsole.log(chalk.gray('Using context file for rendering:\n'));
+      const ctx = PromptCommands.loadContextFromFile(contextPath);
+      Object.entries(ctx).forEach(([key, value]) => {
+        originalConsole.log(chalk.gray(`  ${key}: ${value as any}`));
+      });
+      originalConsole.log(chalk.gray('\n' + SEPARATOR + '\n'));
+      return ctx as Record<string, string | number>;
+    }
+    const example = PromptCommands.createExampleContext();
+    PromptCommands.displayExampleContext(example, originalConsole);
+    return example;
+  }
+
   private static displayExampleContext(
     context: Record<string, string | number>,
     originalConsole: { log: typeof console.log }
@@ -210,8 +288,7 @@ export class PromptCommands {
     options: DisplayOptions,
     originalConsole: { log: typeof console.log }
   ): void {
-    const systemVars = PromptCommands.extractVariables(promptGroup.system);
-    const userVars = PromptCommands.extractVariables(promptGroup.user);
+    const { system: systemVars, user: userVars } = extractGroupVariables(promptGroup);
 
     if (systemVars.length === 0 && userVars.length === 0) {
       return;
@@ -242,15 +319,116 @@ export class PromptCommands {
   /**
    * Extract variable names from a template string
    */
-  private static extractVariables(template: string): string[] {
-    const variableRegex = /\{\{(\w+)\}\}/g;
-    const variables = new Set<string>();
-    let match;
+  private static displayVariablesWithPresence(
+    promptGroup: PromptGroup,
+    context: Record<string, any>,
+    options: DisplayOptions,
+    originalConsole: { log: typeof console.log }
+  ): void {
+    const { system: systemVars, user: userVars } = extractGroupVariables(promptGroup);
+    const showSection = (title: string, vars: string[]) => {
+      if (vars.length === 0) return;
+      originalConsole.log(chalk.yellow(`  ${title}:`));
+      vars.forEach(v => {
+        const present = Object.prototype.hasOwnProperty.call(context, v);
+        originalConsole.log(`    {{${v}}} ${present ? chalk.green('✓') : chalk.red('✗')}`);
+      });
+      originalConsole.log('');
+    };
+    originalConsole.log(chalk.gray('Variable presence (context provided):\n'));
+    if (options.showSystem) showSection('System prompt variables', systemVars);
+    if (options.showUser) showSection('User prompt variables', userVars);
+  }
 
-    while ((match = variableRegex.exec(template)) !== null) {
-      variables.add(match[1]);
+  private static diffGroups(options: DiffPromptOptions): void {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+
+    const leftName = PromptCommands.getGroupName(options.group);
+    const rightName = options.with;
+    if (!rightName) {
+      throw new Error('Missing required option: --with <name>');
     }
 
-    return Array.from(variables).sort();
+    const left = loadPromptGroup(leftName);
+    const right = loadPromptGroup(rightName);
+
+    const showSystem = !options.userOnly;
+    const showUser = !options.systemOnly;
+
+    const context = options.rendered
+      ? PromptCommands.resolveContext(options.context, originalConsole)
+      : undefined;
+
+    const leftTexts = options.rendered && context ? renderGroup(left, context) : { system: left.system, user: left.user };
+    const rightTexts = options.rendered && context ? renderGroup(right, context) : { system: right.system, user: right.user };
+
+    const sections: Array<{ title: string; a: string; b: string }> = [];
+    if (showSystem) sections.push({ title: 'SYSTEM', a: leftTexts.system, b: rightTexts.system });
+    if (showUser) sections.push({ title: 'USER', a: leftTexts.user, b: rightTexts.user });
+
+    sections.forEach(section => {
+      originalConsole.log(chalk.bold(`\n=== ${section.title} DIFF (${leftName} ↔ ${rightName}) ===\n`));
+      const diff = PromptCommands.createUnifiedDiff(section.a, section.b, leftName, rightName);
+      if (diff.trim().length === 0) {
+        originalConsole.log(chalk.gray('No differences.'));
+      } else {
+        originalConsole.log(diff);
+      }
+    });
+
+    originalConsole.log('');
+    logger.shutdown();
+  }
+
+  private static createUnifiedDiff(
+    a: string,
+    b: string,
+    aLabel: string,
+    bLabel: string
+  ): string {
+    const aLines = a.split(/\r?\n/);
+    const bLines = b.split(/\r?\n/);
+    // Simple Myers-style diff fallback using LCS DP (small inputs expected)
+    const n = aLines.length;
+    const m = bLines.length;
+    const dp: number[][] = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i][j] = aLines[i] === bLines[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const out: Array<{ tag: ' ' | '-' | '+'; text: string }> = [];
+    let i = 0,
+      j = 0;
+    while (i < n && j < m) {
+      if (aLines[i] === bLines[j]) {
+        out.push({ tag: ' ', text: aLines[i] });
+        i++;
+        j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        out.push({ tag: '-', text: aLines[i] });
+        i++;
+      } else {
+        out.push({ tag: '+', text: bLines[j] });
+        j++;
+      }
+    }
+    while (i < n) out.push({ tag: '-', text: aLines[i++] });
+    while (j < m) out.push({ tag: '+', text: bLines[j++] });
+
+    if (out.every(l => l.tag === ' ')) return '';
+
+    const header = `--- ${aLabel}\n+++ ${bLabel}`;
+    const body = out
+      .map(l =>
+        l.tag === ' '
+          ? l.text
+          : l.tag === '-'
+          ? chalk.red(`-${l.text}`)
+          : chalk.green(`+${l.text}`)
+      )
+      .join('\n');
+    return `${header}\n${body}`;
   }
 }
