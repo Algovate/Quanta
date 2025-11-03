@@ -113,6 +113,29 @@ The AI trading agent uses externalized prompt configurations stored in `config/p
 
 The active prompt group is specified via `ai.prompt.activeGroup` in the configuration file or `PROMPT_ACTIVE_GROUP` environment variable.
 
+### Available Groups
+
+- `default`: Balanced risk + technical analysis prompt (baseline)
+- `nofx`: NoFX-inspired staged decision framework with strict JSON output and risk guardrails
+
+To switch groups, set in `config/config.json`:
+
+```json
+{
+  "ai": {
+    "prompt": {
+      "activeGroup": "nofx"
+    }
+  }
+}
+```
+
+Or via environment:
+
+```bash
+PROMPT_ACTIVE_GROUP=nofx
+```
+
 **Viewing Prompts:**
 
 You can view the current prompts using the CLI command:
