@@ -47,6 +47,7 @@ export class ErrorAggregator {
   private summaryInterval?: NodeJS.Timeout; // Keep for cleanup if needed
   private handlers: Array<(aggregated: AggregatedError) => void> = [];
   private lastSummaryTime: number = Date.now(); // Keep for potential future use
+  private started: boolean = false;
 
   private constructor() {
     // Store original console methods to avoid infinite recursion
@@ -56,10 +57,8 @@ export class ErrorAggregator {
       warn: console.warn.bind(console),
       error: console.error.bind(console),
     };
-    // Start periodic summary output
-    this.summaryInterval = setInterval(() => {
-      this.outputSummary();
-    }, LOGGING_CONSTANTS.ERROR_AGGREGATION.CLEANUP_INTERVAL_MS / 6); // Every 30 seconds
+    // Do NOT start periodic summary output in constructor - start lazily when first error is recorded
+    // This prevents keeping the process alive when logger instance is created but not initialized
   }
 
   static getInstance(): ErrorAggregator {
@@ -77,6 +76,7 @@ export class ErrorAggregator {
       clearInterval(this.summaryInterval);
       this.summaryInterval = undefined;
     }
+    this.started = false;
   }
 
   /**
@@ -98,6 +98,14 @@ export class ErrorAggregator {
       context?: Record<string, any>;
     }
   ): void {
+    // Start periodic summary output on first error if not already started
+    if (!this.started) {
+      this.summaryInterval = setInterval(() => {
+        this.outputSummary();
+      }, LOGGING_CONSTANTS.ERROR_AGGREGATION.CLEANUP_INTERVAL_MS / 6); // Every 30 seconds
+      this.started = true;
+    }
+
     void context.cycleId; // Used in affectedCycles below
     const errorInfo = this.normalizeError(error);
     const fingerprint = this.generateErrorFingerprint(errorInfo);

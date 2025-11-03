@@ -31,6 +31,7 @@ export class StorageOptimizer {
   private storageLayer: StorageLayer;
   private batchBuffer: BatchWriteBuffer;
   private flushInterval?: NodeJS.Timeout;
+  private started: boolean = false;
 
   private constructor() {
     // Store original console methods to avoid infinite recursion
@@ -48,7 +49,8 @@ export class StorageOptimizer {
       maxBufferSize: 100, // Flush when buffer reaches 100 items
       flushInterval: 5000, // Flush every 5 seconds
     };
-    this.startBackgroundFlush();
+    // Do NOT start background flush in constructor - start lazily when first operation is queued
+    // This prevents keeping the process alive when logger instance is created but not initialized
   }
 
   static getInstance(): StorageOptimizer {
@@ -62,6 +64,12 @@ export class StorageOptimizer {
    * Queue operation for batch write
    */
   queueOperation(operation: OperationLog): void {
+    // Start background flush on first operation if not already started
+    if (!this.started) {
+      this.startBackgroundFlush();
+      this.started = true;
+    }
+
     this.batchBuffer.operations.push(operation);
 
     // Flush if buffer is full
@@ -74,6 +82,12 @@ export class StorageOptimizer {
    * Queue snapshot for batch write
    */
   queueSnapshot(snapshot: SystemSnapshot): void {
+    // Start background flush on first snapshot if not already started
+    if (!this.started) {
+      this.startBackgroundFlush();
+      this.started = true;
+    }
+
     this.batchBuffer.snapshots.push(snapshot);
 
     // Snapshots are typically less frequent, flush immediately
@@ -129,6 +143,7 @@ export class StorageOptimizer {
       clearInterval(this.flushInterval);
       this.flushInterval = undefined;
     }
+    this.started = false;
     // Flush remaining items (fire and forget)
     this.flush().catch(err => {
       // Use originalConsole to avoid triggering console interception

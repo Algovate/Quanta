@@ -53,6 +53,7 @@ export class MetricsCollector {
   private startTime: number = Date.now();
   private handlers: Array<(snapshot: MetricsSnapshot) => void> = [];
   private snapshotInterval?: NodeJS.Timeout; // Keep for cleanup if needed
+  private started: boolean = false;
 
   private constructor() {
     // Store original console methods to avoid infinite recursion
@@ -62,10 +63,8 @@ export class MetricsCollector {
       warn: console.warn.bind(console),
       error: console.error.bind(console),
     };
-    // Create periodic snapshot
-    this.snapshotInterval = setInterval(() => {
-      this.createSnapshot();
-    }, 60000); // Every 60 seconds
+    // Do NOT create periodic snapshot in constructor - start lazily when first metric is recorded
+    // This prevents keeping the process alive when logger instance is created but not initialized
   }
 
   static getInstance(): MetricsCollector {
@@ -83,6 +82,7 @@ export class MetricsCollector {
       clearInterval(this.snapshotInterval);
       this.snapshotInterval = undefined;
     }
+    this.started = false;
   }
 
   /**
@@ -96,6 +96,13 @@ export class MetricsCollector {
    * Record cycle execution time
    */
   recordCycleTime(_cycleId: number, duration: number): void {
+    // Start periodic snapshot on first metric if not already started
+    if (!this.started) {
+      this.snapshotInterval = setInterval(() => {
+        this.createSnapshot();
+      }, 60000); // Every 60 seconds
+      this.started = true;
+    }
     this.addMetric(this.cycleTimes, duration);
   }
 
