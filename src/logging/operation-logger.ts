@@ -27,10 +27,24 @@ import { normalizeError } from './utils.js';
 
 export class OperationLogger {
   private static instance: OperationLogger;
+  
+  // Store original console methods to avoid recursion when console interception is enabled
+  private originalConsole: {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  };
   private activeOperations: Map<string, OperationLog> = new Map();
   private operationHandlers: Array<(operation: OperationLog) => void> = [];
 
-  private constructor() {}
+  private constructor() {
+    // Store original console methods to avoid infinite recursion
+    // when UnifiedLogger intercepts console calls
+    this.originalConsole = {
+      log: console.log.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };}
 
   static getInstance(): OperationLogger {
     if (!OperationLogger.instance) {
@@ -84,7 +98,7 @@ export class OperationLogger {
   startStage(operationId: string, stageName: string, input?: Record<string, any>): void {
     const operation = this.activeOperations.get(operationId);
     if (!operation) {
-      console.warn(`Operation ${operationId} not found for stage ${stageName}`);
+      this.originalConsole.warn(`Operation ${operationId} not found for stage ${stageName}`);
       return;
     }
 
@@ -114,7 +128,7 @@ export class OperationLogger {
 
     const stage = operation.stages.find(s => s.stage === stageName && s.status === 'started');
     if (!stage) {
-      console.warn(`Stage ${stageName} not found in operation ${operationId}`);
+      this.originalConsole.warn(`Stage ${stageName} not found in operation ${operationId}`);
       return;
     }
 
@@ -140,7 +154,7 @@ export class OperationLogger {
   ): OperationLog | null {
     const operation = this.activeOperations.get(operationId);
     if (!operation) {
-      console.warn(`Operation ${operationId} not found`);
+      this.originalConsole.warn(`Operation ${operationId} not found`);
       return null;
     }
 
@@ -169,7 +183,8 @@ export class OperationLogger {
       try {
         handler(operation);
       } catch (error) {
-        console.error('Error in operation handler:', error);
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.error('Error in operation handler:', error);
       }
     }
 
@@ -265,7 +280,7 @@ export class OperationLogger {
   addValidationResult(operationId: string, validationResults: ValidationResults): void {
     const operation = this.activeOperations.get(operationId);
     if (!operation) {
-      console.warn(`Operation ${operationId} not found for validation results`);
+      this.originalConsole.warn(`Operation ${operationId} not found for validation results`);
       return;
     }
 
@@ -278,7 +293,7 @@ export class OperationLogger {
   addDecisionPath(operationId: string, decisionPath: DecisionPath): void {
     const operation = this.activeOperations.get(operationId);
     if (!operation) {
-      console.warn(`Operation ${operationId} not found for decision path`);
+      this.originalConsole.warn(`Operation ${operationId} not found for decision path`);
       return;
     }
 
@@ -291,7 +306,7 @@ export class OperationLogger {
   addDataQuality(operationId: string, dataQuality: DataQualityMetrics): void {
     const operation = this.activeOperations.get(operationId);
     if (!operation) {
-      console.warn(`Operation ${operationId} not found for data quality`);
+      this.originalConsole.warn(`Operation ${operationId} not found for data quality`);
       return;
     }
 
@@ -304,13 +319,13 @@ export class OperationLogger {
   addValidationCheck(operationId: string, stageName: string, check: ValidationCheck): void {
     const operation = this.activeOperations.get(operationId);
     if (!operation) {
-      console.warn(`Operation ${operationId} not found for validation check`);
+      this.originalConsole.warn(`Operation ${operationId} not found for validation check`);
       return;
     }
 
     const stage = operation.stages.find(s => s.stage === stageName);
     if (!stage) {
-      console.warn(`Stage ${stageName} not found in operation ${operationId}`);
+      this.originalConsole.warn(`Stage ${stageName} not found in operation ${operationId}`);
       return;
     }
 
@@ -326,13 +341,13 @@ export class OperationLogger {
   addStageDataQuality(operationId: string, stageName: string, dataQuality: DataQualityInfo): void {
     const operation = this.activeOperations.get(operationId);
     if (!operation) {
-      console.warn(`Operation ${operationId} not found for stage data quality`);
+      this.originalConsole.warn(`Operation ${operationId} not found for stage data quality`);
       return;
     }
 
     const stage = operation.stages.find(s => s.stage === stageName);
     if (!stage) {
-      console.warn(`Stage ${stageName} not found in operation ${operationId}`);
+      this.originalConsole.warn(`Stage ${stageName} not found in operation ${operationId}`);
       return;
     }
 
@@ -345,13 +360,13 @@ export class OperationLogger {
   addDecisionMetrics(operationId: string, stageName: string, metrics: DecisionMetrics): void {
     const operation = this.activeOperations.get(operationId);
     if (!operation) {
-      console.warn(`Operation ${operationId} not found for decision metrics`);
+      this.originalConsole.warn(`Operation ${operationId} not found for decision metrics`);
       return;
     }
 
     const stage = operation.stages.find(s => s.stage === stageName);
     if (!stage) {
-      console.warn(`Stage ${stageName} not found in operation ${operationId}`);
+      this.originalConsole.warn(`Stage ${stageName} not found in operation ${operationId}`);
       return;
     }
 
@@ -364,13 +379,13 @@ export class OperationLogger {
   addExecutionDetails(operationId: string, stageName: string, execution: ExecutionDetails): void {
     const operation = this.activeOperations.get(operationId);
     if (!operation) {
-      console.warn(`Operation ${operationId} not found for execution details`);
+      this.originalConsole.warn(`Operation ${operationId} not found for execution details`);
       return;
     }
 
     const stage = operation.stages.find(s => s.stage === stageName);
     if (!stage) {
-      console.warn(`Stage ${stageName} not found in operation ${operationId}`);
+      this.originalConsole.warn(`Stage ${stageName} not found in operation ${operationId}`);
       return;
     }
 
@@ -393,7 +408,7 @@ export class OperationLogger {
     for (const operationId of staleOps) {
       const operation = this.activeOperations.get(operationId);
       if (operation) {
-        console.warn(`Cleaning up stale operation: ${operationId}`, {
+        this.originalConsole.warn(`Cleaning up stale operation: ${operationId}`, {
           type: operation.operationType,
           age: now - operation.startTime,
         });

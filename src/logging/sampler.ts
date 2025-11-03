@@ -14,12 +14,26 @@ export type SamplingState = 'normal' | 'warning' | 'critical';
 
 export class Sampler {
   private static instance: Sampler;
+  
+  // Store original console methods to avoid recursion when console interception is enabled
+  private originalConsole: {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  };
   private config: SamplingConfig;
   private metricsCollector: MetricsCollector;
   private currentState: SamplingState = 'normal';
   private lastStateChange: number = Date.now();
 
   private constructor() {
+    // Store original console methods to avoid infinite recursion
+    // when UnifiedLogger intercepts console calls
+    this.originalConsole = {
+      log: console.log.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };
     this.metricsCollector = MetricsCollector.getInstance();
     this.config = this.createDefaultConfig();
   }
@@ -104,7 +118,8 @@ export class Sampler {
 
       // Log state change if transitioning to warning or critical
       if (newState === 'warning' || newState === 'critical') {
-        console.log(`[Sampler] State changed: ${oldState} -> ${newState}`, {
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.log(`[Sampler] State changed: ${oldState} -> ${newState}`, {
           errorRate: this.metricsCollector.getErrorRate(),
           timestamp: Date.now(),
         });

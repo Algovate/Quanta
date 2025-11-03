@@ -35,6 +35,13 @@ interface ErrorEntry {
 
 export class ErrorAggregator {
   private static instance: ErrorAggregator;
+  
+  // Store original console methods to avoid recursion when console interception is enabled
+  private originalConsole: {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  };
   private errors: Map<string, ErrorEntry> = new Map();
   private aggregationWindow: number = LOGGING_CONSTANTS.ERROR_AGGREGATION.TIME_WINDOW_MS;
   private summaryInterval?: NodeJS.Timeout; // Keep for cleanup if needed
@@ -42,6 +49,13 @@ export class ErrorAggregator {
   private lastSummaryTime: number = Date.now(); // Keep for potential future use
 
   private constructor() {
+    // Store original console methods to avoid infinite recursion
+    // when UnifiedLogger intercepts console calls
+    this.originalConsole = {
+      log: console.log.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };
     // Start periodic summary output
     this.summaryInterval = setInterval(() => {
       this.outputSummary();
@@ -339,7 +353,8 @@ export class ErrorAggregator {
           handler(aggregated);
         }
       } catch (error) {
-        console.error('Error in aggregated error handler:', error);
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.error('Error in aggregated error handler:', error);
       }
     }
 

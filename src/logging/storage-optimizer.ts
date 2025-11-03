@@ -21,11 +21,25 @@ interface BatchWriteBuffer {
 
 export class StorageOptimizer {
   private static instance: StorageOptimizer;
+  
+  // Store original console methods to avoid recursion when console interception is enabled
+  private originalConsole: {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  };
   private storageLayer: StorageLayer;
   private batchBuffer: BatchWriteBuffer;
   private flushInterval?: NodeJS.Timeout;
 
   private constructor() {
+    // Store original console methods to avoid infinite recursion
+    // when UnifiedLogger intercepts console calls
+    this.originalConsole = {
+      log: console.log.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };
     this.storageLayer = StorageLayer.getInstance();
     this.batchBuffer = {
       operations: [],
@@ -101,7 +115,8 @@ export class StorageOptimizer {
   private startBackgroundFlush(): void {
     this.flushInterval = setInterval(() => {
       this.flush().catch(err => {
-        console.error('Error flushing storage buffer:', err);
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.error('Error flushing storage buffer:', err);
       });
     }, this.batchBuffer.flushInterval);
   }
@@ -116,7 +131,8 @@ export class StorageOptimizer {
     }
     // Flush remaining items (fire and forget)
     this.flush().catch(err => {
-      console.error('Error flushing storage on stop:', err);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Error flushing storage on stop:', err);
     });
   }
 

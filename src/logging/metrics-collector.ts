@@ -32,6 +32,13 @@ interface OperationTimeMetric {
 
 export class MetricsCollector {
   private static instance: MetricsCollector;
+  
+  // Store original console methods to avoid recursion when console interception is enabled
+  private originalConsole: {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  };
   private cycleTimes: MetricEntry = { values: [], timestamps: [], maxSize: 1000 };
   private errorCounts: Map<string, number> = new Map(); // errorType -> count
   private errorTimestamps: number[] = [];
@@ -48,6 +55,13 @@ export class MetricsCollector {
   private snapshotInterval?: NodeJS.Timeout; // Keep for cleanup if needed
 
   private constructor() {
+    // Store original console methods to avoid infinite recursion
+    // when UnifiedLogger intercepts console calls
+    this.originalConsole = {
+      log: console.log.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };
     // Create periodic snapshot
     this.snapshotInterval = setInterval(() => {
       this.createSnapshot();
@@ -315,7 +329,8 @@ export class MetricsCollector {
       try {
         handler(snapshot);
       } catch (error) {
-        console.error('Error in metrics snapshot handler:', error);
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.error('Error in metrics snapshot handler:', error);
       }
     }
 

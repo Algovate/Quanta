@@ -38,6 +38,13 @@ interface CircuitBreakerInfo {
 
 export class StateSnapshotService {
   private static instance: StateSnapshotService;
+  
+  // Store original console methods to avoid recursion when console interception is enabled
+  private originalConsole: {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  };
   private snapshots: SystemSnapshot[] = [];
   private maxSnapshots: number = 1000; // Keep last 1000 snapshots
   private lastSnapshot?: SystemSnapshot;
@@ -45,6 +52,13 @@ export class StateSnapshotService {
   private metricsCollector: MetricsCollector;
 
   private constructor() {
+    // Store original console methods to avoid infinite recursion
+    // when UnifiedLogger intercepts console calls
+    this.originalConsole = {
+      log: console.log.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };
     this.metricsCollector = MetricsCollector.getInstance();
   }
 
@@ -144,7 +158,8 @@ export class StateSnapshotService {
       try {
         handler(snapshot);
       } catch (error) {
-        console.error('Error in snapshot handler:', error);
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.error('Error in snapshot handler:', error);
       }
     }
 

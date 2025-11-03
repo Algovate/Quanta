@@ -49,10 +49,25 @@ export class StorageLayer {
   // L1: SQLite database (recent cycles)
   private l1Database: Database.Database | null = null;
   private l1Initialized: boolean = false;
+  private l1Initializing: boolean = false; // Prevent recursive initialization
+
+  // Store original console methods to avoid recursion when console interception is enabled
+  private originalConsole: {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  };
 
   private constructor() {
     this.config = this.createDefaultConfig();
     this.ensureDirectories();
+    // Store original console methods to avoid infinite recursion
+    // when UnifiedLogger intercepts console calls
+    this.originalConsole = {
+      log: console.log.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };
   }
 
   static getInstance(): StorageLayer {
@@ -165,7 +180,8 @@ export class StorageLayer {
       // Cleanup old cycles if needed
       await this.cleanupOldL1Cycles();
     } catch (error) {
-      console.error('Failed to store operation in L1:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Failed to store operation in L1:', error);
       // Fallback to file storage
       await this.storeInL2Fallback(operation);
     }
@@ -201,6 +217,13 @@ export class StorageLayer {
       return;
     }
 
+    // Prevent recursive initialization
+    if (this.l1Initializing) {
+      return;
+    }
+
+    this.l1Initializing = true;
+
     try {
       // Ensure directory exists
       const dbDir = path.dirname(this.config.l1DatabasePath);
@@ -219,10 +242,14 @@ export class StorageLayer {
 
       this.l1Initialized = true;
     } catch (error) {
-      console.error('Failed to initialize L1 database:', error);
+      // Use originalConsole to avoid triggering console interception
+      // which could cause infinite recursion
+      this.originalConsole.error('Failed to initialize L1 database:', error);
       // Fallback to file-based storage if database initialization fails
       this.l1Initialized = false;
       this.l1Database = null;
+    } finally {
+      this.l1Initializing = false;
     }
   }
 
@@ -372,7 +399,8 @@ export class StorageLayer {
         // It will just be ignored in future reads/writes
       }
     } catch (error) {
-      console.error('Failed to migrate L1 tables:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Failed to migrate L1 tables:', error);
       // Continue execution - migration failures are not critical
     }
   }
@@ -481,7 +509,9 @@ export class StorageLayer {
         Date.now()
       );
     } catch (error) {
-      console.error('Failed to store text log in L1:', error);
+      // Use originalConsole to avoid triggering console interception
+      // which could cause infinite recursion during initialization
+      this.originalConsole.error('Failed to store text log in L1:', error);
       // Fallback to file storage
       await this.storeTextLogInL2Fallback(log);
     }
@@ -605,7 +635,8 @@ export class StorageLayer {
         traceId: row.traceId || undefined,
       }));
     } catch (error) {
-      console.error('Failed to get text logs from L1:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Failed to get text logs from L1:', error);
       // Fallback to L0
       return this.getTextLogsFromL0(options.limit || 100);
     }
@@ -750,7 +781,8 @@ export class StorageLayer {
         dataQuality: row.dataQuality ? JSON.parse(row.dataQuality) : undefined,
       }));
     } catch (error) {
-      console.error('Failed to query operations from L1:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Failed to query operations from L1:', error);
       return [];
     }
   }
@@ -809,7 +841,8 @@ export class StorageLayer {
       const result = stmt.get(...params) as { count: number };
       return result?.count || 0;
     } catch (error) {
-      console.error('Failed to count operations in L1:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Failed to count operations in L1:', error);
       return 0;
     }
   }
@@ -834,7 +867,8 @@ export class StorageLayer {
       const rows = stmt.all() as Array<{ cycleId: number }>;
       return rows.map(row => row.cycleId);
     } catch (error) {
-      console.error('Failed to get cycle IDs from L1:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Failed to get cycle IDs from L1:', error);
       return [];
     }
   }
@@ -874,7 +908,8 @@ export class StorageLayer {
         }
       }
     } catch (error) {
-      console.error('Failed to cleanup old L1 cycles:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Failed to cleanup old L1 cycles:', error);
     }
   }
 
@@ -922,7 +957,8 @@ export class StorageLayer {
 
       return JSON.parse(content) as SystemSnapshot;
     } catch (error) {
-      console.error('Error reading snapshot:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Error reading snapshot:', error);
       return null;
     }
   }
@@ -966,7 +1002,8 @@ export class StorageLayer {
       snapshots.sort((a, b) => b.timestamp - a.timestamp);
       return snapshots;
     } catch (error) {
-      console.error('Error listing snapshots:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Error listing snapshots:', error);
       return [];
     }
   }
@@ -1085,7 +1122,8 @@ export class StorageLayer {
           }
         }
       } catch (error) {
-        console.error('Failed to cleanup L1 by days:', error);
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.error('Failed to cleanup L1 by days:', error);
       }
     }
 
@@ -1126,7 +1164,8 @@ export class StorageLayer {
           }
         }
       } catch (error) {
-        console.error('Failed to cleanup L2 by days:', error);
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.error('Failed to cleanup L2 by days:', error);
       }
     }
 
@@ -1148,7 +1187,8 @@ export class StorageLayer {
           }
         }
       } catch (error) {
-        console.error('Failed to cleanup L3 by days:', error);
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.error('Failed to cleanup L3 by days:', error);
       }
     }
 
@@ -1285,7 +1325,8 @@ export class StorageLayer {
       }
     } catch (error) {
       // Ignore errors in stats calculation
-      console.error('Error calculating storage stats:', error);
+      // Use originalConsole to avoid triggering console interception
+      this.originalConsole.error('Error calculating storage stats:', error);
     }
 
     // Count L1 cycles
@@ -1295,7 +1336,8 @@ export class StorageLayer {
         const cycleIds = await this.getL1CycleIds();
         l1Cycles = cycleIds.length;
       } catch (error) {
-        console.error('Failed to count L1 cycles:', error);
+        // Use originalConsole to avoid triggering console interception
+        this.originalConsole.error('Failed to count L1 cycles:', error);
       }
     }
 
