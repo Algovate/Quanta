@@ -32,5 +32,3 @@ describe('Prompt Loader - Variable Extraction & Rendering', () => {
     assert.deepEqual(res.all, ['a', 'b', 'c']);
   });
 });
-
-

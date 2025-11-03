@@ -131,9 +131,9 @@ export const AIErrorSchema = z.object({
 
 // Exit plan for positions
 export const ExitPlanSchema = z.object({
-  stopLoss: z.number(),
-  takeProfit: z.number(),
-  invalidationCondition: z.string(),
+  stopLoss: z.number().optional(),
+  takeProfit: z.number().optional(),
+  invalidationCondition: z.string().optional(),
 });
 
 // System state

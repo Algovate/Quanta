@@ -118,7 +118,12 @@ export class PromptCommands {
         originalConsole
       );
       if (options.vars) {
-        PromptCommands.displayVariablesWithPresence(promptGroup, exampleContext, displayOptions, originalConsole);
+        PromptCommands.displayVariablesWithPresence(
+          promptGroup,
+          exampleContext,
+          displayOptions,
+          originalConsole
+        );
       }
     } else {
       PromptCommands.displayRawPrompts(promptGroup, displayOptions, originalConsole);
@@ -360,15 +365,23 @@ export class PromptCommands {
       ? PromptCommands.resolveContext(options.context, originalConsole)
       : undefined;
 
-    const leftTexts = options.rendered && context ? renderGroup(left, context) : { system: left.system, user: left.user };
-    const rightTexts = options.rendered && context ? renderGroup(right, context) : { system: right.system, user: right.user };
+    const leftTexts =
+      options.rendered && context
+        ? renderGroup(left, context)
+        : { system: left.system, user: left.user };
+    const rightTexts =
+      options.rendered && context
+        ? renderGroup(right, context)
+        : { system: right.system, user: right.user };
 
     const sections: Array<{ title: string; a: string; b: string }> = [];
     if (showSystem) sections.push({ title: 'SYSTEM', a: leftTexts.system, b: rightTexts.system });
     if (showUser) sections.push({ title: 'USER', a: leftTexts.user, b: rightTexts.user });
 
     sections.forEach(section => {
-      originalConsole.log(chalk.bold(`\n=== ${section.title} DIFF (${leftName} ↔ ${rightName}) ===\n`));
+      originalConsole.log(
+        chalk.bold(`\n=== ${section.title} DIFF (${leftName} ↔ ${rightName}) ===\n`)
+      );
       const diff = PromptCommands.createUnifiedDiff(section.a, section.b, leftName, rightName);
       if (diff.trim().length === 0) {
         originalConsole.log(chalk.gray('No differences.'));
@@ -381,12 +394,7 @@ export class PromptCommands {
     logger.shutdown();
   }
 
-  private static createUnifiedDiff(
-    a: string,
-    b: string,
-    aLabel: string,
-    bLabel: string
-  ): string {
+  private static createUnifiedDiff(a: string, b: string, aLabel: string, bLabel: string): string {
     const aLines = a.split(/\r?\n/);
     const bLines = b.split(/\r?\n/);
     // Simple Myers-style diff fallback using LCS DP (small inputs expected)
@@ -395,7 +403,8 @@ export class PromptCommands {
     const dp: number[][] = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
     for (let i = n - 1; i >= 0; i--) {
       for (let j = m - 1; j >= 0; j--) {
-        dp[i][j] = aLines[i] === bLines[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        dp[i][j] =
+          aLines[i] === bLines[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
       }
     }
     const out: Array<{ tag: ' ' | '-' | '+'; text: string }> = [];
@@ -422,11 +431,7 @@ export class PromptCommands {
     const header = `--- ${aLabel}\n+++ ${bLabel}`;
     const body = out
       .map(l =>
-        l.tag === ' '
-          ? l.text
-          : l.tag === '-'
-          ? chalk.red(`-${l.text}`)
-          : chalk.green(`+${l.text}`)
+        l.tag === ' ' ? l.text : l.tag === '-' ? chalk.red(`-${l.text}`) : chalk.green(`+${l.text}`)
       )
       .join('\n');
     return `${header}\n${body}`;

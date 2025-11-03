@@ -56,10 +56,30 @@ export async function getPositionsService(tradingManager: TradingManager) {
   // Enrich positions with any custom exit plan configured via TradingManager
   return positions.map(p => {
     const custom = tradingManager.getCustomExitPlan(p.symbol, p.side);
+    let customStopLoss = custom.stopLoss;
+    let customTakeProfit = custom.takeProfit;
+    // If not set, derive defaults from workflow config (if activated)
+    if (!customStopLoss && !p.trailingStopPrice) {
+      try {
+        const cfg = tradingManager.getWorkflow()?.getConfig();
+        const slPct = cfg?.riskParams?.defaultStopLoss;
+        if (typeof slPct === 'number' && slPct > 0) {
+          const isLong = p.side === 'long';
+          const entry = p.entryPrice;
+          const defaultSL = isLong ? entry * (1 - slPct) : entry * (1 + slPct);
+          customStopLoss = defaultSL;
+          const tpPct = slPct * 2; // default TP = 2x SL distance
+          const defaultTP = isLong ? entry * (1 + tpPct) : entry * (1 - tpPct);
+          customTakeProfit = customTakeProfit ?? defaultTP;
+        }
+      } catch {
+        // best-effort
+      }
+    }
     return {
       ...p,
-      customStopLoss: custom.stopLoss,
-      customTakeProfit: custom.takeProfit,
+      customStopLoss,
+      customTakeProfit,
     };
   });
 }

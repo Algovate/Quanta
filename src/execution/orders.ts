@@ -356,8 +356,15 @@ export class OrderExecutor {
       const symbol = ensureUsdtSuffix(position.symbol);
       const side = this.positionSideToOrderSide(position.side);
       const amount = position.size;
-
-      const order = await this.exchange.placeOrder(symbol, side, amount, currentPrice);
+      // Exits should default to market orders for immediacy; avoid posting limits here.
+      // Pass leverage to ensure consistent fee/margin application on some exchanges.
+      const order = await this.exchange.placeOrder(
+        symbol,
+        side,
+        amount,
+        undefined,
+        position.leverage
+      );
       // Set metadata for simulator exchange if applicable
       if (isSimulatorExchange(this.exchange)) {
         this.exchange.setOrderMetadata?.(order.id, source, reason);

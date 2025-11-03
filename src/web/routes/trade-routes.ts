@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import {
   getPositionsService,
   getAccountService,
@@ -134,26 +135,71 @@ export function registerTradeRoutes(router: Router, tradingManager: TradingManag
   // Update exit plan for a position
   router.post('/api/position/exit-plan', async (req: Request, res: Response) => {
     try {
-      interface ExitPlanBody extends Record<string, unknown> {
-        symbol: string;
-        side: 'long' | 'short';
-        stopLoss?: number;
-        takeProfit?: number;
+      // Base payload validation
+      const schema = z.object({
+        symbol: z.string().min(1),
+        side: z.enum(['long', 'short']),
+        stopLoss: z.number().positive().optional(),
+        takeProfit: z.number().positive().optional(),
+      });
+
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
       }
 
-      if (!validateRequiredFields<ExitPlanBody>(req.body, ['symbol', 'side'])) {
-        return res.status(400).json({ error: 'Missing symbol or side' });
+      const { symbol, side, stopLoss, takeProfit } = parsed.data;
+
+      // Ensure trading workflow is running to validate against existing position
+      const workflow = tradingManager.getWorkflow();
+      if (!workflow) {
+        return res.status(409).json({ error: 'Trading workflow is not running' });
       }
 
-      const { symbol, side, stopLoss, takeProfit } = req.body as ExitPlanBody;
-
-      // Validate numeric parameters if provided
-      if (stopLoss !== undefined && (!isFinite(Number(stopLoss)) || Number(stopLoss) <= 0)) {
-        return res.status(400).json({ error: 'Invalid stopLoss: must be a positive number' });
+      const exchange = workflow.getExchange();
+      const positions = await exchange.getPositions();
+      const pos = positions.find(p => p.symbol === symbol && p.side === side);
+      if (!pos) {
+        return res.status(404).json({ error: `Open ${side} position for ${symbol} not found` });
       }
 
-      if (takeProfit !== undefined && (!isFinite(Number(takeProfit)) || Number(takeProfit) <= 0)) {
-        return res.status(400).json({ error: 'Invalid takeProfit: must be a positive number' });
+      // Directional guardrails relative to entry price
+      const entry = pos.entryPrice;
+      const isLong = side === 'long';
+
+      // Minimum distance: 0.1% of entry to avoid degenerate values
+      const minDistance = entry * 0.001;
+
+      if (stopLoss !== undefined) {
+        if (isLong ? !(stopLoss < entry - minDistance) : !(stopLoss > entry + minDistance)) {
+          return res.status(400).json({
+            error: 'Invalid stopLoss placement',
+            hint: isLong
+              ? `For LONG, stopLoss must be at least ${(0.1).toFixed(1)}% below entry`
+              : `For SHORT, stopLoss must be at least ${(0.1).toFixed(1)}% above entry`,
+          });
+        }
+      }
+
+      if (takeProfit !== undefined) {
+        if (isLong ? !(takeProfit > entry + minDistance) : !(takeProfit < entry - minDistance)) {
+          return res.status(400).json({
+            error: 'Invalid takeProfit placement',
+            hint: isLong
+              ? `For LONG, takeProfit must be at least ${(0.1).toFixed(1)}% above entry`
+              : `For SHORT, takeProfit must be at least ${(0.1).toFixed(1)}% below entry`,
+          });
+        }
+      }
+
+      // Optional: ensure TP is not inside SL side (coherency)
+      if (stopLoss !== undefined && takeProfit !== undefined) {
+        if (isLong && !(takeProfit > entry && stopLoss < entry)) {
+          return res.status(400).json({ error: 'SL/TP must straddle entry correctly for LONG' });
+        }
+        if (!isLong && !(takeProfit < entry && stopLoss > entry)) {
+          return res.status(400).json({ error: 'SL/TP must straddle entry correctly for SHORT' });
+        }
       }
 
       tradingManager.setCustomExitPlan(symbol, side, stopLoss, takeProfit);

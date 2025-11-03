@@ -266,13 +266,36 @@ export class TradingManager extends EventEmitter {
           const account = await exchange.getAccount();
           const positions = await exchange.getPositions();
 
-          // Enrich positions with custom exit plans
+          // Enrich positions with custom exit plans or default (config-activated) plan
           const enrichedPositions = positions.map(p => {
             const customPlan = this.getCustomExitPlan(p.symbol, p.side);
+            let customStopLoss = customPlan.stopLoss;
+            let customTakeProfit = customPlan.takeProfit;
+
+            // If no custom/trailing values, fall back to default from workflow config (if activated)
+            if (!customStopLoss && !p.trailingStopPrice) {
+              try {
+                const cfg = this.workflow?.getConfig();
+                const slPct = cfg?.riskParams?.defaultStopLoss;
+                if (typeof slPct === 'number' && slPct > 0) {
+                  const isLong = p.side === 'long';
+                  const entry = p.entryPrice;
+                  const defaultSL = isLong ? entry * (1 - slPct) : entry * (1 + slPct);
+                  customStopLoss = defaultSL;
+                  // Default TP: 2x SL distance
+                  const tpPct = slPct * 2;
+                  const defaultTP = isLong ? entry * (1 + tpPct) : entry * (1 - tpPct);
+                  customTakeProfit = customTakeProfit ?? defaultTP;
+                }
+              } catch {
+                // best-effort enrichment only
+              }
+            }
+
             return {
               ...p,
-              customStopLoss: customPlan.stopLoss,
-              customTakeProfit: customPlan.takeProfit,
+              customStopLoss,
+              customTakeProfit,
             };
           });
 
