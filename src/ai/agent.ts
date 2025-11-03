@@ -14,6 +14,7 @@ import {
 } from './tracing.js';
 import { loadPromptGroup, renderTemplate, type PromptGroup } from './prompt-loader.js';
 import { getConfig } from '../config/settings.js';
+import { parseAiResponse } from './prompt-parser.js';
 
 export interface AIResponse {
   coin: string;
@@ -671,38 +672,17 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
   }
 
   private parseResponse(response: string): TradingSignal[] {
-    try {
-      // Clean the response to extract JSON
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON found in response');
-      }
+    const signals = parseAiResponse(response);
 
-      const parsed = JSON.parse(jsonMatch[0]);
-
-      if (!parsed.signals || !Array.isArray(parsed.signals)) {
-        throw new Error('Invalid response format');
-      }
-
-      return parsed.signals.map((signal: AIResponse) => ({
-        coin: signal.coin,
-        action: signal.action,
-        confidence: signal.confidence,
-        reasoning: signal.reasoning,
-        entryPrice: signal.entry_price,
-        positionSize: signal.position_size,
-        stopLoss: signal.stop_loss,
-        profitTarget: signal.profit_target,
-        invalidationCondition: signal.invalidation_condition,
-        timestamp: Date.now(),
-      }));
-    } catch (error) {
+    // Log error if parsing returned empty but we have a response
+    if (signals.length === 0 && response.trim().length > 0) {
       this.logger.error(
-        'Error parsing AI response',
-        error instanceof Error ? error : new Error(String(error)),
+        'Failed to parse AI response',
+        new Error('No valid signals extracted'),
         this.context
       );
-      return [];
     }
+
+    return signals;
   }
 }

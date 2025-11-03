@@ -102,4 +102,19 @@ See `docs/commands.md` for complete command documentation.
 
 ## Examples
 
-See `default.json` for the standard trading prompt group.
+See prompt files in this directory:
+
+- `default.json` - Standard trading prompt with balanced risk approach
+- `nofx.json` - Systematic decision framework with strict constraints
+- `enhanced.json` - Production-grade prompt with structured output and safety mechanisms (recommended)
+
+## Enhanced Prompt Features
+
+The `enhanced.json` prompt includes:
+
+- **Structured output** with `<thinking>` and `<output>` tags for improved parsing reliability
+- **4-stage reasoning framework**: ASSESS → EVALUATE → DECIDE → VALIDATE
+- **Concrete examples** of valid signals and rejections
+- **Position sizing formulas** and confidence-leverage mapping tables
+- **Backward compatibility** with legacy format (without tags)
+- **Improved safety** through explicit constraint validation and anti-overtrading rules
