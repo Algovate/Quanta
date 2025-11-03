@@ -13,7 +13,13 @@ import path from 'path';
 import { gzip, gunzip } from 'zlib';
 import { promisify } from 'util';
 import Database from 'better-sqlite3';
-import type { OperationLog, SystemSnapshot, AggregatedError, MetricsSnapshot } from './types.js';
+import type {
+  OperationLog,
+  SystemSnapshot,
+  AggregatedError,
+  MetricsSnapshot,
+  TextLog,
+} from './types.js';
 import { LOGGING_CONSTANTS } from './utils.js';
 
 const gzipAsync = promisify(gzip);
@@ -36,6 +42,9 @@ export class StorageLayer {
 
   // L0: In-memory cache (recent operations)
   private l0Cache: OperationLog[] = [];
+
+  // L0: In-memory cache (recent text logs)
+  private l0TextLogsCache: TextLog[] = [];
 
   // L1: SQLite database (recent cycles)
   private l1Database: Database.Database | null = null;
@@ -258,6 +267,23 @@ export class StorageLayer {
       CREATE INDEX IF NOT EXISTS idx_symbol ON operations(symbol);
       CREATE INDEX IF NOT EXISTS idx_startTime ON operations(startTime);
       CREATE INDEX IF NOT EXISTS idx_parentOperationId ON operations(parentOperationId);
+
+      CREATE TABLE IF NOT EXISTS text_logs (
+        logId TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        level TEXT NOT NULL,
+        context TEXT NOT NULL,
+        message TEXT NOT NULL,
+        formattedMessage TEXT NOT NULL,
+        metadata TEXT,
+        cycleId INTEGER,
+        createdAt INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_text_logs_timestamp ON text_logs(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_level ON text_logs(level);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_context ON text_logs(context);
+      CREATE INDEX IF NOT EXISTS idx_text_logs_cycleId ON text_logs(cycleId);
     `);
 
     // Migrate existing tables: add missing columns if they don't exist
@@ -350,6 +376,191 @@ export class StorageLayer {
       await fs.promises.writeFile(metricsFile + '.gz', compressed);
     } else {
       await fs.promises.writeFile(metricsFile, JSON.stringify(snapshot, null, 2), 'utf-8');
+    }
+  }
+
+  /**
+   * Store text log
+   */
+  async storeTextLog(log: TextLog): Promise<void> {
+    // L0: Add to in-memory cache
+    this.l0TextLogsCache.push(log);
+
+    // Trim L0 if exceeds max size
+    if (this.l0TextLogsCache.length > this.config.l0MaxSize) {
+      const toMove = this.l0TextLogsCache.slice(
+        0,
+        this.l0TextLogsCache.length - this.config.l0MaxSize
+      );
+      this.l0TextLogsCache = this.l0TextLogsCache.slice(-this.config.l0MaxSize);
+
+      // Move to L1
+      await this.moveTextLogsToL1(toMove);
+    } else {
+      // Also store in L1 for queryability
+      await this.storeTextLogInL1(log);
+    }
+  }
+
+  /**
+   * Store text log in L1 (SQLite)
+   */
+  private async storeTextLogInL1(log: TextLog): Promise<void> {
+    // Initialize L1 database if needed
+    if (!this.l1Initialized) {
+      await this.initializeL1();
+    }
+
+    // If database initialization failed, fallback to file storage
+    if (!this.l1Database) {
+      await this.storeTextLogInL2Fallback(log);
+      return;
+    }
+
+    try {
+      const stmt = this.l1Database.prepare(`
+        INSERT OR REPLACE INTO text_logs (
+          logId, timestamp, level, context, message, formattedMessage, metadata, cycleId, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      stmt.run(
+        log.logId,
+        log.timestamp,
+        log.level,
+        log.context,
+        log.message,
+        log.formattedMessage,
+        log.metadata ? JSON.stringify(log.metadata) : null,
+        log.cycleId || null,
+        Date.now()
+      );
+    } catch (error) {
+      console.error('Failed to store text log in L1:', error);
+      // Fallback to file storage
+      await this.storeTextLogInL2Fallback(log);
+    }
+  }
+
+  /**
+   * Move text logs from L0 to L1
+   */
+  private async moveTextLogsToL1(logs: TextLog[]): Promise<void> {
+    for (const log of logs) {
+      await this.storeTextLogInL1(log);
+    }
+  }
+
+  /**
+   * Fallback to L2 file storage if L1 fails for text logs
+   */
+  private async storeTextLogInL2Fallback(log: TextLog): Promise<void> {
+    const cycleDir = log.cycleId
+      ? path.join(this.config.l2Directory, `cycle-${log.cycleId}`)
+      : path.join(this.config.l2Directory, 'text-logs');
+    if (!fs.existsSync(cycleDir)) {
+      fs.mkdirSync(cycleDir, { recursive: true });
+    }
+
+    const logFile = path.join(cycleDir, `${log.logId}.json`);
+    await fs.promises.writeFile(logFile, JSON.stringify(log, null, 2), 'utf-8');
+  }
+
+  /**
+   * Get text logs from L0 (in-memory)
+   */
+  getTextLogsFromL0(count: number = 100): TextLog[] {
+    return this.l0TextLogsCache.slice(-count);
+  }
+
+  /**
+   * Get text logs from L1 (SQLite)
+   */
+  async getTextLogsFromL1(options: {
+    context?: string;
+    level?: 'info' | 'warn' | 'error' | 'debug';
+    since?: number;
+    until?: number;
+    cycleId?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<TextLog[]> {
+    // Initialize L1 database if needed
+    if (!this.l1Initialized) {
+      await this.initializeL1();
+    }
+
+    if (!this.l1Database) {
+      // Fallback to L0 if L1 is not available
+      return this.getTextLogsFromL0(options.limit || 100);
+    }
+
+    try {
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      if (options.context) {
+        conditions.push('context = ?');
+        params.push(options.context);
+      }
+
+      if (options.level) {
+        conditions.push('level = ?');
+        params.push(options.level);
+      }
+
+      if (options.since !== undefined) {
+        conditions.push('timestamp >= ?');
+        params.push(options.since);
+      }
+
+      if (options.until !== undefined) {
+        conditions.push('timestamp <= ?');
+        params.push(options.until);
+      }
+
+      if (options.cycleId !== undefined) {
+        conditions.push('cycleId = ?');
+        params.push(options.cycleId);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      const limit = options.limit || 100;
+      const offset = options.offset || 0;
+
+      const query = `
+        SELECT logId, timestamp, level, context, message, formattedMessage, metadata, cycleId
+        FROM text_logs
+        ${whereClause}
+        ORDER BY timestamp DESC
+        LIMIT ? OFFSET ?
+      `;
+
+      const rows = this.l1Database.prepare(query).all(...params, limit, offset) as Array<{
+        logId: string;
+        timestamp: number;
+        level: string;
+        context: string;
+        message: string;
+        formattedMessage: string;
+        metadata: string | null;
+        cycleId: number | null;
+      }>;
+
+      return rows.map(row => ({
+        logId: row.logId,
+        timestamp: row.timestamp,
+        level: row.level as 'info' | 'warn' | 'error' | 'debug',
+        context: row.context,
+        message: row.message,
+        formattedMessage: row.formattedMessage,
+        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+        cycleId: row.cycleId || undefined,
+      }));
+    } catch (error) {
+      console.error('Failed to get text logs from L1:', error);
+      // Fallback to L0
+      return this.getTextLogsFromL0(options.limit || 100);
     }
   }
 
@@ -1088,9 +1299,18 @@ export class StorageLayer {
    */
   closeL1Database(): void {
     if (this.l1Database) {
-      this.l1Database.close();
-      this.l1Database = null;
-      this.l1Initialized = false;
+      try {
+        // Close all prepared statements before closing the database
+        // This ensures no pending queries keep the connection alive
+        this.l1Database.prepare('PRAGMA optimize').run();
+        // Close the database connection
+        this.l1Database.close();
+      } catch {
+        // Ignore errors when closing (connection may already be closed)
+      } finally {
+        this.l1Database = null;
+        this.l1Initialized = false;
+      }
     }
   }
 }

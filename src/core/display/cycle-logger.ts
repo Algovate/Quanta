@@ -1,4 +1,4 @@
-import { Logger } from '../../utils/logger.js';
+import { UnifiedLogger } from '../../logging/index.js';
 import { CycleDisplay } from './cycle-display.js';
 
 /**
@@ -6,12 +6,13 @@ import { CycleDisplay } from './cycle-display.js';
  * Uses CycleDisplay for formatting
  */
 export class CycleLogger {
-  private logger: Logger;
+  private logger: UnifiedLogger;
+  private readonly context = 'CycleLogger';
   private display: CycleDisplay;
   private isBackgroundMode: boolean;
 
   constructor() {
-    this.logger = Logger.getInstance('Workflow');
+    this.logger = UnifiedLogger.getInstance();
     this.display = new CycleDisplay();
     this.isBackgroundMode = this.logger.isBackgroundMode();
   }
@@ -56,13 +57,13 @@ export class CycleLogger {
   ): void {
     switch (level) {
       case 'error':
-        this.logger.error(message, undefined);
+        this.logger.error(message, undefined, this.context);
         break;
       case 'warn':
-        this.logger.warn(message);
+        this.logger.warn(message, {}, this.context);
         break;
       default:
-        this.logger.info(message);
+        this.logger.info(message, {}, this.context);
     }
   }
 
@@ -79,18 +80,22 @@ export class CycleLogger {
    * Log structured data for file output
    */
   info(context: string, data?: Record<string, unknown>): void {
-    this.logger.info(context, data);
+    this.logger.info(context, data, this.context);
   }
 
   warn(message: string): void {
-    this.logger.warn(message);
+    this.logger.warn(message, {}, this.context);
   }
 
   error(message: string, error?: unknown): void {
-    this.logger.error(message, error);
+    this.logger.error(
+      message,
+      error instanceof Error ? error : error ? new Error(String(error)) : undefined,
+      this.context
+    );
   }
 
   debug(message: string, data?: Record<string, unknown>): void {
-    this.logger.debug(message, data);
+    this.logger.debug(message, data, this.context);
   }
 }

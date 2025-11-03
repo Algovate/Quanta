@@ -10,7 +10,6 @@ import { RiskManager } from '../../execution/risk.js';
 import { OrderExecutor } from '../../execution/orders.js';
 import { PositionMonitorService } from '../../execution/monitor.js';
 import { handleAsync } from '../../utils/error-handler.js';
-import { Logger } from '../../utils/logger.js';
 
 interface SimulateConfig {
   simulation: {
@@ -602,7 +601,7 @@ export class SimulateCommands {
     // Flush logger buffer to show any warnings from order execution inline
     // This ensures warnings about stale entry prices appear immediately
     // instead of at the end when process exits
-    Logger.getInstance().flushSync();
+    // flushSync is no longer needed with UnifiedLogger (async storage)
 
     // Phase 4: Monitoring - Position Management
     console.log(chalk.blue('\n🔍 PHASE 4: MONITORING (Position Management)'));
@@ -831,7 +830,7 @@ export class SimulateCommands {
 
     // Final flush of logger buffer to ensure all warnings/logs are shown
     // This catches any warnings that occurred during the simulation
-    Logger.getInstance().flushSync();
+    // flushSync is no longer needed with UnifiedLogger (async storage)
   }
 
   private static getRiskLevel(pnlPercent: number): string {

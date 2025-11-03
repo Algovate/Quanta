@@ -9,6 +9,7 @@ import { OpenRouterClient } from '../../ai/index.js';
 import { TradingWorkflow } from '../../core/index.js';
 import { handleAsync } from '../../utils/index.js';
 import { formatExchangeFriendlyName } from '../utils.js';
+import { UnifiedLogger } from '../../logging/index.js';
 import type { Config } from '../../config/settings.js';
 import type { WorkflowConfig } from '../../types/index.js';
 import type { Exchange } from '../../exchange/types.js';
@@ -81,13 +82,17 @@ export class TradeCommands {
   }
 
   /**
-   * Print a concise effective exchange name using runtime-reported identity.
+   * Print effective exchange name with UnifiedLogger
    */
-  private static printEffectiveExchange(exchange: unknown, testnet: boolean): void {
+  private static printEffectiveExchangeWithLogger(
+    logger: UnifiedLogger,
+    exchange: unknown,
+    testnet: boolean
+  ): void {
     try {
       const reported = (exchange as { getExchangeName?: () => string })?.getExchangeName?.();
       const friendly = formatExchangeFriendlyName(reported, testnet) || 'unknown';
-      console.log(`   Exchange: ${friendly}`);
+      logger.info(`   Exchange: ${friendly}`, {}, 'TradeStart');
     } catch {
       // best-effort display only
     }
@@ -108,9 +113,10 @@ export class TradeCommands {
   }
 
   /**
-   * Display trading mode configuration
+   * Display trading mode configuration with UnifiedLogger
    */
-  private static displayModeConfiguration(
+  private static displayModeConfigurationWithLogger(
+    logger: UnifiedLogger,
     mode: string,
     exchangeName: string,
     exchangeTestnet: boolean,
@@ -118,31 +124,35 @@ export class TradeCommands {
     exchangeApiSecret?: string,
     marketType?: string
   ): void {
-    console.log(chalk.blue('📊 Configuration:'));
-    console.log(`   Mode: ${mode}`);
+    logger.info(chalk.blue('📊 Configuration:'), {}, 'TradeStart');
+    logger.info(`   Mode: ${mode}`, {}, 'TradeStart');
 
     if (mode === 'simulation') {
-      console.log(`   Data Source: mock data (simulator only)`);
-      console.log(
-        chalk.gray(`   Note: Config exchange '${exchangeName}' ignored in simulation mode`)
+      logger.info(`   Data Source: mock data (simulator only)`, {}, 'TradeStart');
+      logger.info(
+        chalk.gray(`   Note: Config exchange '${exchangeName}' ignored in simulation mode`),
+        {},
+        'TradeStart'
       );
     } else if (mode === 'paper') {
       // Data Source and Network are summarized below as a single consolidated Exchange line
       if (!exchangeApiKey || !exchangeApiSecret) {
-        console.log(
-          chalk.yellow(`   Note: Running without API keys (public data only, rate limited)`)
+        logger.info(
+          chalk.yellow(`   Note: Running without API keys (public data only, rate limited)`),
+          {},
+          'TradeStart'
         );
       }
     } else if (mode === 'live') {
       const exchangeStatus = exchangeName !== 'simulator' ? 'real' : 'simulator';
       const networkStatus = exchangeTestnet ? 'testnet' : 'production';
-      console.log(`   Exchange: ${exchangeName} (${exchangeStatus})`);
+      logger.info(`   Exchange: ${exchangeName} (${exchangeStatus})`, {}, 'TradeStart');
       if (exchangeName !== 'simulator') {
-        console.log(`   Network: ${networkStatus}`);
+        logger.info(`   Network: ${networkStatus}`, {}, 'TradeStart');
       }
     }
     if (marketType) {
-      console.log(`   Market Type: ${marketType}`);
+      logger.info(`   Market Type: ${marketType}`, {}, 'TradeStart');
     }
   }
 
@@ -292,9 +302,16 @@ export class TradeCommands {
 
     const updatedConfig = { ...config, ...configUpdates };
 
-    // Show banner/config
-    console.log(chalk.cyan('🏆 Quanta Trading System'));
-    console.log(chalk.gray('AI-powered quantitative trading with real-time decision making\n'));
+    // Initialize UnifiedLogger for detailed logging
+    const unifiedLogger = UnifiedLogger.getInstance();
+    unifiedLogger.initialize();
+
+    // Get original console to bypass interception for minimal output
+    const originalConsole = unifiedLogger.getOriginalConsole();
+
+    // Console: Minimal essential info only (use originalConsole to avoid interception)
+    originalConsole.log(chalk.cyan('🏆 Quanta Trading System\n'));
+    originalConsole.log(chalk.gray(`Mode: ${mode} | Coins: ${coins.join(', ')}\n`));
 
     const exchangeName = updatedConfig.exchange?.name || 'simulator';
     const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
@@ -302,7 +319,17 @@ export class TradeCommands {
     const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
     const marketType = updatedConfig.exchange?.marketType;
 
-    this.displayModeConfiguration(
+    // UnifiedLogger: Full detailed output
+    unifiedLogger.info(chalk.cyan('🏆 Quanta Trading System'), {}, 'TradeStart');
+    unifiedLogger.info(
+      chalk.gray('AI-powered quantitative trading with real-time decision making\n'),
+      {},
+      'TradeStart'
+    );
+
+    // UnifiedLogger: Log configuration details
+    this.displayModeConfigurationWithLogger(
+      unifiedLogger,
       mode,
       exchangeName,
       exchangeTestnet,
@@ -317,6 +344,7 @@ export class TradeCommands {
 
     // Initialize components and construct exchange only once
     const spinner = ora('Initializing trading system...').start();
+    unifiedLogger.info('Initializing trading system...', {}, 'TradeStart');
     const exchange = await this.getExchangeForMode(
       mode as 'simulation' | 'paper' | 'live',
       exchangeName,
@@ -325,17 +353,20 @@ export class TradeCommands {
       updatedConfig.exchange?.testnet ?? true
     );
 
-    // Display effective exchange implementation using constructed instance
-    this.printEffectiveExchange(exchange, exchangeTestnet);
+    // UnifiedLogger: Display effective exchange implementation
+    this.printEffectiveExchangeWithLogger(unifiedLogger, exchange, exchangeTestnet);
 
-    console.log(`   Coins: ${coins.join(', ')}`);
+    // UnifiedLogger: Log configuration details
+    unifiedLogger.info(`   Coins: ${coins.join(', ')}`, {}, 'TradeStart');
     const mt = (config.exchange?.marketType || 'spot').toLowerCase();
-    console.log(
+    unifiedLogger.info(
       chalk.gray(
         `   MarketType: ${mt || 'spot'} | Effective risk → lev: ${config.trading.leverageRange[0]}-${config.trading.leverageRange[1]}x, SL: ${(config.trading.stopLoss * 100).toFixed(1)}%, risk/trade: ${(config.trading.maxRisk * 100).toFixed(1)}%, maxPos: ${config.trading.maxPositions}`
-      )
+      ),
+      {},
+      'TradeStart'
     );
-    console.log('');
+    unifiedLogger.info('', {}, 'TradeStart');
 
     const marketProvider = new MarketDataProvider(exchange);
     const aiClient = new OpenRouterClient(updatedConfig.ai.apiKey);
@@ -344,8 +375,14 @@ export class TradeCommands {
 
     spinner.succeed('Trading system initialized');
 
-    console.log(chalk.green('🚀 Starting trading workflow...'));
-    console.log(chalk.gray('Press Ctrl+C to stop\n'));
+    // Console: Minimal status (use originalConsole to avoid interception)
+    originalConsole.log(
+      chalk.green('🚀 Trading started. Use "quanta log console" to view detailed output.\n')
+    );
+
+    // UnifiedLogger: Full startup message
+    unifiedLogger.info(chalk.green('🚀 Starting trading workflow...'), {}, 'TradeStart');
+    unifiedLogger.info(chalk.gray('Press Ctrl+C to stop\n'), {}, 'TradeStart');
 
     await workflow.start();
   }
@@ -375,7 +412,6 @@ export class TradeCommands {
     const { BacktestEngine } = await import('../../core/backtest-engine.js');
     const { BacktestReport } = await import('../../analytics/report.js');
     const { BacktestRenderer } = await import('../../utils/cli-render.js');
-    const { Logger } = await import('../../utils/logger.js');
     const { format, addMonths, subMonths } = await import('date-fns');
 
     console.log(chalk.cyan('📈 Quanta Backtest'));
@@ -481,14 +517,8 @@ export class TradeCommands {
             : undefined) || undefined,
       });
 
-      // Tune logger verbosity to reduce noise:
-      // - quiet: errors only
-      // - normal: warnings and above
-      // - verbose: info and above
-      const logger = Logger.getInstance('BacktestCLI');
-      logger.updateConfig({
-        level: (mode === 'quiet' ? 'error' : mode === 'verbose' ? 'info' : 'warn') as any,
-      });
+      // Note: UnifiedLogger doesn't use configurable log levels
+      // Log level filtering can be done via query filters in log console command
 
       const engine = new BacktestEngine(backtestConfig, {
         onPhase: phase => renderer.startPhase(phase),

@@ -62,6 +62,16 @@ export class MetricsCollector {
   }
 
   /**
+   * Stop metrics collection (cleanup intervals)
+   */
+  stop(): void {
+    if (this.snapshotInterval) {
+      clearInterval(this.snapshotInterval);
+      this.snapshotInterval = undefined;
+    }
+  }
+
+  /**
    * Register a handler to receive metrics snapshots
    */
   onSnapshot(handler: (snapshot: MetricsSnapshot) => void): void {

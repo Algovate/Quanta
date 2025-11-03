@@ -3,9 +3,10 @@
  */
 
 import { Response } from 'express';
-import { Logger } from '../../utils/logger.js';
+import { UnifiedLogger } from '../../logging/index.js';
 
-const logger = Logger.getInstance('ErrorHandler');
+const logger = UnifiedLogger.getInstance();
+const loggerContext = 'ErrorHandler';
 
 export interface ApiError {
   message: string;
@@ -40,7 +41,11 @@ export function sendErrorResponse(
     message = error;
   }
 
-  logger.error(defaultMessage, error);
+  logger.error(
+    defaultMessage,
+    error instanceof Error ? error : new Error(String(error)),
+    loggerContext
+  );
   res.status(status).json({
     error: message,
     code,

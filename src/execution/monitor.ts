@@ -2,8 +2,7 @@ import { Exchange, Position } from '../exchange/types.js';
 import { RiskManager } from './risk.js';
 import { OrderExecutor } from './orders.js';
 import { POSITION_MONITORING, ORDER_EXECUTION } from './constants.js';
-import { Logger } from '../utils/logger.js';
-import { LogLevel } from '../utils/logger-types.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { calculateUnrealizedPnl, aggregatePositionMetrics } from './position-utils.js';
 
 export interface PositionMonitor {
@@ -18,7 +17,8 @@ export interface PositionMonitor {
 export class PositionMonitorService implements PositionMonitor {
   private riskManager: RiskManager;
   private orderExecutor: OrderExecutor;
-  private logger: Logger;
+  private logger: UnifiedLogger;
+  private readonly context = 'PositionMonitor';
   private stateBySymbol: Map<
     string,
     { tp1Done?: boolean; flatCycles?: number; breakevenApplied?: boolean }
@@ -27,7 +27,7 @@ export class PositionMonitorService implements PositionMonitor {
   constructor(riskManager: RiskManager, orderExecutor: OrderExecutor) {
     this.riskManager = riskManager;
     this.orderExecutor = orderExecutor;
-    this.logger = Logger.getInstance('PositionMonitor');
+    this.logger = UnifiedLogger.getInstance();
   }
 
   checkStopLoss(position: Position, currentPrice: number): boolean {
@@ -97,7 +97,11 @@ export class PositionMonitorService implements PositionMonitor {
     // Process positions in parallel with error isolation
     const monitorPromises = positions.map(position =>
       this.monitorSinglePosition(position, exchange).catch(error => {
-        this.logger.error(`Critical: Failed to monitor ${position.symbol}`, error);
+        this.logger.error(
+          `Critical: Failed to monitor ${position.symbol}`,
+          error instanceof Error ? error : new Error(String(error)),
+          this.context
+        );
         // Return decision info for failed monitoring
         return {
           symbol: position.symbol,
@@ -212,15 +216,19 @@ export class PositionMonitorService implements PositionMonitor {
         // Partial take-profit at 1R: close 50% and move stop to breakeven (once)
         try {
           if (!st.tp1Done && rMultiple >= 1) {
-            // Reduce noise: only log info when in verbose (info) level; otherwise skip
-            if (this.logger.getConfig().level <= LogLevel.INFO) {
-              this.logger.info(
-                `Partial TP1 for ${position.symbol}: 1R reached, closing 50% and moving stop to breakeven`
-              );
-            }
+            // Log partial TP1 event
+            this.logger.info(
+              `Partial TP1 for ${position.symbol}: 1R reached, closing 50% and moving stop to breakeven`,
+              {},
+              this.context
+            );
             const result = await this.orderExecutor.executePartialClose(position, 0.5);
             if (!result.success) {
-              this.logger.warn(`Partial close failed for ${position.symbol}: ${result.error}`);
+              this.logger.warn(
+                `Partial close failed for ${position.symbol}: ${result.error}`,
+                {},
+                this.context
+              );
             }
             this.riskManager.applyBreakevenStop(position);
             st.tp1Done = true;
@@ -244,9 +252,13 @@ export class PositionMonitorService implements PositionMonitor {
             });
           }
         } catch (e) {
-          this.logger.warn('Partial TP processing error', {
-            error: e instanceof Error ? e.message : String(e),
-          });
+          this.logger.warn(
+            'Partial TP processing error',
+            {
+              error: e instanceof Error ? e.message : String(e),
+            },
+            this.context
+          );
         }
 
         // Time-based exit: detect flat positions and auto-close after M cycles
@@ -265,7 +277,7 @@ export class PositionMonitorService implements PositionMonitor {
               // Actioned change: apply breakeven stop once; log concise, context-rich line
               this.riskManager.applyBreakevenStop(position);
               st.breakevenApplied = true;
-              if (this.logger.getConfig().level <= LogLevel.INFO) {
+              {
                 const stopLossPrice = this.riskManager.getEffectiveStopLossPrice(
                   position,
                   currentPrice
@@ -275,7 +287,9 @@ export class PositionMonitorService implements PositionMonitor {
                   currentPrice
                 );
                 this.logger.info(
-                  `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${stopLossPrice.toFixed(2)} tp=@${takeProfitPrice.toFixed(2)}`
+                  `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${stopLossPrice.toFixed(2)} tp=@${takeProfitPrice.toFixed(2)}`,
+                  {},
+                  this.context
                 );
               }
               decisions.push({
@@ -317,9 +331,13 @@ export class PositionMonitorService implements PositionMonitor {
 
           this.stateBySymbol.set(key, st);
         } catch (e) {
-          this.logger.warn('Time-based exit processing error', {
-            error: e instanceof Error ? e.message : String(e),
-          });
+          this.logger.warn(
+            'Time-based exit processing error',
+            {
+              error: e instanceof Error ? e.message : String(e),
+            },
+            this.context
+          );
         }
 
         // Check if position should be closed by stops/targets
@@ -353,7 +371,8 @@ export class PositionMonitorService implements PositionMonitor {
         if (isLastAttempt) {
           this.logger.error(
             `Failed to monitor ${position.symbol} after ${MAX_RETRIES} attempts`,
-            error
+            error instanceof Error ? error : new Error(String(error)),
+            this.context
           );
           // Return decision info for failed monitoring
           return {
@@ -375,7 +394,8 @@ export class PositionMonitorService implements PositionMonitor {
           `Retry ${attempt}/${MAX_RETRIES} for ${position.symbol} after ${backoffMs}ms`,
           {
             error: error instanceof Error ? error.message : String(error),
-          }
+          },
+          this.context
         );
         await new Promise(resolve => setTimeout(resolve, backoffMs));
       }
@@ -514,9 +534,13 @@ export class PositionMonitorService implements PositionMonitor {
       }
       // Emit a concise, context-rich close log with consistent formatting
       const formattedLog = this.formatPositionCloseLog(position, currentPrice, reason);
-      this.logger.info(formattedLog);
+      this.logger.info(formattedLog, {}, this.context);
     } catch (error) {
-      this.logger.error(`Failed to execute close for ${position.symbol}`, error);
+      this.logger.error(
+        `Failed to execute close for ${position.symbol}`,
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error; // Re-throw to trigger retry
     }
   }

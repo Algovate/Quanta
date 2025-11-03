@@ -56,6 +56,16 @@ export class ErrorAggregator {
   }
 
   /**
+   * Stop error aggregation (cleanup intervals)
+   */
+  stop(): void {
+    if (this.summaryInterval) {
+      clearInterval(this.summaryInterval);
+      this.summaryInterval = undefined;
+    }
+  }
+
+  /**
    * Register a handler to receive aggregated errors
    */
   onAggregatedError(handler: (aggregated: AggregatedError) => void): void {

@@ -1,5 +1,5 @@
 import { Exchange } from '../exchange/types.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export interface Candlestick {
   timestamp: number;
@@ -72,7 +72,8 @@ interface CachedMarketData {
 export class MarketDataProvider {
   private cache: Map<string, CachedMarketData> = new Map();
   private readonly MAX_CACHE_AGE = 5 * 60 * 1000; // 5 minutes - still useful for fallback
-  private readonly logger = Logger.getInstance('MarketDataProvider');
+  private readonly logger = UnifiedLogger.getInstance();
+  private readonly context = 'MarketDataProvider';
 
   constructor(private exchange: Exchange) {}
 
@@ -94,12 +95,16 @@ export class MarketDataProvider {
           // Try to use cached data if available
           const cached = this.getCachedData(cacheKey);
           if (cached) {
-            this.logger.warn('Insufficient fresh candles, using cached data', {
-              coin,
-              timeframe,
-              candlesReceived: candlesticks.length,
-              cacheAge: cached.cacheAge,
-            });
+            this.logger.warn(
+              'Insufficient fresh candles, using cached data',
+              {
+                coin,
+                timeframe,
+                candlesReceived: candlesticks.length,
+                cacheAge: cached.cacheAge,
+              },
+              this.context
+            );
             marketData.push(cached);
             continue;
           }
@@ -136,23 +141,35 @@ export class MarketDataProvider {
 
         marketData.push(data);
       } catch (error) {
-        this.logger.error(`Error fetching market data for ${coin} ${timeframe}`, error);
+        this.logger.error(
+          `Error fetching market data for ${coin} ${timeframe}`,
+          error instanceof Error ? error : new Error(String(error)),
+          this.context
+        );
 
         // Try to use cached data as fallback
         const cached = this.getCachedData(cacheKey);
         if (cached) {
-          this.logger.warn('Using stale cached data due to fetch failure', {
-            coin,
-            timeframe,
-            cacheAge: cached.cacheAge,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.logger.warn(
+            'Using stale cached data due to fetch failure',
+            {
+              coin,
+              timeframe,
+              cacheAge: cached.cacheAge,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
           marketData.push(cached);
         } else {
-          this.logger.warn('No cached data available for failed fetch', {
-            coin,
-            timeframe,
-          });
+          this.logger.warn(
+            'No cached data available for failed fetch',
+            {
+              coin,
+              timeframe,
+            },
+            this.context
+          );
         }
       }
     }
@@ -207,7 +224,7 @@ export class MarketDataProvider {
    */
   clearCache(): void {
     this.cache.clear();
-    this.logger.info('Market data cache cleared');
+    this.logger.info('Market data cache cleared', {}, this.context);
   }
 
   /**

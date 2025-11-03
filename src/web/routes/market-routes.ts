@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { Logger } from '../../utils/logger.js';
+import { UnifiedLogger } from '../../logging/index.js';
 import { getConfig } from '../../config/settings.js';
 import { sendErrorResponse, validateRequiredQuery } from '../utils/error-handler.js';
 import { parseSymbolsQuery, normalizeSymbolForExchange } from '../utils/symbol-normalization.js';
@@ -7,7 +7,8 @@ import { isPriceCacheValid, isKlineCacheValid, type KlineCacheEntry } from '../u
 import { resolveExchange } from '../utils/exchange-utils.js';
 import type { TradingManager } from '../trading-manager.js';
 
-const logger = Logger.getInstance('MarketRoutes');
+const logger = UnifiedLogger.getInstance();
+const loggerContext = 'MarketRoutes';
 
 /**
  * Register market data routes
@@ -67,10 +68,18 @@ export function registerMarketRoutes(router: Router, tradingManager: TradingMana
                   price = ticker.price;
                   tradingManager._priceCache!.set(sym, { price, ts: now });
                 } else {
-                  logger.warn(`Invalid price from ticker for ${sym}: ${ticker.price}`);
+                  logger.warn(
+                    `Invalid price from ticker for ${sym}: ${ticker.price}`,
+                    {},
+                    loggerContext
+                  );
                 }
               } catch (tickerError) {
-                logger.error(`Error fetching ticker for ${sym}:`, tickerError);
+                logger.error(
+                  `Error fetching ticker for ${sym}:`,
+                  tickerError instanceof Error ? tickerError : new Error(String(tickerError)),
+                  loggerContext
+                );
               }
             }
 
@@ -89,11 +98,19 @@ export function registerMarketRoutes(router: Router, tradingManager: TradingMana
                   tradingManager._klineCache!.set(kKey, { candle: last, ts: now });
                 }
               } catch (klineError) {
-                logger.error(`Error fetching candlesticks for ${sym}:`, klineError);
+                logger.error(
+                  `Error fetching candlesticks for ${sym}:`,
+                  klineError instanceof Error ? klineError : new Error(String(klineError)),
+                  loggerContext
+                );
               }
             }
           } catch (error) {
-            logger.error(`Error fetching data for ${sym}:`, error);
+            logger.error(
+              `Error fetching data for ${sym}:`,
+              error instanceof Error ? error : new Error(String(error)),
+              loggerContext
+            );
           }
 
           return {

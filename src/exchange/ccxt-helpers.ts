@@ -1,7 +1,7 @@
 import * as ccxt from 'ccxt';
 import { Candlestick, Account, Position } from './types.js';
 import { withRetry, createRetryConfig, type RetryConfig } from '../utils/retry.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export interface MarketsState {
   promise: Promise<void> | null;
@@ -10,7 +10,7 @@ export interface MarketsState {
 /** Ensure markets are loaded once per exchange instance using a shared state holder */
 export async function ensureMarketsLoaded(
   exchange: ccxt.Exchange,
-  logger: Logger,
+  logger: UnifiedLogger,
   state: MarketsState
 ): Promise<void> {
   if (!state.promise) {
@@ -19,7 +19,7 @@ export async function ensureMarketsLoaded(
         await exchange.loadMarkets();
       } catch (error) {
         state.promise = null;
-        logger.error('Failed to load markets', error as Error);
+        logger.error('Failed to load markets', error as Error, 'CCXT');
         throw error;
       }
     })();
@@ -30,7 +30,7 @@ export async function ensureMarketsLoaded(
 /** Thin retry wrapper with sensible defaults */
 export async function retry<T>(
   fn: () => Promise<T>,
-  logger: Logger,
+  logger: UnifiedLogger,
   label: string,
   cfg?: Partial<RetryConfig>
 ): Promise<T> {
@@ -41,10 +41,14 @@ export async function retry<T>(
       baseDelay: 1000,
       maxDelay: 5000,
       onRetry: (attempt, error) => {
-        logger.warn(`Retrying ${label}`, {
-          attempt,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        logger.warn(
+          `Retrying ${label}`,
+          {
+            attempt,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'CCXT'
+        );
       },
       ...cfg,
     })

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import type * as ccxt from 'ccxt';
-import { Logger } from '../../utils/logger.js';
+import { UnifiedLogger } from '../../logging/index.js';
 import { getConfig } from '../../config/settings.js';
 import { TradingManager } from '../trading-manager.js';
 import type { Exchange } from '../../exchange/types.js';
@@ -8,7 +8,8 @@ import { resolveExchange, isNonCCXTExchange } from '../utils/exchange-utils.js';
 import { normalizeSymbolParam } from '../utils/symbol-normalization.js';
 import { parseQueryLimit } from '../utils/error-handler.js';
 
-const logger = Logger.getInstance('DataRoutes');
+const logger = UnifiedLogger.getInstance();
+const loggerContext = 'DataRoutes';
 
 /**
  * Check if exchange has underlying CCXT instance and access it
@@ -54,7 +55,11 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
       const config = getConfig();
       res.json(config);
     } catch (error) {
-      logger.error('Error getting config', error);
+      logger.error(
+        'Error getting config',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
       res.status(500).json({ error: 'Failed to get config' });
     }
   });
@@ -71,7 +76,11 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
       const items = tradingManager.getSignals(limit) || [];
       res.json(items);
     } catch (error) {
-      logger.error('Error getting signals', error);
+      logger.error(
+        'Error getting signals',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
       res.status(500).json({ error: 'Failed to get signals' });
     }
   });
@@ -83,7 +92,11 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
       const items = tradingManager.getOrders(limit) || [];
       res.json(items);
     } catch (error) {
-      logger.error('Error getting orders', error);
+      logger.error(
+        'Error getting orders',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
       res.status(500).json({ error: 'Failed to get orders' });
     }
   });
@@ -94,7 +107,11 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
       const risk = tradingManager.getRisk();
       res.json(risk || null);
     } catch (error) {
-      logger.error('Error getting risk', error);
+      logger.error(
+        'Error getting risk',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
       res.status(500).json({ error: 'Failed to get risk' });
     }
   });
@@ -106,7 +123,11 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
       const items = tradingManager.getEquityHistory(limit) || [];
       res.json(items);
     } catch (error) {
-      logger.error('Error getting equity history', error);
+      logger.error(
+        'Error getting equity history',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
       res.status(500).json({ error: 'Failed to get equity history' });
     }
   });
@@ -132,7 +153,11 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
 
       res.json(candlesticks);
     } catch (error) {
-      logger.error('Error getting K-lines', error);
+      logger.error(
+        'Error getting K-lines',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
       const errorMessage = error instanceof Error ? error.message : 'Failed to get K-lines data';
       res.status(500).json({ error: errorMessage });
     }
@@ -183,7 +208,11 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
         timestamp: orderBook.timestamp || Date.now(),
       });
     } catch (error) {
-      logger.error('Error getting depth', error);
+      logger.error(
+        'Error getting depth',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
       const errorMessage = error instanceof Error ? error.message : 'Failed to get depth data';
       res.status(500).json({ error: errorMessage });
     }
@@ -234,7 +263,11 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
 
       res.json(formattedTrades);
     } catch (error) {
-      logger.error('Error getting trades', error);
+      logger.error(
+        'Error getting trades',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
       const errorMessage = error instanceof Error ? error.message : 'Failed to get trades data';
       res.status(500).json({ error: errorMessage });
     }

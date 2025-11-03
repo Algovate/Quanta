@@ -1,5 +1,5 @@
 import { Exchange } from '../exchange/types.js';
-import { Logger } from '../utils/index.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { timeframeToMs, type Timeframe } from '../utils/timeframe.js';
 import type { Candlestick } from '../types/index.js';
 
@@ -28,7 +28,8 @@ type BarListener = (event: BarEvent) => void;
 export class BarScheduler {
   private readonly exchange: Exchange;
   private readonly config: Required<BarSchedulerConfig>;
-  private readonly logger: Logger;
+  private readonly logger: UnifiedLogger;
+  private readonly context = 'BarScheduler';
   private timer?: NodeJS.Timeout;
   private isRunning: boolean = false;
   private readonly listeners: Set<BarListener> = new Set();
@@ -40,7 +41,7 @@ export class BarScheduler {
       pollIntervalMs: 5_000,
       ...config,
     } as Required<BarSchedulerConfig>;
-    this.logger = Logger.getInstance('BarScheduler');
+    this.logger = UnifiedLogger.getInstance();
   }
 
   onBarClosed(listener: BarListener): () => void {
@@ -65,7 +66,11 @@ export class BarScheduler {
     try {
       await this.scanOnce();
     } catch (error) {
-      this.logger.warn('BarScheduler scan failed', error);
+      this.logger.warn(
+        'BarScheduler scan failed',
+        error instanceof Error ? { error: error.message } : { error: String(error) },
+        this.context
+      );
     } finally {
       if (this.isRunning) {
         this.timer = setTimeout(() => void this.loop(), this.config.pollIntervalMs);

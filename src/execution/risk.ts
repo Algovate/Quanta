@@ -8,8 +8,7 @@ import {
   POSITION_MONITORING,
 } from './constants.js';
 import { aggregatePositionMetrics } from './position-utils.js';
-import { Logger } from '../utils/logger.js';
-import { LogLevel } from '../utils/logger-types.js';
+import { UnifiedLogger } from '../logging/index.js';
 import {
   safeMultiply,
   safeDivide,
@@ -43,12 +42,13 @@ export interface PositionSizing {
 
 export class RiskManager {
   private params: RiskParams;
-  private logger: Logger;
+  private logger: UnifiedLogger;
+  private readonly context = 'RiskManager';
   private performanceTracker: SymbolPerformanceTracker;
 
   constructor(params: RiskParams) {
     this.params = params;
-    this.logger = Logger.getInstance('RiskManager');
+    this.logger = UnifiedLogger.getInstance();
     this.performanceTracker = new SymbolPerformanceTracker(50); // Track last 50 trades per symbol
   }
 
@@ -166,15 +166,20 @@ export class RiskManager {
       }
 
       if (currentPrice <= ACCOUNT_VALIDATION.MIN_VALID_PRICE) {
-        this.logger.error('Invalid current price', { currentPrice, signal: signal.coin });
+        this.logger.error(
+          'Invalid current price',
+          new Error(`Current price ${currentPrice} for ${signal.coin} is invalid`),
+          this.context
+        );
         return null;
       }
 
       if (signal.entry_price && signal.entry_price <= ACCOUNT_VALIDATION.MIN_VALID_PRICE) {
-        this.logger.error('Invalid entry price in signal', {
-          entryPrice: signal.entry_price,
-          signal: signal.coin,
-        });
+        this.logger.error(
+          'Invalid entry price in signal',
+          new Error(`Entry price ${signal.entry_price} for ${signal.coin} is invalid`),
+          this.context
+        );
         return null;
       }
 
@@ -204,13 +209,17 @@ export class RiskManager {
       // Detect market regime (trending vs ranging) for adaptive stop loss
       const regime = this.detectRegime(indicators, entryPrice);
       if (regime !== 'unknown') {
-        this.logger.debug('Market regime detected', {
-          coin: signal.coin,
-          regime,
-          ema20: indicators?.ema20,
-          ema50: indicators?.ema50,
-          bandwidth: indicators?.bollinger?.bandwidth,
-        });
+        this.logger.debug(
+          'Market regime detected',
+          {
+            coin: signal.coin,
+            regime,
+            ema20: indicators?.ema20,
+            ema50: indicators?.ema50,
+            bandwidth: indicators?.bollinger?.bandwidth,
+          },
+          this.context
+        );
       }
 
       // Calculate ATR-based stop loss if ATR is available
@@ -226,18 +235,26 @@ export class RiskManager {
         const originalStop = atrBasedStopLoss;
         if (regime === 'trending' && atrBasedStopLoss) {
           atrBasedStopLoss = safeMultiply(atrBasedStopLoss, 1.33).toNumber(); // 33% wider
-          this.logger.debug('Trending regime: widening stop loss', {
-            coin: signal.coin,
-            original: (originalStop * 100).toFixed(2) + '%',
-            adjusted: (atrBasedStopLoss * 100).toFixed(2) + '%',
-          });
+          this.logger.debug(
+            'Trending regime: widening stop loss',
+            {
+              coin: signal.coin,
+              original: (originalStop * 100).toFixed(2) + '%',
+              adjusted: (atrBasedStopLoss * 100).toFixed(2) + '%',
+            },
+            this.context
+          );
         } else if (regime === 'ranging' && atrBasedStopLoss) {
           atrBasedStopLoss = safeMultiply(atrBasedStopLoss, 0.75).toNumber(); // 25% tighter
-          this.logger.debug('Ranging regime: tightening stop loss', {
-            coin: signal.coin,
-            original: (originalStop * 100).toFixed(2) + '%',
-            adjusted: (atrBasedStopLoss * 100).toFixed(2) + '%',
-          });
+          this.logger.debug(
+            'Ranging regime: tightening stop loss',
+            {
+              coin: signal.coin,
+              original: (originalStop * 100).toFixed(2) + '%',
+              adjusted: (atrBasedStopLoss * 100).toFixed(2) + '%',
+            },
+            this.context
+          );
         }
       }
 
@@ -253,11 +270,15 @@ export class RiskManager {
 
       // Enforce minimum stop loss to prevent division issues and unrealistic position sizes
       if (actualStopLoss < POSITION_SIZING.MIN_STOP_LOSS_THRESHOLD) {
-        this.logger.warn('Stop loss too small, using minimum threshold', {
-          original: actualStopLoss,
-          minimum: POSITION_SIZING.MIN_STOP_LOSS_THRESHOLD,
-          coin: signal.coin,
-        });
+        this.logger.warn(
+          'Stop loss too small, using minimum threshold',
+          {
+            original: actualStopLoss,
+            minimum: POSITION_SIZING.MIN_STOP_LOSS_THRESHOLD,
+            coin: signal.coin,
+          },
+          this.context
+        );
         actualStopLoss = POSITION_SIZING.MIN_STOP_LOSS_THRESHOLD;
       }
 
@@ -272,12 +293,16 @@ export class RiskManager {
             atrPercent,
             6
           ).toNumber();
-          this.logger.info('Volatility scaling applied', {
-            coin: signal.coin,
-            atrPercent: (atrPercent * 100).toFixed(2) + '%',
-            maxAllowed: (POSITION_SIZING.MAX_ATR_PERCENT_OF_PRICE * 100).toFixed(2) + '%',
-            scale: (volatilityScale * 100).toFixed(1) + '%',
-          });
+          this.logger.info(
+            'Volatility scaling applied',
+            {
+              coin: signal.coin,
+              atrPercent: (atrPercent * 100).toFixed(2) + '%',
+              maxAllowed: (POSITION_SIZING.MAX_ATR_PERCENT_OF_PRICE * 100).toFixed(2) + '%',
+              scale: (volatilityScale * 100).toFixed(1) + '%',
+            },
+            this.context
+          );
         }
       }
 
@@ -369,12 +394,13 @@ export class RiskManager {
       // Final validation
       if (!isFinite(cappedSize)) {
         // Only treat non有限/NaN为异常，输出error并带上下文
-        this.logger.error('Invalid position size calculated (non-finite)', {
-          cappedSize,
-          adjustedPositionValue,
-          pricePerUnit,
-          signal: signal.coin,
-        });
+        this.logger.error(
+          'Invalid position size calculated (non-finite)',
+          new Error(
+            `Position size calculation failed for ${signal.coin}: cappedSize=${cappedSize}, adjustedPositionValue=${adjustedPositionValue}, pricePerUnit=${pricePerUnit}`
+          ),
+          this.context
+        );
         return null;
       }
       if (cappedSize <= 0) {
@@ -391,7 +417,11 @@ export class RiskManager {
         leverage, // This is for reference, actual leverage applied by exchange
       };
     } catch (error) {
-      this.logger.error('Error calculating position sizing', error);
+      this.logger.error(
+        'Error calculating position sizing',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return null;
     }
   }
@@ -408,7 +438,11 @@ export class RiskManager {
   ): number {
     // Validate inputs
     if (account.equity <= 0) {
-      this.logger.error('Invalid equity for leverage calculation', { equity: account.equity });
+      this.logger.error(
+        'Invalid equity for leverage calculation',
+        new Error(`Equity ${account.equity} is invalid`),
+        this.context
+      );
       return this.params.minLeverage;
     }
 
@@ -458,11 +492,15 @@ export class RiskManager {
     if (perfAdjustment !== 1.0) {
       // Apply performance adjustment multiplicatively (final adjustment)
       leverage = safeMultiply(leverage, perfAdjustment).toNumber();
-      this.logger.debug('Adaptive leverage adjustment applied', {
-        symbol,
-        adjustment: (perfAdjustment * 100).toFixed(1) + '%',
-        finalLeverage: leverage.toFixed(2) + 'x',
-      });
+      this.logger.debug(
+        'Adaptive leverage adjustment applied',
+        {
+          symbol,
+          adjustment: (perfAdjustment * 100).toFixed(1) + '%',
+          finalLeverage: leverage.toFixed(2) + 'x',
+        },
+        this.context
+      );
     }
 
     // Ensure leverage stays within bounds
@@ -487,7 +525,7 @@ export class RiskManager {
         if (!signal.confidence) missingFields.push('confidence');
 
         const reason = `Missing required fields: ${missingFields.join(', ')}`;
-        this.logger.warn(`Signal validation failed: ${reason}`);
+        this.logger.warn(`Signal validation failed: ${reason}`, {}, this.context);
         return { valid: false, reason };
       }
 
@@ -497,27 +535,27 @@ export class RiskManager {
         SIGNAL_VALIDATION.MIN_CONFIDENCE
       );
       if (adaptiveThreshold !== SIGNAL_VALIDATION.MIN_CONFIDENCE) {
-        this.logger.debug('Adaptive confidence threshold applied', {
-          coin: signal.coin,
-          default: (SIGNAL_VALIDATION.MIN_CONFIDENCE * 100).toFixed(1) + '%',
-          adjusted: (adaptiveThreshold * 100).toFixed(1) + '%',
-        });
+        this.logger.debug(
+          'Adaptive confidence threshold applied',
+          {
+            coin: signal.coin,
+            default: (SIGNAL_VALIDATION.MIN_CONFIDENCE * 100).toFixed(1) + '%',
+            adjusted: (adaptiveThreshold * 100).toFixed(1) + '%',
+          },
+          this.context
+        );
       }
 
       // Check with epsilon tolerance for floating-point precision
       // (e.g., 0.54999999 should be accepted when threshold is 0.55)
       if (signal.confidence < adaptiveThreshold - SIGNAL_VALIDATION.CONFIDENCE_EPSILON) {
         const reason = `Confidence too low: ${(signal.confidence * 100).toFixed(1)}% < ${(adaptiveThreshold * 100).toFixed(1)}% required (adaptive threshold based on ${signal.coin} performance)`;
-        // Reduce console noise: downgrade to debug unless in verbose (info) mode
-        if (this.logger.getConfig().level <= LogLevel.INFO) {
-          this.logger.warn(
-            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
-          );
-        } else {
-          this.logger.debug(
-            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
-          );
-        }
+        // Log signal validation rejection
+        this.logger.debug(
+          `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`,
+          {},
+          this.context
+        );
         return { valid: false, reason };
       }
 
@@ -527,15 +565,11 @@ export class RiskManager {
       const existingPosition = currentPositions.find(p => p.symbol === positionSymbol);
       if (existingPosition && (signal.action === 'LONG' || signal.action === 'SHORT')) {
         const reason = `Position already exists for ${signal.coin} (${existingPosition.side} ${existingPosition.size} ${signal.coin})`;
-        if (this.logger.getConfig().level <= LogLevel.INFO) {
-          this.logger.warn(
-            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
-          );
-        } else {
-          this.logger.debug(
-            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
-          );
-        }
+        this.logger.debug(
+          `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`,
+          {},
+          this.context
+        );
         return { valid: false, reason };
       }
 
@@ -546,15 +580,11 @@ export class RiskManager {
           signal.stop_loss > SIGNAL_VALIDATION.MAX_STOP_LOSS)
       ) {
         const reason = `Invalid stop loss: ${(signal.stop_loss * 100).toFixed(1)}% not in range ${(SIGNAL_VALIDATION.MIN_STOP_LOSS * 100).toFixed(1)}%-${(SIGNAL_VALIDATION.MAX_STOP_LOSS * 100).toFixed(1)}%`;
-        if (this.logger.getConfig().level <= LogLevel.INFO) {
-          this.logger.warn(
-            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
-          );
-        } else {
-          this.logger.debug(
-            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
-          );
-        }
+        this.logger.debug(
+          `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`,
+          {},
+          this.context
+        );
         return { valid: false, reason };
       }
 
@@ -565,15 +595,11 @@ export class RiskManager {
         signal.profit_target < signal.stop_loss * SIGNAL_VALIDATION.MIN_RISK_REWARD_RATIO
       ) {
         const reason = `Invalid risk/reward ratio: ${(signal.profit_target / signal.stop_loss).toFixed(2)} < ${SIGNAL_VALIDATION.MIN_RISK_REWARD_RATIO} required`;
-        if (this.logger.getConfig().level <= LogLevel.INFO) {
-          this.logger.warn(
-            `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
-          );
-        } else {
-          this.logger.debug(
-            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
-          );
-        }
+        this.logger.debug(
+          `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`,
+          {},
+          this.context
+        );
         return { valid: false, reason };
       }
 
@@ -583,15 +609,11 @@ export class RiskManager {
         const sameSidePositions = currentPositions.filter(p => p.side === targetSide);
         if (sameSidePositions.length >= POSITION_SIZING.MAX_SAME_SIDE_POSITIONS) {
           const reason = `Too many ${targetSide} positions (${sameSidePositions.length} >= ${POSITION_SIZING.MAX_SAME_SIDE_POSITIONS}), rejecting to reduce correlation`;
-          if (this.logger.getConfig().level <= LogLevel.INFO) {
-            this.logger.warn(
-              `Signal validation failed for ${signal.coin} ${signal.action}: ${reason}`
-            );
-          } else {
-            this.logger.debug(
-              `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`
-            );
-          }
+          this.logger.debug(
+            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`,
+            {},
+            this.context
+          );
           return { valid: false, reason };
         }
       }
@@ -599,7 +621,11 @@ export class RiskManager {
       return { valid: true };
     } catch (error) {
       const reason = `Validation error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      this.logger.error('Error validating signal', error);
+      this.logger.error(
+        'Error validating signal',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return { valid: false, reason };
     }
   }
@@ -690,28 +716,37 @@ export class RiskManager {
    */
   checkPortfolioDrawdown(account: Account, initialBalance: number): boolean {
     if (initialBalance <= 0) {
-      this.logger.error('Invalid initial balance for drawdown calculation', { initialBalance });
+      this.logger.error(
+        'Invalid initial balance for drawdown calculation',
+        new Error(`Initial balance ${initialBalance} is invalid`),
+        this.context
+      );
       return false;
     }
 
     const drawdown = (initialBalance - account.equity) / initialBalance;
 
     if (drawdown > POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN) {
-      this.logger.error('Portfolio drawdown limit exceeded - emergency close recommended', {
-        drawdown: (drawdown * 100).toFixed(2) + '%',
-        limit: (POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 100).toFixed(2) + '%',
-        currentEquity: account.equity,
-        initialBalance,
-      });
+      this.logger.error(
+        'Portfolio drawdown limit exceeded - emergency close recommended',
+        new Error(
+          `Drawdown ${(drawdown * 100).toFixed(2)}% exceeds limit ${(POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 100).toFixed(2)}%`
+        ),
+        this.context
+      );
       return true;
     }
 
     // Warn at 75% of limit
     if (drawdown > POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 0.75) {
-      this.logger.warn('Portfolio drawdown approaching limit', {
-        drawdown: (drawdown * 100).toFixed(2) + '%',
-        limit: (POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 100).toFixed(2) + '%',
-      });
+      this.logger.warn(
+        'Portfolio drawdown approaching limit',
+        {
+          drawdown: (drawdown * 100).toFixed(2) + '%',
+          limit: (POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 100).toFixed(2) + '%',
+        },
+        this.context
+      );
     }
 
     return false;
@@ -725,19 +760,24 @@ export class RiskManager {
    */
   checkDailyLossLimit(account: Account, startOfDayBalance: number): boolean {
     if (startOfDayBalance <= 0) {
-      this.logger.error('Invalid start of day balance', { startOfDayBalance });
+      this.logger.error(
+        'Invalid start of day balance',
+        new Error(`Start of day balance ${startOfDayBalance} is invalid`),
+        this.context
+      );
       return false;
     }
 
     const dailyLoss = (startOfDayBalance - account.equity) / startOfDayBalance;
 
     if (dailyLoss > POSITION_MONITORING.MAX_DAILY_LOSS) {
-      this.logger.error('Daily loss limit exceeded - trading should be paused', {
-        dailyLoss: (dailyLoss * 100).toFixed(2) + '%',
-        limit: (POSITION_MONITORING.MAX_DAILY_LOSS * 100).toFixed(2) + '%',
-        currentEquity: account.equity,
-        startOfDayBalance,
-      });
+      this.logger.error(
+        'Daily loss limit exceeded - trading should be paused',
+        new Error(
+          `Daily loss ${(dailyLoss * 100).toFixed(2)}% exceeds limit ${(POSITION_MONITORING.MAX_DAILY_LOSS * 100).toFixed(2)}%`
+        ),
+        this.context
+      );
       return true;
     }
 
@@ -756,11 +796,15 @@ export class RiskManager {
   ): { stopPrice: number | null; newPeakPrice: number } {
     // Validate inputs
     if (position.entryPrice <= 0 || currentPrice <= 0) {
-      this.logger.warn('Invalid prices for trailing stop calculation', {
-        entryPrice: position.entryPrice,
-        currentPrice,
-        symbol: position.symbol,
-      });
+      this.logger.warn(
+        'Invalid prices for trailing stop calculation',
+        {
+          entryPrice: position.entryPrice,
+          currentPrice,
+          symbol: position.symbol,
+        },
+        this.context
+      );
       return { stopPrice: null, newPeakPrice: position.peakPrice || currentPrice };
     }
 

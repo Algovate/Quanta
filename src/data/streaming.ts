@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import type { Exchange } from '../exchange/types.js';
 import type { Candlestick } from '../types/index.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { timeframeToMs, type Timeframe } from '../utils/timeframe.js';
 import { EventBus } from '../core/event-bus.js';
 
@@ -47,7 +47,7 @@ export class StreamingIngestion {
   private readonly exchange: Exchange;
   private readonly config: Required<StreamingConfig>;
   private readonly timeSync: TimeSyncProvider;
-  private readonly logger: Logger;
+  private readonly logger: UnifiedLogger;
   private readonly emitter = new EventEmitter();
   private timer?: NodeJS.Timeout;
   private running = false;
@@ -64,7 +64,7 @@ export class StreamingIngestion {
       ...config,
     } as Required<StreamingConfig>;
     this.timeSync = timeSync;
-    this.logger = Logger.getInstance('StreamingIngestion');
+    this.logger = UnifiedLogger.getInstance();
   }
 
   on<K extends StreamEvent>(event: K, listener: (payload: StreamEventMap[K]) => void): () => void {

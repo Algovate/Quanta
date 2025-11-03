@@ -27,6 +27,7 @@ export type {
   AggregatedError,
   MetricsSnapshot,
   SamplingConfig,
+  TextLog,
 } from './types.js';
 
 export type { SamplingState } from './sampler.js';

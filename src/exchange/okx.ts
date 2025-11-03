@@ -1,6 +1,6 @@
 import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { withRetry, createRetryConfig } from '../utils/retry.js';
 import { ensureMarketsLoaded, mapOHLCV, type MarketsState } from './ccxt-helpers.js';
 
@@ -8,7 +8,8 @@ export class OKXExchange implements Exchange {
   private exchange: ccxt.okx;
   private isTestnet: boolean;
   private marketsState: MarketsState = { promise: null };
-  private logger = Logger.getInstance('OKXExchange');
+  private logger = UnifiedLogger.getInstance();
+  private readonly context = 'OKXExchange';
 
   constructor(
     apiKey?: string,
@@ -143,10 +144,14 @@ export class OKXExchange implements Exchange {
         baseDelay: 1000,
         maxDelay: 5000,
         onRetry: (attempt, error) => {
-          this.logger.warn('Retrying OKX getAccount', {
-            attempt,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.logger.warn(
+            'Retrying OKX getAccount',
+            {
+              attempt,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
         },
       })
     );
@@ -168,10 +173,14 @@ export class OKXExchange implements Exchange {
           // Validate markPrice - positions from exchange should always have valid markPrice
           // But handle gracefully if exchange returns invalid data
           if (markPrice <= 0 || !isFinite(markPrice)) {
-            this.logger.warn(`Invalid markPrice from OKX position: ${markPrice}`, {
-              symbol: pos.symbol as string,
-              markPrice,
-            });
+            this.logger.warn(
+              `Invalid markPrice from OKX position: ${markPrice}`,
+              {
+                symbol: pos.symbol as string,
+                markPrice,
+              },
+              this.context
+            );
             // Don't skip position - return with 0 but log warning
             // Caller should handle this appropriately
           }
@@ -194,14 +203,22 @@ export class OKXExchange implements Exchange {
         baseDelay: 1000,
         maxDelay: 5000,
         onRetry: (attempt, error) => {
-          this.logger.warn('Retrying OKX getPositions', {
-            attempt,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.logger.warn(
+            'Retrying OKX getPositions',
+            {
+              attempt,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
         },
       })
     ).catch(error => {
-      this.logger.error('Error fetching positions from OKX after retries', error as Error);
+      this.logger.error(
+        'Error fetching positions from OKX after retries',
+        error as Error,
+        this.context
+      );
       return [];
     });
   }
@@ -219,12 +236,16 @@ export class OKXExchange implements Exchange {
         baseDelay: 1000,
         maxDelay: 5000,
         onRetry: (attempt, error) => {
-          this.logger.warn('Retrying OKX getCandlesticks', {
-            attempt,
-            symbol,
-            timeframe,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.logger.warn(
+            'Retrying OKX getCandlesticks',
+            {
+              attempt,
+              symbol,
+              timeframe,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
         },
       })
     );
@@ -269,7 +290,7 @@ export class OKXExchange implements Exchange {
         timestamp: Date.now(),
       };
     } catch (error) {
-      this.logger.error('Error placing order on OKX', error as Error);
+      this.logger.error('Error placing order on OKX', error as Error, this.context);
       throw error;
     }
   }
@@ -283,7 +304,7 @@ export class OKXExchange implements Exchange {
       await this.exchange.cancelOrder(orderId, symbol);
       return true;
     } catch (error) {
-      this.logger.error('Error canceling order on OKX', error as Error);
+      this.logger.error('Error canceling order on OKX', error as Error, this.context);
       return false;
     }
   }
@@ -310,11 +331,15 @@ export class OKXExchange implements Exchange {
         baseDelay: 500, // Faster retry for ticker (less critical)
         maxDelay: 2000,
         onRetry: (attempt, error) => {
-          this.logger.warn('Retrying OKX getTicker', {
-            attempt,
-            symbol,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.logger.warn(
+            'Retrying OKX getTicker',
+            {
+              attempt,
+              symbol,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
         },
       })
     );

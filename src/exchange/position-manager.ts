@@ -26,7 +26,7 @@ import {
   roundToPrecision,
   EXCHANGE_PRECISION,
 } from '../utils/precision.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export interface PositionManagerConfig {
   account: Account;
@@ -42,11 +42,12 @@ export interface PositionManagerConfig {
  */
 export class PositionUpdateManager {
   private config: PositionManagerConfig;
-  private logger: Logger;
+  private logger: UnifiedLogger;
+  private readonly context = 'PositionManager';
 
   constructor(config: PositionManagerConfig) {
     this.config = config;
-    this.logger = Logger.getInstance('PositionManager');
+    this.logger = UnifiedLogger.getInstance();
   }
 
   /**
@@ -181,13 +182,15 @@ export class PositionUpdateManager {
 
     if (closeCheck.shouldCreatePosition) {
       if (closeCheck.warningMessage) {
-        this.logger.warn(closeCheck.warningMessage);
+        this.logger.warn(closeCheck.warningMessage, {}, this.context);
       }
       this.createNewPosition(symbol, positionSide, remainingAmount, price, leverage);
     } else if (closeCheck.shouldLogRemainder) {
       this.logger.debug(
         `Ignoring small remaining amount (${remainingAmount}) after closing ${symbol} position ` +
-          `(likely floating point precision). Closed size: ${closedSize}`
+          `(likely floating point precision). Closed size: ${closedSize}`,
+        {},
+        this.context
       );
     }
 

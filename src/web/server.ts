@@ -2,7 +2,7 @@ import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import http from 'http';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { TradingManager } from './trading-manager.js';
 import { HealthCheckService } from './health-check.js';
 import type { OutboundMessage } from './types.js';
@@ -15,7 +15,8 @@ import {
 } from './routes/index.js';
 import { createPriceCache, createKlineCache } from './utils/cache.js';
 
-const logger = Logger.getInstance('Server');
+const logger = UnifiedLogger.getInstance();
+const loggerContext = 'Server';
 
 export class APIServer {
   private app: express.Application;
@@ -48,8 +49,8 @@ export class APIServer {
     this.setupWebSocket();
 
     this.server.listen(port, () => {
-      logger.info(`API Server running on http://localhost:${port}`);
-      logger.info(`WebSocket server running on ws://localhost:${port}`);
+      logger.info(`API Server running on http://localhost:${port}`, {}, loggerContext);
+      logger.info(`WebSocket server running on ws://localhost:${port}`, {}, loggerContext);
     });
   }
 
@@ -98,7 +99,11 @@ export class APIServer {
 
         res.status(httpStatus).json(status);
       } catch (error) {
-        logger.error('Health check failed', error as Error);
+        logger.error(
+          'Health check failed',
+          error instanceof Error ? error : new Error(String(error)),
+          loggerContext
+        );
         res.status(503).json({
           status: 'unhealthy',
           timestamp: Date.now(),
@@ -117,7 +122,7 @@ export class APIServer {
 
   private setupWebSocket(): void {
     this.wss.on('connection', (ws: WebSocket) => {
-      logger.info('WebSocket client connected');
+      logger.info('WebSocket client connected', {}, loggerContext);
       this.clients.add(ws);
 
       // Heartbeat tracking
@@ -133,12 +138,16 @@ export class APIServer {
       ws.send(JSON.stringify({ type: 'system:state', data: state }));
 
       ws.on('close', () => {
-        logger.info('WebSocket client disconnected');
+        logger.info('WebSocket client disconnected', {}, loggerContext);
         this.clients.delete(ws);
       });
 
       ws.on('error', error => {
-        logger.error('WebSocket error', error);
+        logger.error(
+          'WebSocket error',
+          error instanceof Error ? error : new Error(String(error)),
+          loggerContext
+        );
       });
     });
 
@@ -216,14 +225,22 @@ export class APIServer {
                   data: { symbol, timeframe, candle: last },
                 });
               } catch (e) {
-                logger.warn(`Failed to fetch klines for ${symbol}: ${(e as Error)?.message}`);
+                logger.warn(
+                  `Failed to fetch klines for ${symbol}: ${(e as Error)?.message}`,
+                  {},
+                  loggerContext
+                );
               }
             })
           );
         } catch (error) {
           // Klines fetching can fail for various reasons (network, exchange, etc.)
           // This is non-critical for the server, so we log and continue
-          logger.warn('Failed to fetch klines for WebSocket broadcast', error);
+          logger.warn(
+            'Failed to fetch klines for WebSocket broadcast',
+            error instanceof Error ? { error: error.message } : { error: String(error) },
+            loggerContext
+          );
         }
       })();
     });
@@ -258,6 +275,6 @@ export class APIServer {
       void _e;
     }
     this.server.close();
-    logger.info('API Server stopped');
+    logger.info('API Server stopped', {}, loggerContext);
   }
 }

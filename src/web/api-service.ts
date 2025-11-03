@@ -2,6 +2,7 @@ import { TradingManager } from './trading-manager.js';
 import { getConfig } from '../config/settings.js';
 import { createExchangeForMode, describeExchange } from './exchange-factory.js';
 import { createWorkflowDeps } from '../core/factories.js';
+import { UnifiedLogger } from '../logging/index.js';
 import type { BacktestConfig } from '../types/index.js';
 import type { Exchange } from '../exchange/types.js';
 
@@ -20,17 +21,19 @@ export async function startTradingService(
 
   const exchange = await createExchangeForMode();
 
-  // Display effective configuration and exchange selection (parity with CLI output)
+  // Log effective configuration and exchange selection (parity with CLI output)
+  const logger = UnifiedLogger.getInstance();
+  const loggerContext = 'TradingService';
   try {
-    console.log('📊 Configuration:');
-    console.log(`   Mode: ${config.mode || 'simulation'}`);
+    logger.info('📊 Configuration:', {}, loggerContext);
+    logger.info(`   Mode: ${config.mode || 'simulation'}`, {}, loggerContext);
     const friendly = describeExchange(exchange, config.exchange?.testnet ?? true);
-    if (friendly) console.log(`   Exchange: ${friendly}`);
+    if (friendly) logger.info(`   Exchange: ${friendly}`, {}, loggerContext);
     if (config.exchange?.marketType) {
-      console.log(`   Market Type: ${config.exchange.marketType}`);
+      logger.info(`   Market Type: ${config.exchange.marketType}`, {}, loggerContext);
     }
   } catch {
-    // best-effort display only
+    // best-effort logging only
   }
 
   const tradingCoins = coins || config.trading.coins;

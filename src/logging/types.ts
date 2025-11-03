@@ -268,3 +268,14 @@ export interface SamplingConfig {
     debugLogRate: number;
   };
 }
+
+export interface TextLog {
+  logId: string;
+  timestamp: number;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  context: string;
+  message: string; // Plain text (for querying)
+  formattedMessage: string; // Formatted with ANSI codes (for console display)
+  metadata?: Record<string, any>;
+  cycleId?: number;
+}

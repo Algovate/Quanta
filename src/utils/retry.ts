@@ -1,4 +1,4 @@
-import { Logger } from './logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export interface RetryConfig {
   maxRetries: number;
@@ -20,7 +20,8 @@ export class RetryError extends Error {
   }
 }
 
-const logger = Logger.getInstance('Retry');
+const logger = UnifiedLogger.getInstance();
+const loggerContext = 'Retry';
 
 /**
  * Default retry predicate - retry on network errors, timeouts, and 5xx errors
@@ -123,12 +124,16 @@ export async function withRetry<T>(fn: () => Promise<T>, config: RetryConfig): P
       const shouldRetryError = shouldRetry(error);
 
       // Log retry attempt
-      logger.debug('Function failed, checking retry eligibility', {
-        attempt: attempt + 1,
-        maxRetries,
-        shouldRetry: shouldRetryError,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.debug(
+        'Function failed, checking retry eligibility',
+        {
+          attempt: attempt + 1,
+          maxRetries,
+          shouldRetry: shouldRetryError,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        loggerContext
+      );
 
       // If this was the last attempt or we shouldn't retry, throw
       if (attempt >= maxRetries || !shouldRetryError) {
@@ -147,11 +152,15 @@ export async function withRetry<T>(fn: () => Promise<T>, config: RetryConfig): P
         onRetry(attempt + 1, error);
       }
 
-      logger.info('Retrying after delay', {
-        attempt: attempt + 1,
-        delay,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.info(
+        'Retrying after delay',
+        {
+          attempt: attempt + 1,
+          delay,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        loggerContext
+      );
 
       // Wait before retrying
       await new Promise(resolve => setTimeout(resolve, delay));

@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { APIServer } from '../../web/server.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import { UnifiedLogger } from '../../logging/index.js';
 
 export class ServerCommands {
   static register(program: Command): void {
@@ -44,42 +45,67 @@ export class ServerCommands {
       throw new Error(`Invalid port: ${options.port}`);
     }
 
-    console.log(chalk.cyan('🚀 Quanta API Server'));
-    console.log(chalk.gray('Starting web interface server...\n'));
+    // Initialize UnifiedLogger for detailed logging
+    const unifiedLogger = UnifiedLogger.getInstance();
+    unifiedLogger.initialize();
+
+    // Get original console to bypass interception for minimal output
+    const originalConsole = unifiedLogger.getOriginalConsole();
+
+    // Console: Minimal essential info only (use originalConsole to avoid interception)
+    originalConsole.log(chalk.cyan('🚀 Quanta API Server'));
+    originalConsole.log(chalk.green(`✅ Running on http://localhost:${port}\n`));
+    originalConsole.log(chalk.gray('Use "quanta log console" to view detailed output.\n'));
+
+    // UnifiedLogger: Full detailed output
+    unifiedLogger.info(chalk.cyan('🚀 Quanta API Server'), {}, 'Server');
+    unifiedLogger.info(chalk.gray('Starting web interface server...\n'), {}, 'Server');
 
     const spinner = ora('Initializing server...').start();
+    unifiedLogger.info('Initializing server...', {}, 'Server');
 
     try {
       const server = new APIServer(port);
 
       spinner.succeed(`Server started successfully on port ${port}`);
+      unifiedLogger.info(`Server started successfully on port ${port}`, {}, 'Server');
 
-      console.log(chalk.green('\n✅ Server is running!\n'));
-      console.log(chalk.blue('📊 Server Information:'));
-      console.log(`   API:      http://localhost:${port}`);
-      console.log(`   Health:   http://localhost:${port}/health`);
-      console.log(`   WebSocket: ws://localhost:${port}`);
-      console.log('');
-      console.log(chalk.yellow('💡 Next steps:'));
-      console.log(chalk.gray('   1. Start the web UI: cd web && npm run dev'));
-      console.log(chalk.gray('   2. Or access the API directly at http://localhost:' + port));
-      console.log('');
-      console.log(chalk.gray('Press Ctrl+C to stop the server\n'));
+      // UnifiedLogger: Log all server information
+      unifiedLogger.info(chalk.green('\n✅ Server is running!\n'), {}, 'Server');
+      unifiedLogger.info(chalk.blue('📊 Server Information:'), {}, 'Server');
+      unifiedLogger.info(`   API:      http://localhost:${port}`, {}, 'Server');
+      unifiedLogger.info(`   Health:   http://localhost:${port}/health`, {}, 'Server');
+      unifiedLogger.info(`   WebSocket: ws://localhost:${port}`, {}, 'Server');
+      unifiedLogger.info('', {}, 'Server');
+      unifiedLogger.info(chalk.yellow('💡 Next steps:'), {}, 'Server');
+      unifiedLogger.info(chalk.gray('   1. Start the web UI: cd web && npm run dev'), {}, 'Server');
+      unifiedLogger.info(
+        chalk.gray(`   2. Or access the API directly at http://localhost:${port}`),
+        {},
+        'Server'
+      );
+      unifiedLogger.info('', {}, 'Server');
+      unifiedLogger.info(chalk.gray('Press Ctrl+C to stop the server\n'), {}, 'Server');
 
       // Keep the process alive
       process.on('SIGINT', () => {
-        console.log(chalk.yellow('\n⏹  Shutting down server...'));
+        unifiedLogger.info(chalk.yellow('\n⏹  Shutting down server...'), {}, 'Server');
+        originalConsole.log(chalk.yellow('\n⏹  Shutting down server...'));
         server.stop();
         process.exit(0);
       });
 
       process.on('SIGTERM', () => {
+        unifiedLogger.info(chalk.yellow('\n⏹  Shutting down server...'), {}, 'Server');
         console.log(chalk.yellow('\n⏹  Shutting down server...'));
         server.stop();
         process.exit(0);
       });
-    } catch {
+    } catch (error) {
       spinner.fail('Failed to start server');
+      if (error instanceof Error) {
+        unifiedLogger.error('Failed to start server', error, 'Server');
+      }
       throw new Error('Failed to start server');
     }
   }

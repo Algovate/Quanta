@@ -1,6 +1,6 @@
 import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import {
   ensureMarketsLoaded,
   mapOHLCV,
@@ -14,7 +14,7 @@ export class CoinbaseExchange implements Exchange {
   private exchange: ccxt.coinbase;
   private isTestnet: boolean;
   private marketsState: MarketsState = { promise: null };
-  private logger = Logger.getInstance('CoinbaseExchange');
+  private logger = UnifiedLogger.getInstance();
 
   constructor(apiKey?: string, apiSecret?: string, testnet: boolean = true) {
     this.isTestnet = testnet;

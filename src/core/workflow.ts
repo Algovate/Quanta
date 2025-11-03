@@ -9,7 +9,6 @@ import { EventBus } from './event-bus.js';
 import { BarScheduler, type BarTimeframe } from './scheduler.js';
 import { aggregatePositionMetrics, PositionAggregates } from '../execution/position-utils.js';
 import { validateAccount } from '../utils/account-validation.js';
-import { Logger } from '../utils/logger.js';
 import { CycleLogger, CycleDisplay } from './display/index.js';
 import chalk from 'chalk';
 import { ExchangeSnapshotService } from './exchange-snapshot.js';
@@ -111,7 +110,8 @@ export class TradingWorkflow {
   private nextTimeout?: NodeJS.Timeout;
   private isCycleRunning: boolean = false;
   private isPaused: boolean = false;
-  private logger: Logger;
+  private logger: UnifiedLogger;
+  private readonly loggerContext = 'Workflow';
   private cycleLogger: CycleLogger;
   private cycleDisplay: CycleDisplay;
   private isBackgroundMode: boolean;
@@ -145,7 +145,7 @@ export class TradingWorkflow {
       forceMarketOrders: forceMarket,
     });
     this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor);
-    this.logger = Logger.getInstance('Workflow');
+    this.logger = UnifiedLogger.getInstance();
     this.cycleLogger = new CycleLogger();
     this.cycleDisplay = new CycleDisplay();
     this.isBackgroundMode = this.logger.isBackgroundMode();
@@ -378,15 +378,19 @@ export class TradingWorkflow {
 
     // Log to structured logger for file output (background mode only to avoid buffering delays)
     if (this.isBackgroundMode) {
-      this.logger.info('AI Signal Generation', {
-        signalCount: signals.length,
-        signals: signals.map(s => ({
-          coin: s.coin,
-          action: s.action,
-          confidence: s.confidence,
-          reasoning: s.reasoning,
-        })),
-      });
+      this.logger.info(
+        'AI Signal Generation',
+        {
+          signalCount: signals.length,
+          signals: signals.map(s => ({
+            coin: s.coin,
+            action: s.action,
+            confidence: s.confidence,
+            reasoning: s.reasoning,
+          })),
+        },
+        this.loggerContext
+      );
     }
 
     // Console output with formatting (only if not background mode)
@@ -574,10 +578,14 @@ export class TradingWorkflow {
       // This ensures P&L calculations are correct even if the cycle fails later
       if (this.state.cycleCount === 1 && this.state.initialBalance === 0 && account.equity > 0) {
         this.state.initialBalance = account.equity;
-        this.logger.info('Initial balance set for P&L tracking', {
-          initialBalance: this.state.initialBalance,
-          equity: account.equity,
-        });
+        this.logger.info(
+          'Initial balance set for P&L tracking',
+          {
+            initialBalance: this.state.initialBalance,
+            equity: account.equity,
+          },
+          this.loggerContext
+        );
       }
 
       this.emitLog(
@@ -624,6 +632,28 @@ export class TradingWorkflow {
           for (const pos of positionDecisionInfos) {
             for (const decision of pos.decisions) {
               decisionsByType[decision.type] = (decisionsByType[decision.type] || 0) + 1;
+            }
+          }
+
+          // Record validation checks for each position decision
+          for (const pos of positionsWithDecisions) {
+            for (const decision of pos.decisions) {
+              const checkName = `${decision.type}_${pos.symbol}`;
+              const checkReason = `${pos.symbol} (${pos.side}): ${decision.action} - ${decision.reason}`;
+
+              this.unifiedLogger.recordValidationCheck(cycleOperationId, 'monitor_positions', {
+                name: checkName,
+                passed: true,
+                reason: checkReason,
+                details: {
+                  symbol: pos.symbol,
+                  side: pos.side,
+                  decisionType: decision.type,
+                  action: decision.action,
+                  reason: decision.reason,
+                  ...decision.details,
+                },
+              });
             }
           }
 
@@ -730,11 +760,15 @@ export class TradingWorkflow {
 
       // Log if positions changed after monitoring
       if (positions.length !== updatedPositions.length) {
-        this.logger.info('Positions changed after monitoring', {
-          before: positions.length,
-          after: updatedPositions.length,
-          closed: positions.length - updatedPositions.length,
-        });
+        this.logger.info(
+          'Positions changed after monitoring',
+          {
+            before: positions.length,
+            after: updatedPositions.length,
+            closed: positions.length - updatedPositions.length,
+          },
+          this.loggerContext
+        );
       }
 
       // 3. Get market data for all coins
@@ -769,10 +803,18 @@ export class TradingWorkflow {
             tickerCache.set(symbol, { price, timestamp: Date.now() });
             return price;
           }
-          this.logger.warn(`Invalid price from ticker for ${symbol}: ${price}`);
+          this.logger.warn(
+            `Invalid price from ticker for ${symbol}: ${price}`,
+            {},
+            this.loggerContext
+          );
           return undefined;
         } catch (error) {
-          this.logger.debug(`Failed to fetch ticker for ${symbol}`, error);
+          this.logger.debug(
+            `Failed to fetch ticker for ${symbol}`,
+            error instanceof Error ? { error: error.message } : { error: String(error) },
+            this.loggerContext
+          );
           return undefined; // Return undefined instead of 0 - caller must handle
         }
       };
@@ -899,12 +941,16 @@ export class TradingWorkflow {
           'warn',
           `⚠️  No market data available - skipping signal generation for this cycle`
         );
-        this.logger.warn('Cycle aborted due to insufficient market data', {
-          cycleCount: this.state.cycleCount,
-          successCount,
-          failCount,
-          coins: this.config.coins.length,
-        });
+        this.logger.warn(
+          'Cycle aborted due to insufficient market data',
+          {
+            cycleCount: this.state.cycleCount,
+            successCount,
+            failCount,
+            coins: this.config.coins.length,
+          },
+          this.loggerContext
+        );
 
         // Record error and complete cycle
         this.unifiedLogger.recordError(new Error('Insufficient market data'), {
@@ -974,7 +1020,11 @@ export class TradingWorkflow {
 
           // If still no price, skip enrichment for this position
           if (!currentPrice || !isFinite(currentPrice) || currentPrice <= 0) {
-            this.logger.warn(`Cannot enrich position ${position.symbol}: invalid current price`);
+            this.logger.warn(
+              `Cannot enrich position ${position.symbol}: invalid current price`,
+              {},
+              this.loggerContext
+            );
             continue;
           }
 
@@ -1181,7 +1231,11 @@ export class TradingWorkflow {
             tickerCache.set(symbol, { price, timestamp: Date.now() });
             return price;
           }
-          this.logger.warn(`Invalid price from ticker for ${symbol}: ${price}`);
+          this.logger.warn(
+            `Invalid price from ticker for ${symbol}: ${price}`,
+            {},
+            this.loggerContext
+          );
           return undefined;
         } catch {
           return undefined;
@@ -1221,12 +1275,16 @@ export class TradingWorkflow {
             'warn',
             `⚠️  ${signal.coin}: Skipping signal execution - price unavailable (${currentPrice === undefined ? 'undefined' : `$${currentPrice.toFixed(2)}`})`
           );
-          this.logger.warn('Signal execution skipped due to unavailable price', {
-            coin: signal.coin,
-            symbol,
-            action: signal.action,
-            price: currentPrice,
-          });
+          this.logger.warn(
+            'Signal execution skipped due to unavailable price',
+            {
+              coin: signal.coin,
+              symbol,
+              action: signal.action,
+              price: currentPrice,
+            },
+            this.loggerContext
+          );
           // Record decision info for skipped signal
           signalDecisionInfos.push({
             coin: signal.coin,
@@ -1278,7 +1336,8 @@ export class TradingWorkflow {
                 coin: signal.coin,
                 action: signal.action,
                 error: error instanceof Error ? error.message : String(error),
-              }
+              },
+              this.loggerContext
             );
             // If position refresh fails after executing a signal, abort remaining signals
             // to prevent stale state from causing duplicate positions or risk violations
@@ -1730,13 +1789,17 @@ export class TradingWorkflow {
           const ref = currentPrice;
           const relDiff = ref ? Math.abs(actualPrice - ref) / ref : 0;
           if (relDiff > 0.05) {
-            this.logger.warn('Symbol/price mismatch suspected', {
-              coin: signal.coin,
-              symbol,
-              executionPrice: actualPrice,
-              tickerPrice: ref,
-              relativeDiff: relDiff,
-            });
+            this.logger.warn(
+              'Symbol/price mismatch suspected',
+              {
+                coin: signal.coin,
+                symbol,
+                executionPrice: actualPrice,
+                tickerPrice: ref,
+                relativeDiff: relDiff,
+              },
+              this.loggerContext
+            );
           }
         } catch {
           // Non-critical
@@ -1947,10 +2010,14 @@ export class TradingWorkflow {
     } else {
       // If initialBalance is not set, use 0 as default (prevents incorrect calculations)
       this.state.totalPnl = 0;
-      this.logger.warn('Cannot calculate total P&L: initial balance not set', {
-        cycleCount: this.state.cycleCount,
-        equity: account.equity,
-      });
+      this.logger.warn(
+        'Cannot calculate total P&L: initial balance not set',
+        {
+          cycleCount: this.state.cycleCount,
+          equity: account.equity,
+        },
+        this.loggerContext
+      );
     }
 
     // Calculate win rate from completed trades
@@ -2055,10 +2122,14 @@ export class TradingWorkflow {
     const validation = validateAccount(account, positions, totalMarginUsed);
     if (!validation.isValid) {
       if (validation.equityCheck && !validation.equityCheck.isValid) {
-        this.logger.warn('Equity calculation mismatch detected in cycle summary', {
-          cycle: this.state.cycleCount,
-          ...validation.equityCheck,
-        });
+        this.logger.warn(
+          'Equity calculation mismatch detected in cycle summary',
+          {
+            cycle: this.state.cycleCount,
+            ...validation.equityCheck,
+          },
+          this.loggerContext
+        );
         if (!this.isBackgroundMode) {
           const ec = validation.equityCheck;
           console.warn(
@@ -2069,10 +2140,14 @@ export class TradingWorkflow {
         }
       }
       if (validation.marginCheck && !validation.marginCheck.isValid) {
-        this.logger.warn('Available margin calculation mismatch detected in cycle summary', {
-          cycle: this.state.cycleCount,
-          ...validation.marginCheck,
-        });
+        this.logger.warn(
+          'Available margin calculation mismatch detected in cycle summary',
+          {
+            cycle: this.state.cycleCount,
+            ...validation.marginCheck,
+          },
+          this.loggerContext
+        );
         if (!this.isBackgroundMode) {
           const mc = validation.marginCheck;
           console.warn(
@@ -2104,37 +2179,41 @@ export class TradingWorkflow {
   ): void {
     if (!this.isBackgroundMode) return;
 
-    this.logger.info('Cycle Summary', {
-      cycle: this.state.cycleCount,
-      runtime: `${runtimeMinutes}m ${runtimeSeconds}s`,
-      totalCycles: this.state.cycleCount,
-      aiSignals: signals.length,
-      executedTrades: this.state.totalTrades,
-      openPositions: positions.length,
-      account: {
-        equity: account.equity,
-        availableMargin: account.availableMargin,
-        usedMargin: aggregates.totalMarginUsed,
-        unleveredExposure: aggregates.totalUnleveredExposure,
-        leverage:
-          account.equity > 0
-            ? (aggregates.totalUnleveredExposure / account.equity).toFixed(2)
-            : '0',
-        totalPnl: pnlMetrics.totalPnl,
-        totalPnlPercent: pnlMetrics.totalPnlPercent,
-        unrealizedPnl: pnlMetrics.unrealizedPnl,
-        unrealizedPnlPercent: pnlMetrics.unrealizedPnlPercent,
+    this.logger.info(
+      'Cycle Summary',
+      {
+        cycle: this.state.cycleCount,
+        runtime: `${runtimeMinutes}m ${runtimeSeconds}s`,
+        totalCycles: this.state.cycleCount,
+        aiSignals: signals.length,
+        executedTrades: this.state.totalTrades,
+        openPositions: positions.length,
+        account: {
+          equity: account.equity,
+          availableMargin: account.availableMargin,
+          usedMargin: aggregates.totalMarginUsed,
+          unleveredExposure: aggregates.totalUnleveredExposure,
+          leverage:
+            account.equity > 0
+              ? (aggregates.totalUnleveredExposure / account.equity).toFixed(2)
+              : '0',
+          totalPnl: pnlMetrics.totalPnl,
+          totalPnlPercent: pnlMetrics.totalPnlPercent,
+          unrealizedPnl: pnlMetrics.unrealizedPnl,
+          unrealizedPnlPercent: pnlMetrics.unrealizedPnlPercent,
+        },
+        positions: positions.map(p => ({
+          symbol: p.symbol,
+          side: p.side,
+          leverage: p.leverage,
+          marginUsed: p.marginUsed,
+          entryPrice: p.entryPrice,
+          unrealizedPnl: p.unrealizedPnl,
+        })),
+        winRate: this.state.winRate,
       },
-      positions: positions.map(p => ({
-        symbol: p.symbol,
-        side: p.side,
-        leverage: p.leverage,
-        marginUsed: p.marginUsed,
-        entryPrice: p.entryPrice,
-        unrealizedPnl: p.unrealizedPnl,
-      })),
-      winRate: this.state.winRate,
-    });
+      this.loggerContext
+    );
   }
 
   private logCycleSummary(
@@ -2481,7 +2560,7 @@ export class TradingWorkflow {
       winRate: this.state.winRate,
     };
 
-    this.logger.info('Final Report', report);
+    this.logger.info('Final Report', report, this.loggerContext);
 
     // Console output (only if not background mode)
     if (!this.isBackgroundMode) {

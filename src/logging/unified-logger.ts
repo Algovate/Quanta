@@ -25,6 +25,7 @@ import type {
   DataQualityInfo,
   DataQualityMetrics,
   DecisionMetrics,
+  TextLog,
 } from './types.js';
 
 export class UnifiedLogger {
@@ -37,6 +38,13 @@ export class UnifiedLogger {
   private storageLayer: StorageLayer;
   private storageOptimizer: StorageOptimizer;
   private initialized: boolean = false;
+  private consoleInterceptionEnabled: boolean = false;
+  private originalConsole: {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  };
+  private isLoggingInternally: boolean = false;
 
   private constructor() {
     this.operationLogger = OperationLogger.getInstance();
@@ -46,6 +54,13 @@ export class UnifiedLogger {
     this.sampler = Sampler.getInstance();
     this.storageLayer = StorageLayer.getInstance();
     this.storageOptimizer = StorageOptimizer.getInstance();
+
+    // Store original console methods
+    this.originalConsole = {
+      log: console.log.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };
   }
 
   static getInstance(): UnifiedLogger {
@@ -66,8 +81,168 @@ export class UnifiedLogger {
     this.setupOperationHandlers();
     this.setupErrorAggregationHandlers();
     this.setupSnapshotHandlers();
+    this.setupConsoleInterception();
 
     this.initialized = true;
+  }
+
+  /**
+   * Set up console interception to capture all console output
+   * NOTE: We capture console output to logs, but do NOT output to console.
+   * This keeps the console clean - users can view captured logs via "quanta log console"
+   */
+  private setupConsoleInterception(): void {
+    if (this.consoleInterceptionEnabled) {
+      return;
+    }
+
+    // Wrap console.log - capture to logs only, do NOT output to console
+    console.log = (...args: unknown[]) => {
+      // Do NOT output to console - just capture to logs
+      if (!this.isLoggingInternally) {
+        const message = this.formatConsoleArgs(args);
+        this.captureConsoleOutput('info', message);
+      }
+    };
+
+    // Wrap console.warn - capture to logs only, do NOT output to console
+    console.warn = (...args: unknown[]) => {
+      // Do NOT output to console - just capture to logs
+      if (!this.isLoggingInternally) {
+        const message = this.formatConsoleArgs(args);
+        this.captureConsoleOutput('warn', message);
+      }
+    };
+
+    // Wrap console.error - capture to logs only, do NOT output to console
+    console.error = (...args: unknown[]) => {
+      // Do NOT output to console - just capture to logs
+      if (!this.isLoggingInternally) {
+        const message = this.formatConsoleArgs(args);
+        this.captureConsoleOutput('error', message);
+      }
+    };
+
+    this.consoleInterceptionEnabled = true;
+  }
+
+  /**
+   * Format console arguments to string message
+   */
+  private formatConsoleArgs(args: unknown[]): string {
+    return args
+      .map(arg => {
+        if (typeof arg === 'string') {
+          return arg;
+        }
+        if (arg instanceof Error) {
+          return arg.message;
+        }
+        try {
+          return JSON.stringify(arg, null, 2);
+        } catch {
+          return String(arg);
+        }
+      })
+      .join(' ');
+  }
+
+  /**
+   * Capture console output to text logs
+   */
+  private captureConsoleOutput(level: 'info' | 'warn' | 'error', message: string): void {
+    // Determine context based on message content
+    let context = 'Console';
+    const msg = message.toLowerCase();
+
+    // Trading cycle context
+    if (
+      msg.includes('cycle') ||
+      msg.includes('🔄') ||
+      msg.includes('cycle summary') ||
+      msg.includes('next cycle')
+    ) {
+      context = 'TradingCycle';
+    }
+    // Market data context
+    else if (
+      msg.includes('market data') ||
+      msg.includes('fetched') ||
+      msg.includes('candlestick') ||
+      msg.includes('ticker') ||
+      msg.includes('indicators') ||
+      msg.includes('ema') ||
+      msg.includes('rsi') ||
+      msg.includes('macd')
+    ) {
+      context = 'MarketData';
+    }
+    // AI signal context
+    else if (
+      msg.includes('ai signal') ||
+      msg.includes('generated') ||
+      msg.includes('signals:') ||
+      msg.includes('long') ||
+      msg.includes('short') ||
+      msg.includes('confidence:') ||
+      msg.includes('reasoning:')
+    ) {
+      context = 'AISignal';
+    }
+    // Execution context
+    else if (
+      msg.includes('executed') ||
+      msg.includes('position') ||
+      msg.includes('order') ||
+      msg.includes('leverage') ||
+      msg.includes('margin') ||
+      msg.includes('notional')
+    ) {
+      context = 'Execution';
+    }
+    // Account context
+    else if (
+      msg.includes('account') ||
+      msg.includes('equity') ||
+      msg.includes('available') ||
+      msg.includes('used') ||
+      msg.includes('p&l') ||
+      msg.includes('unrealized') ||
+      msg.includes('realized')
+    ) {
+      context = 'Account';
+    }
+    // Risk context
+    else if (
+      msg.includes('risk') ||
+      msg.includes('margin usage') ||
+      msg.includes('diversification') ||
+      msg.includes('correlation') ||
+      msg.includes('leverage') ||
+      msg.includes('exposure')
+    ) {
+      context = 'Risk';
+    }
+
+    // Store in tiered storage (skip console output to avoid recursion)
+    const logId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const plainMessage = this.stripAnsiCodes(message);
+
+    const textLog: TextLog = {
+      logId,
+      timestamp: Date.now(),
+      level,
+      context,
+      message: plainMessage,
+      formattedMessage: message, // Keep ANSI codes for display
+      metadata: {},
+    };
+
+    // Store asynchronously
+    this.storageLayer.storeTextLog(textLog).catch(err => {
+      // Use original console to avoid recursion
+      this.originalConsole.error('Failed to store text log:', err);
+    });
   }
 
   /**
@@ -448,5 +623,121 @@ export class UnifiedLogger {
         details: check.details,
       })),
     };
+  }
+
+  /**
+   * Strip ANSI color codes from string
+   */
+  private stripAnsiCodes(str: string): string {
+    // eslint-disable-next-line no-control-regex
+    return str.replace(/\u001b\[[0-9;]*m/g, '');
+  }
+
+  /**
+   * Check if running in background mode (non-TTY)
+   */
+  isBackgroundMode(): boolean {
+    return !process.stdout.isTTY;
+  }
+
+  /**
+   * Get the original console methods (bypass interception)
+   * Useful for minimal output that shouldn't be logged
+   */
+  getOriginalConsole(): {
+    log: typeof console.log;
+    warn: typeof console.warn;
+    error: typeof console.error;
+  } {
+    return this.originalConsole;
+  }
+
+  /**
+   * Log info message
+   */
+  info(message: string, metadata?: Record<string, any>, context?: string): void {
+    this.logText('info', message, metadata, context);
+  }
+
+  /**
+   * Log warn message
+   */
+  warn(message: string, metadata?: Record<string, any>, context?: string): void {
+    this.logText('warn', message, metadata, context);
+  }
+
+  /**
+   * Log error message
+   */
+  error(message: string, error?: Error, context?: string): void {
+    const metadata = error
+      ? {
+          error: {
+            type: error.constructor.name,
+            message: error.message,
+            stack: error.stack,
+          },
+        }
+      : undefined;
+    this.logText('error', message, metadata, context);
+  }
+
+  /**
+   * Log debug message
+   */
+  debug(message: string, metadata?: Record<string, any>, context?: string): void {
+    this.logText('debug', message, metadata, context);
+  }
+
+  /**
+   * Internal method to log text messages
+   */
+  private logText(
+    level: 'info' | 'warn' | 'error' | 'debug',
+    message: string,
+    metadata?: Record<string, any>,
+    context?: string
+  ): void {
+    const logId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Extract plain text from formatted message (strip ANSI codes)
+    const plainMessage = this.stripAnsiCodes(message);
+
+    const textLog: TextLog = {
+      logId,
+      timestamp: Date.now(),
+      level,
+      context: context || 'UnifiedLogger',
+      message: plainMessage, // Plain text for querying
+      formattedMessage: message, // Formatted with ANSI codes for console display
+      metadata: metadata || {},
+    };
+
+    // Store in tiered storage
+    this.storageLayer.storeTextLog(textLog).catch(err => {
+      this.originalConsole.error('Failed to store text log:', err);
+    });
+
+    // NOTE: We do NOT output to console here - all console output should go through
+    // originalConsole.log() directly for minimal output, or through unifiedLogger
+    // which stores logs that can be viewed via "quanta log console"
+    // This prevents duplicate output and keeps console clean
+  }
+
+  /**
+   * Shutdown logging services (stop intervals) to allow process to exit
+   * This is useful for CLI commands that need to exit cleanly
+   */
+  shutdown(): void {
+    // Stop all background intervals
+    if (this.metricsCollector && typeof this.metricsCollector.stop === 'function') {
+      this.metricsCollector.stop();
+    }
+    if (this.errorAggregator && typeof this.errorAggregator.stop === 'function') {
+      this.errorAggregator.stop();
+    }
+    if (this.storageOptimizer && typeof this.storageOptimizer.stop === 'function') {
+      this.storageOptimizer.stop();
+    }
   }
 }

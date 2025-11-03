@@ -10,7 +10,7 @@
  */
 
 import { StorageLayer } from './storage-layer.js';
-import type { OperationLog, SystemSnapshot } from './types.js';
+import type { OperationLog, SystemSnapshot, TextLog } from './types.js';
 
 export interface QueryOptions {
   startTime?: number;
@@ -391,5 +391,76 @@ export class QueryInterface {
    */
   private generateCacheKey(options: QueryOptions): string {
     return JSON.stringify(options);
+  }
+
+  /**
+   * Query text logs from tiered storage
+   */
+  async queryTextLogs(options: {
+    context?: string;
+    level?: 'info' | 'warn' | 'error' | 'debug';
+    since?: number;
+    until?: number;
+    cycleId?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: TextLog[]; total: number; hasMore: boolean }> {
+    // Get from L0 cache first
+    let logs = this.storageLayer.getTextLogsFromL0(10000);
+
+    // Get from L1 database
+    const l1Logs = await this.storageLayer.getTextLogsFromL1({
+      context: options.context,
+      level: options.level,
+      since: options.since,
+      until: options.until,
+      cycleId: options.cycleId,
+      limit: 10000,
+    });
+
+    // Combine L0 and L1, deduplicate by logId
+    const logsMap = new Map<string, TextLog>();
+    for (const log of logs) {
+      logsMap.set(log.logId, log);
+    }
+    for (const log of l1Logs) {
+      if (!logsMap.has(log.logId)) {
+        logsMap.set(log.logId, log);
+      }
+    }
+
+    logs = Array.from(logsMap.values());
+
+    // Sort by timestamp descending
+    logs.sort((a, b) => b.timestamp - a.timestamp);
+
+    // Apply filters (if not already applied in SQL)
+    if (options.context) {
+      logs = logs.filter(log => log.context === options.context);
+    }
+    if (options.level) {
+      logs = logs.filter(log => log.level === options.level);
+    }
+    if (options.since !== undefined) {
+      logs = logs.filter(log => log.timestamp >= options.since!);
+    }
+    if (options.until !== undefined) {
+      logs = logs.filter(log => log.timestamp <= options.until!);
+    }
+    if (options.cycleId !== undefined) {
+      logs = logs.filter(log => log.cycleId === options.cycleId);
+    }
+
+    const total = logs.length;
+    const limit = options.limit || 50;
+    const offset = options.offset || 0;
+    const paginated = logs.slice(offset, offset + limit);
+    const hasMore = offset + limit < total;
+
+    return {
+      logs: paginated,
+      total,
+      hasMore,
+    };
   }
 }

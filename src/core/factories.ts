@@ -1,6 +1,7 @@
 import { MarketDataProvider } from '../data/market.js';
 import { OpenRouterClient } from '../ai/agent.js';
 import { Exchange } from '../exchange/types.js';
+import { UnifiedLogger } from '../logging/index.js';
 import type { Config } from '../config/settings.js';
 import type { WorkflowConfig } from '../types/index.js';
 
@@ -72,14 +73,18 @@ export function createWorkflowDeps(
   };
   // Emit warnings when clamping altered user-provided values
   if (bands) {
+    const logger = UnifiedLogger.getInstance();
+    const context = 'RiskGuard';
     const formatPercent = (val: number, isPercent: boolean) => {
       if (isPercent) return `${(val * 100).toFixed(1)}%`;
       return val.toString();
     };
     const warn = (name: string, prev: number, next: number, isPercent = false) => {
       if (prev !== next) {
-        console.warn(
-          `[risk-guard] Clamped ${name}: ${formatPercent(prev, isPercent)} -> ${formatPercent(next, isPercent)} for marketType=${mt}`
+        logger.warn(
+          `[risk-guard] Clamped ${name}: ${formatPercent(prev, isPercent)} -> ${formatPercent(next, isPercent)} for marketType=${mt}`,
+          {},
+          context
         );
       }
     };
@@ -90,15 +95,23 @@ export function createWorkflowDeps(
     warn('maxPositions', userMaxPos, effMaxPos);
 
     // Show summary of all parameters after validation
-    console.log(`[risk-guard] Risk parameters for marketType=${mt}:`);
-    console.log(`   Leverage: ${effLevMin}x - ${effLevMax}x`);
-    console.log(
-      `   Stop Loss: ${(effSL * 100).toFixed(1)}% (range: ${(bands.slMin * 100).toFixed(1)}% - ${(bands.slMax * 100).toFixed(1)}%)`
+    logger.info(`[risk-guard] Risk parameters for marketType=${mt}:`, {}, context);
+    logger.info(`   Leverage: ${effLevMin}x - ${effLevMax}x`, {}, context);
+    logger.info(
+      `   Stop Loss: ${(effSL * 100).toFixed(1)}% (range: ${(bands.slMin * 100).toFixed(1)}% - ${(bands.slMax * 100).toFixed(1)}%)`,
+      {},
+      context
     );
-    console.log(
-      `   Max Risk: ${(effRisk * 100).toFixed(1)}% (range: ${(bands.riskMin * 100).toFixed(1)}% - ${(bands.riskMax * 100).toFixed(1)}%)`
+    logger.info(
+      `   Max Risk: ${(effRisk * 100).toFixed(1)}% (range: ${(bands.riskMin * 100).toFixed(1)}% - ${(bands.riskMax * 100).toFixed(1)}%)`,
+      {},
+      context
     );
-    console.log(`   Max Positions: ${effMaxPos} (range: ${bands.posMin} - ${bands.posMax})`);
+    logger.info(
+      `   Max Positions: ${effMaxPos} (range: ${bands.posMin} - ${bands.posMax})`,
+      {},
+      context
+    );
   }
   return { marketProvider, aiClient, workflowConfig };
 }

@@ -1,7 +1,7 @@
 import { Exchange } from '../exchange/types.js';
 import { OpenRouterClient } from '../ai/agent.js';
 import { MarketDataProvider } from '../data/market.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export interface HealthStatus {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -29,7 +29,8 @@ export interface ComponentHealth {
 }
 
 export class HealthCheckService {
-  private logger = Logger.getInstance('HealthCheck');
+  private logger = UnifiedLogger.getInstance();
+  private readonly context = 'HealthCheck';
   private startTime = Date.now();
   private totalChecks = 0;
   private consecutiveFailures = 0;
@@ -77,11 +78,15 @@ export class HealthCheckService {
 
     const responseTime = Date.now() - startTime;
 
-    this.logger.debug('Health check completed', {
-      status: overallStatus,
-      responseTime,
-      consecutiveFailures: this.consecutiveFailures,
-    });
+    this.logger.debug(
+      'Health check completed',
+      {
+        status: overallStatus,
+        responseTime,
+        consecutiveFailures: this.consecutiveFailures,
+      },
+      this.context
+    );
 
     return {
       status: overallStatus,
@@ -147,7 +152,11 @@ export class HealthCheckService {
         responseTime,
       };
     } catch (error) {
-      this.logger.error('Exchange health check failed', error as Error);
+      this.logger.error(
+        'Exchange health check failed',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return {
         status: 'unhealthy',
         message: `Exchange check failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -224,7 +233,11 @@ export class HealthCheckService {
         responseTime: Date.now() - startTime,
       };
     } catch (error) {
-      this.logger.error('AI client health check failed', error as Error);
+      this.logger.error(
+        'AI client health check failed',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return {
         status: 'unhealthy',
         message: `AI client check failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -272,7 +285,11 @@ export class HealthCheckService {
         responseTime: Date.now() - startTime,
       };
     } catch (error) {
-      this.logger.error('Market data health check failed', error as Error);
+      this.logger.error(
+        'Market data health check failed',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return {
         status: 'unhealthy',
         message: `Market data check failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -313,7 +330,11 @@ export class HealthCheckService {
         responseTime: Date.now() - startTime,
       };
     } catch (error) {
-      this.logger.error('Cache health check failed', error as Error);
+      this.logger.error(
+        'Cache health check failed',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return {
         status: 'unhealthy',
         message: `Cache check failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -355,6 +376,6 @@ export class HealthCheckService {
   reset(): void {
     this.consecutiveFailures = 0;
     this.lastFailureTime = null;
-    this.logger.info('Health check metrics reset');
+    this.logger.info('Health check metrics reset', {}, this.context);
   }
 }

@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { Logger, parseUTCDateString } from '../../utils/index.js';
+import { parseUTCDateString } from '../../utils/index.js';
+import { UnifiedLogger } from '../../logging/index.js';
 import { runBacktestService } from '../api-service.js';
 
-const logger = Logger.getInstance('BacktestRoutes');
+const logger = UnifiedLogger.getInstance();
+const loggerContext = 'BacktestRoutes';
 
 /**
  * Register backtest routes
@@ -49,7 +51,11 @@ export function registerBacktestRoutes(router: Router): void {
       });
       res.json(result);
     } catch (error) {
-      logger.error('Error running backtest', error);
+      logger.error(
+        'Error running backtest',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
       const msg = error instanceof Error ? error.message : 'Failed to run backtest';
       res.status(500).json({ message: msg });
     }

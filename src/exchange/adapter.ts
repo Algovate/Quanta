@@ -1,7 +1,7 @@
 import type { Exchange } from './types.js';
 import type { Account, Position, Candlestick, Order } from '../types/index.js';
 import { withRetry, createRetryConfig, type RetryConfig } from '../utils/retry.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export interface IdempotentOptions {
   idempotencyKey?: string;
@@ -15,7 +15,8 @@ export interface IdempotentOptions {
  */
 export class IdempotentExchangeAdapter implements Exchange {
   private readonly inner: Exchange;
-  private readonly logger = Logger.getInstance('IdempotentExchangeAdapter');
+  private readonly logger = UnifiedLogger.getInstance();
+  private readonly context = 'IdempotentExchangeAdapter';
   private readonly orderCache = new Map<string, Order>();
 
   constructor(inner: Exchange) {
@@ -77,7 +78,7 @@ export class IdempotentExchangeAdapter implements Exchange {
 
     if (key) {
       this.orderCache.set(key, order);
-      this.logger.debug?.('Order cached by idempotencyKey', { key } as any);
+      this.logger.debug('Order cached by idempotencyKey', { key }, this.context);
     }
     return order;
   }

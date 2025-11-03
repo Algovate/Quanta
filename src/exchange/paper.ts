@@ -1,7 +1,7 @@
 import { Exchange, Account, Position, Order } from './types.js';
 import { CompletedTrade } from '../types/index.js';
 import { PositionUpdateManager } from './position-manager.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { roundToPrecision, EXCHANGE_PRECISION } from '../utils/precision.js';
 import { getValidPriceWithFallback, validatePrice } from '../utils/price-validation.js';
 
@@ -12,7 +12,8 @@ import { getValidPriceWithFallback, validatePrice } from '../utils/price-validat
  */
 export class PaperExchange implements Exchange {
   private readonly real: Exchange;
-  private readonly logger = Logger.getInstance('PaperExchange');
+  private readonly logger = UnifiedLogger.getInstance();
+  private readonly context = 'PaperExchange';
   private readonly positionManager: PositionUpdateManager;
   private readonly account: Account;
   private readonly positions: Position[] = [];
@@ -106,16 +107,22 @@ export class PaperExchange implements Exchange {
           lastKnown,
           `placeOrder(${symbol}) - ticker fetch failed`
         );
-        this.logger.warn(`Ticker failed for ${symbol}, using last known price ${current}`, {
-          error: err?.message || String(e),
-        });
+        this.logger.warn(
+          `Ticker failed for ${symbol}, using last known price ${current}`,
+          {
+            error: err?.message || String(e),
+          },
+          this.context
+        );
       } catch (fallbackError) {
         // No valid price available - fail the order
-        this.logger.error(`Cannot place order for ${symbol}: no valid price`, {
-          tickerError: err?.message || String(e),
-          fallbackError:
-            fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-        });
+        this.logger.error(
+          `Cannot place order for ${symbol}: no valid price`,
+          new Error(
+            `Ticker error: ${err?.message || String(e)}, Fallback error: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`
+          ),
+          this.context
+        );
         throw new Error(
           `Cannot place order for ${symbol}: price fetch failed and no valid fallback price available`
         );
@@ -213,17 +220,23 @@ export class PaperExchange implements Exchange {
                 `refreshMarks(${s}) - ticker fetch failed`
               );
               priceCache.set(s, price);
-              this.logger.warn(`Failed to fetch ticker for ${s}, using last known price ${price}`, {
-                error: err?.message || String(e),
-              });
+              this.logger.warn(
+                `Failed to fetch ticker for ${s}, using last known price ${price}`,
+                {
+                  error: err?.message || String(e),
+                },
+                this.context
+              );
             } catch (fallbackError) {
               // No valid price - log error but don't update this position
               // This is better than using 0 which would cause incorrect PnL
-              this.logger.error(`Cannot refresh marks for ${s}: no valid price available`, {
-                tickerError: err?.message || String(e),
-                fallbackError:
-                  fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-              });
+              this.logger.error(
+                `Cannot refresh marks for ${s}: no valid price available`,
+                new Error(
+                  `Ticker error: ${err?.message || String(e)}, Fallback error: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`
+                ),
+                this.context
+              );
               // Don't set price to 0 - skip this position update
               // The position will keep its previous markPrice
             }
@@ -251,7 +264,8 @@ export class PaperExchange implements Exchange {
       // No price available - this should not happen if positions exist
       this.logger.error(
         `No price available for ${symbol} in refreshMarks`,
-        new Error(`No price available for ${symbol}`)
+        new Error(`No price available for ${symbol}`),
+        this.context
       );
       return 0; // PositionUpdateManager should handle this gracefully
     };
@@ -265,7 +279,11 @@ export class PaperExchange implements Exchange {
     if (positionsWithValidPrices.length > 0) {
       this.positionManager.updateAllPositions(getPrice);
     } else if (this.positions.length > 0) {
-      this.logger.warn(`No valid prices available for any position during refreshMarks`);
+      this.logger.warn(
+        `No valid prices available for any position during refreshMarks`,
+        {},
+        this.context
+      );
     }
   }
 }

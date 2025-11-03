@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export interface PromptGroupMetadata {
   name: string;
@@ -98,8 +98,8 @@ export function renderTemplate(template: string, context: Record<string, any>): 
       return String(value);
     }
     // Variable not found - log warning but continue with empty string
-    const logger = Logger.getInstance('PromptLoader');
-    logger.warn(`Template variable "${varName}" not found in context`);
+    const logger = UnifiedLogger.getInstance();
+    logger.warn(`Template variable "${varName}" not found in context`, {}, 'PromptLoader');
     return '';
   });
 
@@ -124,8 +124,12 @@ export function listPromptGroups(): string[] {
       .map(file => file.replace(/\.json$/, ''))
       .sort();
   } catch (error) {
-    const logger = Logger.getInstance('PromptLoader');
-    logger.warn(`Failed to list prompt groups: ${error}`);
+    const logger = UnifiedLogger.getInstance();
+    logger.warn(
+      `Failed to list prompt groups: ${error}`,
+      error instanceof Error ? { error: error.message } : { error: String(error) },
+      'PromptLoader'
+    );
     return [];
   }
 }

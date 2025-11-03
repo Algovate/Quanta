@@ -15,7 +15,8 @@ import {
   type PerformanceMetrics,
 } from '../types/index.js';
 import { PerformanceAnalytics } from '../analytics/index.js';
-import { Logger, parseUTCDateString } from '../utils/index.js';
+import { parseUTCDateString } from '../utils/index.js';
+import { UnifiedLogger } from '../logging/index.js';
 import cliProgress from 'cli-progress';
 
 // Constants
@@ -132,7 +133,8 @@ export class BacktestEngine {
   } | null = null;
   private signalStats = { generated: 0, accepted: 0, rejected: 0 };
   private errorCount: number = 0;
-  private logger = Logger.getInstance('BacktestEngine');
+  private logger = UnifiedLogger.getInstance();
+  private readonly context = 'BacktestEngine';
   private rng: () => number;
   private callbacks?: BacktestEngineCallbacks;
 
@@ -311,10 +313,11 @@ export class BacktestEngine {
         try {
           await this.executeCycle(currentTime, cycleCount);
         } catch (error) {
-          this.logger.error('Error executing backtest cycle', error, {
-            currentTime: new Date(currentTime).toISOString(),
-            cycleCount,
-          });
+          this.logger.error(
+            'Error executing backtest cycle',
+            error instanceof Error ? error : new Error(String(error)),
+            this.context
+          );
           // Continue simulation but track error
           this.errorCount++;
         }
@@ -447,7 +450,11 @@ export class BacktestEngine {
         try {
           return await this.marketDataProvider.getMarketData(symbol, timeframes);
         } catch (error) {
-          this.logger.warn(`No market data available for ${symbol}`, error);
+          this.logger.warn(
+            `No market data available for ${symbol}`,
+            error instanceof Error ? { error: error.message } : { error: String(error) },
+            this.context
+          );
           return [] as MarketData[];
         }
       })
@@ -519,7 +526,11 @@ export class BacktestEngine {
         }
       } catch (error) {
         // Count exceptions as rejected signals
-        this.logger.error(`Failed to execute signal for ${signal.coin}`, error);
+        this.logger.error(
+          `Failed to execute signal for ${signal.coin}`,
+          error instanceof Error ? error : new Error(String(error)),
+          this.context
+        );
         this.signalStats.rejected++;
       }
     }

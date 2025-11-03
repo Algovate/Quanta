@@ -4,7 +4,7 @@
  */
 
 import { CompletedTrade } from '../types/index.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export interface SymbolStats {
   symbol: string;
@@ -20,12 +20,13 @@ export interface SymbolStats {
 
 export class SymbolPerformanceTracker {
   private stats: Map<string, SymbolStats> = new Map();
-  private logger: Logger;
+  private logger: UnifiedLogger;
+  private readonly context = 'SymbolPerformance';
   private readonly lookbackPeriod: number; // Number of trades to consider (rolling window)
 
   constructor(lookbackPeriod: number = 50) {
     this.lookbackPeriod = lookbackPeriod;
-    this.logger = Logger.getInstance('SymbolPerformance');
+    this.logger = UnifiedLogger.getInstance();
   }
 
   /**
@@ -95,12 +96,16 @@ export class SymbolPerformanceTracker {
 
     if (trades.length >= 10) {
       // Only log after we have meaningful sample size
-      this.logger.debug('Symbol performance updated', {
-        symbol,
-        winRate: (winRate * 100).toFixed(1) + '%',
-        avgR: avgRMultiple.toFixed(2),
-        trades: trades.length,
-      });
+      this.logger.debug(
+        'Symbol performance updated',
+        {
+          symbol,
+          winRate: (winRate * 100).toFixed(1) + '%',
+          avgR: avgRMultiple.toFixed(2),
+          trades: trades.length,
+        },
+        this.context
+      );
     }
   }
 

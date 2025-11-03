@@ -2,7 +2,7 @@ import { Exchange, TradingSignal, Order, Position, Account } from '../exchange/t
 import { calculatePositionPnl } from '../utils/symbol-utils.js';
 import { RiskManager, PositionSizing } from './risk.js';
 import { ensureUsdtSuffix } from '../utils/symbol-utils.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { TradingManager } from '../web/trading-manager.js';
 import type { OrderEvent } from '../web/types.js';
 import { getConfig } from '../config/settings.js';
@@ -25,7 +25,8 @@ export interface OrderResult {
 export class OrderExecutor {
   private exchange: Exchange;
   private riskManager: RiskManager;
-  private logger: Logger;
+  private logger: UnifiedLogger;
+  private readonly context = 'OrderExecutor';
   private forceMarketOrders: boolean;
   private priceSanityEnabled: boolean;
   private priceSanityMaxDeviation: number;
@@ -37,7 +38,7 @@ export class OrderExecutor {
   ) {
     this.exchange = exchange;
     this.riskManager = riskManager;
-    this.logger = Logger.getInstance('OrderExecutor');
+    this.logger = UnifiedLogger.getInstance();
     this.forceMarketOrders = Boolean(options?.forceMarketOrders);
     const cfg = getConfig();
     this.priceSanityEnabled = Boolean(cfg.trading?.priceSanity?.enabled);
@@ -103,7 +104,11 @@ export class OrderExecutor {
    * Handle error and return standardized error result
    */
   private handleError(context: string, error: unknown): OrderResult {
-    this.logger.error(`Error executing ${context}`, error);
+    this.logger.error(
+      `Error executing ${context}`,
+      error instanceof Error ? error : new Error(String(error)),
+      this.context
+    );
     return {
       success: false,
       error: error instanceof Error ? error.message : `${context} execution failed`,
@@ -135,7 +140,11 @@ export class OrderExecutor {
     } catch (error) {
       // TradingManager might not be initialized in backtest mode
       // This is non-critical, so we log at debug level
-      this.logger.debug('Failed to push order to TradingManager', error);
+      this.logger.debug(
+        'Failed to push order to TradingManager',
+        error instanceof Error ? { error: error.message } : { error: String(error) },
+        this.context
+      );
     }
   }
 
@@ -182,7 +191,11 @@ export class OrderExecutor {
           return { success: false, error: `Unknown action: ${signal.action}` };
       }
     } catch (error) {
-      this.logger.error('Error executing signal', error);
+      this.logger.error(
+        'Error executing signal',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
@@ -217,14 +230,18 @@ export class OrderExecutor {
         const denom = currentPrice;
         const relDiff = denom > 0 ? Math.abs(signal.entry_price - denom) / denom : 0;
         if (relDiff > this.priceSanityMaxDeviation) {
-          this.logger.warn('Overriding stale entry price with market due to deviation', {
-            coin: signal.coin,
-            side,
-            entryPrice: signal.entry_price,
-            currentPrice: denom,
-            relativeDiff: relDiff,
-            maxAllowed: this.priceSanityMaxDeviation,
-          });
+          this.logger.warn(
+            'Overriding stale entry price with market due to deviation',
+            {
+              coin: signal.coin,
+              side,
+              entryPrice: signal.entry_price,
+              currentPrice: denom,
+              relativeDiff: relDiff,
+              maxAllowed: this.priceSanityMaxDeviation,
+            },
+            this.context
+          );
           price = undefined; // force market order
         }
       }
@@ -299,7 +316,11 @@ export class OrderExecutor {
       } catch (error) {
         // If ticker fails, proceed without realized pnl
         // This is non-critical for position closing
-        this.logger.debug(`Failed to fetch ticker for P&L calculation on ${symbol}`, error);
+        this.logger.debug(
+          `Failed to fetch ticker for P&L calculation on ${symbol}`,
+          error instanceof Error ? { error: error.message } : { error: String(error) },
+          this.context
+        );
       }
 
       const order = await this.exchange.placeOrder(symbol, side, exactAmount);
@@ -382,7 +403,11 @@ export class OrderExecutor {
     try {
       return await this.exchange.cancelOrder(orderId, symbol);
     } catch (error) {
-      this.logger.error('Error canceling order', error);
+      this.logger.error(
+        'Error canceling order',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return false;
     }
   }

@@ -1,6 +1,6 @@
 import { traceable } from 'langsmith/traceable';
 import { getConfig } from '../config/settings.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 type IncludeSections = {
   prompts: boolean;
@@ -17,7 +17,8 @@ export type LangsmithTracingOptions = {
 };
 
 let initialized = false;
-const logger = Logger.getInstance('LangSmithTracer');
+const logger = UnifiedLogger.getInstance();
+const loggerContext = 'LangSmithTracer';
 
 /**
  * Initialize LangChain tracing from config.
@@ -40,7 +41,11 @@ export function initLangSmithTracing(): void {
     const project = tracingConfig.project || process.env.LANGCHAIN_PROJECT || 'default';
 
     if (!apiKey) {
-      logger.warn('LangSmith tracing enabled but no API key found in config or LANGCHAIN_API_KEY');
+      logger.warn(
+        'LangSmith tracing enabled but no API key found in config or LANGCHAIN_API_KEY',
+        {},
+        loggerContext
+      );
       return;
     }
 
@@ -56,14 +61,22 @@ export function initLangSmithTracing(): void {
       process.env.LANGCHAIN_TRACING_V2 = 'true';
     }
 
-    logger.info('LangSmith tracing initialized', {
-      project,
-      hasApiKey: !!apiKey,
-    });
+    logger.info(
+      'LangSmith tracing initialized',
+      {
+        project,
+        hasApiKey: !!apiKey,
+      },
+      loggerContext
+    );
   } catch (err) {
-    logger.warn('LangSmith tracing initialization failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    logger.warn(
+      'LangSmith tracing initialization failed',
+      {
+        error: err instanceof Error ? err.message : String(err),
+      },
+      loggerContext
+    );
   }
 }
 

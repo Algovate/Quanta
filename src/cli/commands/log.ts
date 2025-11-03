@@ -117,6 +117,22 @@ export class LogCommands {
           await LogCommands.cleanupLogs(options);
         }, 'LogCommands.cleanup');
       });
+
+    // Show console output
+    program
+      .command('console')
+      .description('View console output logs')
+      .option('--lines <n>', 'Show last N lines (default: 50)', parseInt, 50)
+      .option('-f, --follow', 'Follow mode (real-time updates)', false)
+      .option('--context <context>', 'Filter by logger context (e.g., TradeStart, Server)')
+      .option('--level <level>', 'Filter by log level (info|warn|error|debug)')
+      .option('--grep <pattern>', 'Search/filter by pattern in message')
+      .option('--format <format>', 'Output format (formatted|raw)', 'formatted')
+      .action(async options => {
+        await handleAsync(async () => {
+          await LogCommands.showConsoleOutput(options);
+        }, 'LogCommands.console');
+      });
   }
 
   private static async queryOperations(options: {
@@ -132,42 +148,47 @@ export class LogCommands {
     verbose?: boolean;
     detail?: boolean;
   }): Promise<void> {
-    const query = QueryInterface.getInstance();
-    const result = await query.queryOperations({
-      cycleId: options.cycleId,
-      operationType: options.type,
-      status: options.status as 'running' | 'completed' | 'failed' | 'cancelled' | undefined,
-      symbol: options.symbol,
-      traceId: options.traceId,
-      operationId: options.operationId,
-      limit: options.limit && !isNaN(options.limit) ? options.limit : 50,
-      offset: options.offset ?? 0,
-    });
+    try {
+      const query = QueryInterface.getInstance();
+      const result = await query.queryOperations({
+        cycleId: options.cycleId,
+        operationType: options.type,
+        status: options.status as 'running' | 'completed' | 'failed' | 'cancelled' | undefined,
+        symbol: options.symbol,
+        traceId: options.traceId,
+        operationId: options.operationId,
+        limit: options.limit && !isNaN(options.limit) ? options.limit : 50,
+        offset: options.offset ?? 0,
+      });
 
-    if (options.format === 'json') {
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
+      if (options.format === 'json') {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
 
-    if (result.operations.length === 0) {
-      console.log(chalk.yellow('⚠️  No operations found matching the criteria'));
-      return;
-    }
+      if (result.operations.length === 0) {
+        console.log(chalk.yellow('⚠️  No operations found matching the criteria'));
+        return;
+      }
 
-    const isVerbose = options.verbose || options.detail;
-    const limit = options.limit && !isNaN(options.limit) ? options.limit : 50;
+      const isVerbose = options.verbose || options.detail;
+      const limit = options.limit && !isNaN(options.limit) ? options.limit : 50;
 
-    console.log(chalk.cyan('📋 Operations Query Results'));
-    console.log(
-      chalk.gray(
-        `Found ${result.total} operations${result.hasMore ? ' (showing first ' + result.operations.length + ')' : ''}\n`
-      )
-    );
+      console.log(chalk.cyan('📋 Operations Query Results'));
+      console.log(
+        chalk.gray(
+          `Found ${result.total} operations${result.hasMore ? ' (showing first ' + result.operations.length + ')' : ''}\n`
+        )
+      );
 
-    if (isVerbose) {
-      this.formatOperationsDetailed(result.operations, limit);
-    } else {
-      this.formatOperationsTable(result.operations, limit);
+      if (isVerbose) {
+        this.formatOperationsDetailed(result.operations, limit);
+      } else {
+        this.formatOperationsTable(result.operations, limit);
+      }
+    } finally {
+      // Always cleanup resources before exiting
+      this.cleanupResources();
     }
   }
 
@@ -176,216 +197,243 @@ export class LogCommands {
     type?: string;
     format?: string;
   }): Promise<void> {
-    const query = QueryInterface.getInstance();
-    const stats = await query.getStatistics({
-      cycleId: options.cycleId,
-      operationType: options.type,
-    });
+    try {
+      const query = QueryInterface.getInstance();
+      const stats = await query.getStatistics({
+        cycleId: options.cycleId,
+        operationType: options.type,
+      });
 
-    if (options.format === 'json') {
-      console.log(JSON.stringify(stats, null, 2));
-      return;
-    }
-
-    console.log(chalk.cyan('📊 Operation Statistics'));
-    console.log(chalk.gray('Overall system statistics\n'));
-
-    console.log(chalk.blue('📈 Summary:'));
-    console.log(`   Total Operations: ${stats.totalOperations}`);
-    console.log(`   Completed: ${chalk.green(stats.completedOperations)}`);
-    console.log(`   Failed: ${chalk.red(stats.failedOperations)}`);
-    const errorRateColor =
-      stats.errorRate > 0.1 ? 'red' : stats.errorRate > 0.05 ? 'yellow' : 'green';
-    console.log(
-      `   Error Rate: ${chalk[errorRateColor]((stats.errorRate * 100).toFixed(2) + '%')}`
-    );
-    console.log('');
-
-    console.log(chalk.blue('⏱️  Performance:'));
-    console.log(`   Average Duration: ${this.formatDuration(stats.averageDuration)}`);
-    console.log(`   Min Duration: ${this.formatDuration(stats.minDuration)}`);
-    console.log(`   Max Duration: ${this.formatDuration(stats.maxDuration)}`);
-    console.log('');
-
-    console.log(chalk.blue('📦 By Status:'));
-    for (const [status, count] of Object.entries(stats.byStatus)) {
-      const color = status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'yellow';
-      console.log(`   ${status}: ${chalk[color](count.toString())}`);
-    }
-    console.log('');
-
-    if (Object.keys(stats.operationTypes).length > 0) {
-      console.log(chalk.blue('🔧 By Operation Type:'));
-      for (const [type, count] of Object.entries(stats.operationTypes).sort(
-        (a, b) => b[1] - a[1]
-      )) {
-        console.log(`   ${type}: ${count}`);
+      if (options.format === 'json') {
+        console.log(JSON.stringify(stats, null, 2));
+        return;
       }
+
+      console.log(chalk.cyan('📊 Operation Statistics'));
+      console.log(chalk.gray('Overall system statistics\n'));
+
+      console.log(chalk.blue('📈 Summary:'));
+      console.log(`   Total Operations: ${stats.totalOperations}`);
+      console.log(`   Completed: ${chalk.green(stats.completedOperations)}`);
+      console.log(`   Failed: ${chalk.red(stats.failedOperations)}`);
+      const errorRateColor =
+        stats.errorRate > 0.1 ? 'red' : stats.errorRate > 0.05 ? 'yellow' : 'green';
+      console.log(
+        `   Error Rate: ${chalk[errorRateColor]((stats.errorRate * 100).toFixed(2) + '%')}`
+      );
+      console.log('');
+
+      console.log(chalk.blue('⏱️  Performance:'));
+      console.log(`   Average Duration: ${this.formatDuration(stats.averageDuration)}`);
+      console.log(`   Min Duration: ${this.formatDuration(stats.minDuration)}`);
+      console.log(`   Max Duration: ${this.formatDuration(stats.maxDuration)}`);
+      console.log('');
+
+      console.log(chalk.blue('📦 By Status:'));
+      for (const [status, count] of Object.entries(stats.byStatus)) {
+        const color = status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'yellow';
+        console.log(`   ${status}: ${chalk[color](count.toString())}`);
+      }
+      console.log('');
+
+      if (Object.keys(stats.operationTypes).length > 0) {
+        console.log(chalk.blue('🔧 By Operation Type:'));
+        for (const [type, count] of Object.entries(stats.operationTypes).sort(
+          (a, b) => b[1] - a[1]
+        )) {
+          console.log(`   ${type}: ${count}`);
+        }
+      }
+    } finally {
+      // Always cleanup resources before exiting
+      this.cleanupResources();
     }
   }
 
   private static async showTrace(traceId: string, options: { format?: string }): Promise<void> {
-    const query = QueryInterface.getInstance();
-    const trace = await query.getTrace(traceId);
+    try {
+      const query = QueryInterface.getInstance();
+      const trace = await query.getTrace(traceId);
 
-    if (!trace) {
-      console.log(chalk.red(`❌ Trace not found: ${traceId}`));
-      return;
-    }
+      if (!trace) {
+        console.log(chalk.red(`❌ Trace not found: ${traceId}`));
+        return;
+      }
 
-    if (options.format === 'json') {
-      console.log(JSON.stringify(trace, null, 2));
-      return;
-    }
+      if (options.format === 'json') {
+        console.log(JSON.stringify(trace, null, 2));
+        return;
+      }
 
-    console.log(chalk.cyan('🔍 Trace Details'));
-    console.log(chalk.gray(`Trace ID: ${traceId}\n`));
+      console.log(chalk.cyan('🔍 Trace Details'));
+      console.log(chalk.gray(`Trace ID: ${traceId}\n`));
 
-    console.log(chalk.blue('📋 Trace Info:'));
-    console.log(`   Trace ID: ${trace.traceId}`);
-    console.log(`   Cycle ID: ${trace.cycleId}`);
-    console.log(`   Status: ${this.formatStatus(trace.status)}`);
-    if (trace.duration) {
-      console.log(`   Duration: ${this.formatDuration(trace.duration)}`);
-    }
-    console.log(`   Operations: ${trace.operations.length}`);
-    console.log('');
-
-    if (trace.rootOperation) {
-      console.log(chalk.blue('🌳 Root Operation:'));
-      console.log(`   Operation ID: ${this.truncateId(trace.rootOperation.operationId)}`);
-      console.log(`   Type: ${trace.rootOperation.operationType}`);
-      console.log(`   Status: ${this.formatStatus(trace.rootOperation.status)}`);
+      console.log(chalk.blue('📋 Trace Info:'));
+      console.log(`   Trace ID: ${trace.traceId}`);
+      console.log(`   Cycle ID: ${trace.cycleId}`);
+      console.log(`   Status: ${this.formatStatus(trace.status)}`);
+      if (trace.duration) {
+        console.log(`   Duration: ${this.formatDuration(trace.duration)}`);
+      }
+      console.log(`   Operations: ${trace.operations.length}`);
       console.log('');
-    }
 
-    console.log(chalk.blue('📝 Operations in Trace:'));
-    this.formatOperationsTable(trace.operations, trace.operations.length);
+      if (trace.rootOperation) {
+        console.log(chalk.blue('🌳 Root Operation:'));
+        console.log(`   Operation ID: ${this.truncateId(trace.rootOperation.operationId)}`);
+        console.log(`   Type: ${trace.rootOperation.operationType}`);
+        console.log(`   Status: ${this.formatStatus(trace.rootOperation.status)}`);
+        console.log('');
+      }
+
+      console.log(chalk.blue('📝 Operations in Trace:'));
+      this.formatOperationsTable(trace.operations, trace.operations.length);
+    } finally {
+      // Always cleanup resources before exiting
+      this.cleanupResources();
+    }
   }
 
   private static async searchOperations(
     term: string,
     options: { type?: string; status?: string; limit?: number; format?: string }
   ): Promise<void> {
-    const query = QueryInterface.getInstance();
-    const limit = options.limit && !isNaN(options.limit) ? options.limit : 50;
-    const result = await query.searchOperations(term, {
-      operationType: options.type,
-      status: options.status as 'running' | 'completed' | 'failed' | 'cancelled' | undefined,
-      limit,
-    });
+    try {
+      const query = QueryInterface.getInstance();
+      const limit = options.limit && !isNaN(options.limit) ? options.limit : 50;
+      const result = await query.searchOperations(term, {
+        operationType: options.type,
+        status: options.status as 'running' | 'completed' | 'failed' | 'cancelled' | undefined,
+        limit,
+      });
 
-    if (options.format === 'json') {
-      console.log(JSON.stringify(result, null, 2));
-      return;
+      if (options.format === 'json') {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      if (result.operations.length === 0) {
+        console.log(chalk.yellow(`⚠️  No operations found matching "${term}"`));
+        return;
+      }
+
+      console.log(chalk.cyan(`🔍 Search Results for "${term}"`));
+      console.log(chalk.gray(`Found ${result.total} operations\n`));
+
+      this.formatOperationsTable(result.operations, limit);
+    } finally {
+      // Always cleanup resources before exiting
+      this.cleanupResources();
     }
-
-    if (result.operations.length === 0) {
-      console.log(chalk.yellow(`⚠️  No operations found matching "${term}"`));
-      return;
-    }
-
-    console.log(chalk.cyan(`🔍 Search Results for "${term}"`));
-    console.log(chalk.gray(`Found ${result.total} operations\n`));
-
-    this.formatOperationsTable(result.operations, limit);
   }
 
   private static async showSnapshot(
     snapshotId: string | undefined,
     options: { format?: string }
   ): Promise<void> {
-    let snapshot: SystemSnapshot | null = null;
-    const storage = StorageLayer.getInstance();
+    try {
+      let snapshot: SystemSnapshot | null = null;
+      const storage = StorageLayer.getInstance();
 
-    if (snapshotId) {
-      snapshot = await storage.getSnapshotById(snapshotId);
-      if (!snapshot) {
-        console.log(chalk.red(`❌ Snapshot not found: ${snapshotId}`));
-        return;
-      }
-    } else {
-      // First try to get from StateSnapshotService (in-memory, if workflow is running)
-      const unifiedLogger = UnifiedLogger.getInstance();
-      const stateSnapshot = (
-        unifiedLogger as unknown as {
-          stateSnapshot?: { getLastSnapshot?: () => SystemSnapshot | null | undefined };
+      if (snapshotId) {
+        snapshot = await storage.getSnapshotById(snapshotId);
+        if (!snapshot) {
+          console.log(chalk.red(`❌ Snapshot not found: ${snapshotId}`));
+          return;
         }
-      ).stateSnapshot;
-      if (stateSnapshot && typeof stateSnapshot.getLastSnapshot === 'function') {
-        snapshot = stateSnapshot.getLastSnapshot() || null;
+      } else {
+        // First try to get from StateSnapshotService (in-memory, if workflow is running)
+        const unifiedLogger = UnifiedLogger.getInstance();
+        const stateSnapshot = (
+          unifiedLogger as unknown as {
+            stateSnapshot?: { getLastSnapshot?: () => SystemSnapshot | null | undefined };
+          }
+        ).stateSnapshot;
+        if (stateSnapshot && typeof stateSnapshot.getLastSnapshot === 'function') {
+          snapshot = stateSnapshot.getLastSnapshot() || null;
+        }
+
+        // If not found in memory, try to get latest from storage
+        if (!snapshot) {
+          snapshot = await storage.getLatestSnapshot();
+        }
+
+        if (!snapshot) {
+          console.log(chalk.yellow('⚠️  No snapshots found'));
+          console.log(
+            chalk.gray('\n💡 Snapshots are created automatically during trading cycles.')
+          );
+          console.log(
+            chalk.gray('   Run a trading cycle to create snapshots, or specify a snapshot ID:')
+          );
+          console.log(chalk.gray('   quanta log snapshot <snapshot-id>'));
+          return;
+        }
       }
 
-      // If not found in memory, try to get latest from storage
-      if (!snapshot) {
-        snapshot = await storage.getLatestSnapshot();
-      }
-
-      if (!snapshot) {
-        console.log(chalk.yellow('⚠️  No snapshots found'));
-        console.log(chalk.gray('\n💡 Snapshots are created automatically during trading cycles.'));
-        console.log(
-          chalk.gray('   Run a trading cycle to create snapshots, or specify a snapshot ID:')
-        );
-        console.log(chalk.gray('   quanta log snapshot <snapshot-id>'));
+      if (options.format === 'json') {
+        console.log(JSON.stringify(snapshot, null, 2));
         return;
       }
-    }
 
-    if (options.format === 'json') {
-      console.log(JSON.stringify(snapshot, null, 2));
-      return;
-    }
+      console.log(chalk.cyan('📸 System Snapshot'));
+      console.log(chalk.gray(`Snapshot ID: ${snapshot.snapshotId}\n`));
 
-    console.log(chalk.cyan('📸 System Snapshot'));
-    console.log(chalk.gray(`Snapshot ID: ${snapshot.snapshotId}\n`));
-
-    console.log(chalk.blue('⏰ Timestamp:'));
-    console.log(`   ${this.formatTimestamp(snapshot.timestamp)}`);
-    console.log(`   Cycle ID: ${snapshot.cycleId}`);
-    console.log('');
-
-    console.log(chalk.blue('💰 Account:'));
-    console.log(`   Equity: $${snapshot.account.equity.toFixed(2)}`);
-    console.log(`   Balance: $${snapshot.account.balance.toFixed(2)}`);
-    console.log(`   Margin Used: $${snapshot.account.marginUsed.toFixed(2)}`);
-    console.log(`   Available Margin: $${snapshot.account.availableMargin.toFixed(2)}`);
-    console.log('');
-
-    console.log(chalk.blue('📊 Positions:'));
-    if (snapshot.positions.length === 0) {
-      console.log('   No open positions');
-    } else {
-      snapshot.positions.forEach(pos => {
-        const pnlColor = pos.unrealizedPnl >= 0 ? 'green' : 'red';
-        console.log(
-          `   ${pos.symbol} ${pos.side.toUpperCase()}: ${pos.size} @ $${pos.entryPrice.toFixed(2)} | P&L: ${chalk[pnlColor](`$${pos.unrealizedPnl.toFixed(2)}`)}`
-        );
-      });
-    }
-    console.log('');
-
-    if (snapshot.systemMetrics) {
-      console.log(chalk.blue('💻 System Metrics:'));
-      const mem = snapshot.systemMetrics.memoryUsage;
-      console.log(`   Memory: ${mem.heapUsed}MB / ${mem.heapTotal}MB (RSS: ${mem.rss}MB)`);
+      console.log(chalk.blue('⏰ Timestamp:'));
+      console.log(`   ${this.formatTimestamp(snapshot.timestamp)}`);
+      console.log(`   Cycle ID: ${snapshot.cycleId}`);
       console.log('');
+
+      console.log(chalk.blue('💰 Account:'));
+      console.log(`   Equity: $${snapshot.account.equity.toFixed(2)}`);
+      console.log(`   Balance: $${snapshot.account.balance.toFixed(2)}`);
+      console.log(`   Margin Used: $${snapshot.account.marginUsed.toFixed(2)}`);
+      console.log(`   Available Margin: $${snapshot.account.availableMargin.toFixed(2)}`);
+      console.log('');
+
+      console.log(chalk.blue('📊 Positions:'));
+      if (snapshot.positions.length === 0) {
+        console.log('   No open positions');
+      } else {
+        snapshot.positions.forEach(pos => {
+          const pnlColor = pos.unrealizedPnl >= 0 ? 'green' : 'red';
+          console.log(
+            `   ${pos.symbol} ${pos.side.toUpperCase()}: ${pos.size} @ $${pos.entryPrice.toFixed(2)} | P&L: ${chalk[pnlColor](`$${pos.unrealizedPnl.toFixed(2)}`)}`
+          );
+        });
+      }
+      console.log('');
+
+      if (snapshot.systemMetrics) {
+        console.log(chalk.blue('💻 System Metrics:'));
+        const mem = snapshot.systemMetrics.memoryUsage;
+        console.log(`   Memory: ${mem.heapUsed}MB / ${mem.heapTotal}MB (RSS: ${mem.rss}MB)`);
+        console.log('');
+      }
+    } finally {
+      // Always cleanup resources before exiting
+      this.cleanupResources();
     }
   }
 
   private static async showStorageStats(): Promise<void> {
-    const storage = StorageLayer.getInstance();
-    const stats = await storage.getStats();
+    try {
+      const storage = StorageLayer.getInstance();
+      const stats = await storage.getStats();
 
-    console.log(chalk.cyan('💾 Storage Statistics'));
-    console.log(chalk.gray('Log storage layer information\n'));
+      console.log(chalk.cyan('💾 Storage Statistics'));
+      console.log(chalk.gray('Log storage layer information\n'));
 
-    console.log(chalk.blue('📦 Storage Layers:'));
-    console.log(`   L0 (Hot Cache): ${stats.l0Size} operations`);
-    console.log(`   L1 (Warm): ${stats.l1Cycles} cycles`);
-    console.log(`   L2 (Cold): ${stats.l2Cycles} cycles`);
-    console.log(`   L3 (Archive): ${stats.l3Cycles} cycles`);
-    console.log(`   Total Operations: ${stats.totalOperations}`);
+      console.log(chalk.blue('📦 Storage Layers:'));
+      console.log(`   L0 (Hot Cache): ${stats.l0Size} operations`);
+      console.log(`   L1 (Warm): ${stats.l1Cycles} cycles`);
+      console.log(`   L2 (Cold): ${stats.l2Cycles} cycles`);
+      console.log(`   L3 (Archive): ${stats.l3Cycles} cycles`);
+      console.log(`   Total Operations: ${stats.totalOperations}`);
+    } finally {
+      // Always cleanup resources before exiting
+      this.cleanupResources();
+    }
   }
 
   private static async cleanupLogs(options: {
@@ -394,53 +442,55 @@ export class LogCommands {
     force?: boolean;
     'dry-run'?: boolean;
   }): Promise<void> {
-    const storage = StorageLayer.getInstance();
-    const dryRun = options['dry-run'] || false;
-
-    console.log(chalk.cyan('🧹 Log Cleanup'));
-    console.log(chalk.gray('Cleaning up old log data\n'));
-
-    if (dryRun) {
-      console.log(chalk.yellow('🔍 Dry-run mode: Showing what would be cleaned\n'));
-    }
-
-    // Get cleanup preview
-    const preview = await storage.getCleanupPreview({
-      maxCycles: options.maxCycles,
-      keepDays: options.keepDays,
-    });
-
-    if (preview.totalCyclesToClean === 0) {
-      console.log(chalk.green('✓ No logs to clean up'));
-      return;
-    }
-
-    // Show preview
-    console.log(chalk.blue('📋 Cleanup Preview:'));
-    console.log(`   L1 Cycles: ${preview.l1CyclesToClean.length}`);
-    console.log(`   L2 Cycles: ${preview.l2CyclesToClean.length}`);
-    console.log(`   L3 Cycles: ${preview.l3CyclesToClean.length}`);
-    console.log(`   Total Cycles: ${preview.totalCyclesToClean}`);
-    console.log(`   Estimated Operations: ${preview.estimatedOperationsToClean}`);
-    console.log('');
-
-    if (dryRun) {
-      console.log(chalk.gray('Dry-run complete. Use without --dry-run to perform actual cleanup.'));
-      return;
-    }
-
-    // Confirm cleanup
-    if (!options.force) {
-      console.log(chalk.yellow('⚠️  This will permanently delete old log data.'));
-      console.log(chalk.gray('Use --force to skip confirmation\n'));
-      // In a real implementation, you might want to use readline to get user confirmation
-      // For now, we'll just proceed if force is not set
-    }
-
-    // Perform cleanup
-    console.log(chalk.blue('🧹 Cleaning up...\n'));
-
     try {
+      const storage = StorageLayer.getInstance();
+      const dryRun = options['dry-run'] || false;
+
+      console.log(chalk.cyan('🧹 Log Cleanup'));
+      console.log(chalk.gray('Cleaning up old log data\n'));
+
+      if (dryRun) {
+        console.log(chalk.yellow('🔍 Dry-run mode: Showing what would be cleaned\n'));
+      }
+
+      // Get cleanup preview
+      const preview = await storage.getCleanupPreview({
+        maxCycles: options.maxCycles,
+        keepDays: options.keepDays,
+      });
+
+      if (preview.totalCyclesToClean === 0) {
+        console.log(chalk.green('✓ No logs to clean up'));
+        return;
+      }
+
+      // Show preview
+      console.log(chalk.blue('📋 Cleanup Preview:'));
+      console.log(`   L1 Cycles: ${preview.l1CyclesToClean.length}`);
+      console.log(`   L2 Cycles: ${preview.l2CyclesToClean.length}`);
+      console.log(`   L3 Cycles: ${preview.l3CyclesToClean.length}`);
+      console.log(`   Total Cycles: ${preview.totalCyclesToClean}`);
+      console.log(`   Estimated Operations: ${preview.estimatedOperationsToClean}`);
+      console.log('');
+
+      if (dryRun) {
+        console.log(
+          chalk.gray('Dry-run complete. Use without --dry-run to perform actual cleanup.')
+        );
+        return;
+      }
+
+      // Confirm cleanup
+      if (!options.force) {
+        console.log(chalk.yellow('⚠️  This will permanently delete old log data.'));
+        console.log(chalk.gray('Use --force to skip confirmation\n'));
+        // In a real implementation, you might want to use readline to get user confirmation
+        // For now, we'll just proceed if force is not set
+      }
+
+      // Perform cleanup
+      console.log(chalk.blue('🧹 Cleaning up...\n'));
+
       if (options.keepDays !== undefined) {
         const result = await storage.cleanupByDays(options.keepDays);
         console.log(chalk.green('✓ Cleanup completed'));
@@ -461,6 +511,9 @@ export class LogCommands {
     } catch (error) {
       console.error(chalk.red('❌ Cleanup failed:'), error);
       throw error;
+    } finally {
+      // Always cleanup resources before exiting
+      this.cleanupResources();
     }
   }
 
@@ -1193,5 +1246,155 @@ export class LogCommands {
       return id;
     }
     return id.substring(0, maxLength - 3) + '...';
+  }
+
+  private static async showConsoleOutput(options: {
+    lines?: number;
+    follow?: boolean;
+    context?: string;
+    level?: string;
+    grep?: string;
+    format?: string;
+  }): Promise<void> {
+    try {
+      const query = QueryInterface.getInstance();
+
+      // Parse level
+      const level =
+        options.level && ['info', 'warn', 'error', 'debug'].includes(options.level.toLowerCase())
+          ? (options.level.toLowerCase() as 'info' | 'warn' | 'error' | 'debug')
+          : undefined;
+
+      // Query text logs
+      const result = await query.queryTextLogs({
+        context: options.context,
+        level,
+        limit: options.lines || 50,
+        offset: 0,
+      });
+
+      // Filter by grep pattern if specified
+      let logs = result.logs;
+      if (options.grep) {
+        const pattern = new RegExp(options.grep, 'i');
+        logs = logs.filter(log => pattern.test(log.message) || pattern.test(log.context));
+      }
+
+      // Display logs
+      if (logs.length === 0) {
+        console.log(chalk.yellow('⚠️  No console output found matching the criteria'));
+        return;
+      }
+
+      // Logs are already sorted by timestamp DESC (newest first)
+      // For display, we want oldest first so they appear in chronological order
+      const sortedLogs = [...logs].reverse();
+
+      for (const log of sortedLogs) {
+        if (options.format === 'raw') {
+          console.log(log.message);
+        } else {
+          // Use formatted message (with ANSI codes) for display
+          console.log(log.formattedMessage);
+        }
+      }
+
+      // Follow mode: Poll for new logs
+      if (options.follow) {
+        // In follow mode, wrap polling logic in try-finally to ensure cleanup on errors
+        let pollInterval: NodeJS.Timeout | undefined;
+        try {
+          console.log(chalk.gray('\n--- Following logs (press Ctrl+C to stop) ---\n'));
+
+          let lastTimestamp = logs.length > 0 ? logs[0].timestamp : Date.now();
+
+          pollInterval = setInterval(async () => {
+            try {
+              const newResult = await query.queryTextLogs({
+                context: options.context,
+                level,
+                since: lastTimestamp + 1, // Only get logs newer than last seen
+                limit: 100,
+              });
+
+              let newLogs = newResult.logs;
+              if (options.grep) {
+                const pattern = new RegExp(options.grep, 'i');
+                newLogs = newLogs.filter(
+                  log => pattern.test(log.message) || pattern.test(log.context)
+                );
+              }
+
+              // Sort by timestamp ascending (oldest first)
+              newLogs.sort((a, b) => a.timestamp - b.timestamp);
+
+              for (const log of newLogs) {
+                if (options.format === 'raw') {
+                  console.log(log.message);
+                } else {
+                  console.log(log.formattedMessage);
+                }
+                lastTimestamp = Math.max(lastTimestamp, log.timestamp);
+              }
+            } catch (error) {
+              console.error(chalk.red('Error polling logs:'), error);
+            }
+          }, 1000); // Poll every second
+
+          // Handle Ctrl+C
+          const sigintHandler = () => {
+            if (pollInterval) {
+              clearInterval(pollInterval);
+            }
+            this.cleanupResources();
+            console.log(chalk.yellow('\n\nStopped following logs.'));
+            process.exit(0);
+          };
+          process.on('SIGINT', sigintHandler);
+
+          // Keep process alive
+          await new Promise(() => {
+            // Never resolves, keeps process alive until SIGINT or error
+          });
+        } catch (error) {
+          // Handle any errors that occur during follow mode setup or execution
+          console.error(chalk.red('Error in follow mode:'), error);
+          throw error;
+        } finally {
+          // Ensure cleanup happens even if an error occurs
+          if (pollInterval) {
+            clearInterval(pollInterval);
+          }
+          // Cleanup resources (idempotent, safe to call multiple times)
+          this.cleanupResources();
+        }
+      } else {
+        console.log(
+          chalk.gray(
+            `\n--- Showing last ${logs.length} log entries (use --follow for real-time updates) ---`
+          )
+        );
+      }
+    } finally {
+      // Always cleanup resources before exiting (only for non-follow mode)
+      // In follow mode, cleanup already happened in the inner finally block
+      if (!options.follow) {
+        this.cleanupResources();
+      }
+    }
+  }
+
+  /**
+   * Cleanup resources and allow process to exit cleanly
+   */
+  private static cleanupResources(): void {
+    try {
+      // Close database connection
+      StorageLayer.getInstance().closeL1Database();
+      // Shutdown logging services (stop intervals)
+      UnifiedLogger.getInstance().shutdown();
+    } catch {
+      // Ignore errors during cleanup
+    }
   }
 }

@@ -1,6 +1,6 @@
 import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { withRetry, createRetryConfig } from '../utils/retry.js';
 import {
   supportsSandbox,
@@ -14,7 +14,8 @@ import {
 export class BinanceExchange implements Exchange {
   private exchange: ccxt.binance;
   private isTestnet: boolean;
-  private logger = Logger.getInstance('BinanceExchange');
+  private logger = UnifiedLogger.getInstance();
+  private readonly context = 'BinanceExchange';
   private marketsState: MarketsState = { promise: null };
 
   constructor(apiKey?: string, apiSecret?: string, testnet: boolean = true) {
@@ -59,10 +60,14 @@ export class BinanceExchange implements Exchange {
         baseDelay: 1000,
         maxDelay: 5000,
         onRetry: (attempt, error) => {
-          this.logger.warn('Retrying Binance getAccount', {
-            attempt,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.logger.warn(
+            'Retrying Binance getAccount',
+            {
+              attempt,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
         },
       })
     );
@@ -84,14 +89,22 @@ export class BinanceExchange implements Exchange {
         baseDelay: 1000,
         maxDelay: 5000,
         onRetry: (attempt, error) => {
-          this.logger.warn('Retrying Binance getPositions', {
-            attempt,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.logger.warn(
+            'Retrying Binance getPositions',
+            {
+              attempt,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
         },
       })
     ).catch(error => {
-      this.logger.error('Error fetching positions from Binance after retries', error as Error);
+      this.logger.error(
+        'Error fetching positions from Binance after retries',
+        error as Error,
+        this.context
+      );
       return [];
     });
   }
@@ -108,12 +121,16 @@ export class BinanceExchange implements Exchange {
         baseDelay: 1000,
         maxDelay: 5000,
         onRetry: (attempt, error) => {
-          this.logger.warn('Retrying Binance getCandlesticks', {
-            attempt,
-            symbol,
-            timeframe,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.logger.warn(
+            'Retrying Binance getCandlesticks',
+            {
+              attempt,
+              symbol,
+              timeframe,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
         },
       })
     );
@@ -197,11 +214,15 @@ export class BinanceExchange implements Exchange {
         baseDelay: 500,
         maxDelay: 2000,
         onRetry: (attempt, error) => {
-          this.logger.warn('Retrying Binance getTicker', {
-            attempt,
-            symbol,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.logger.warn(
+            'Retrying Binance getTicker',
+            {
+              attempt,
+              symbol,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
         },
       })
     );

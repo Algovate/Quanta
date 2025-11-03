@@ -6,7 +6,7 @@ import { StreamingIngestion, type StreamingConfig } from '../data/index.js';
 import type { Exchange } from '../exchange/types.js';
 import type { MarketDataProvider } from '../data/market.js';
 import type { OpenRouterClient } from '../ai/agent.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import type { OrderEvent, RiskSnapshot, SignalEvent } from './types.js';
 import { EventBus } from '../core/event-bus.js';
 
@@ -31,7 +31,8 @@ export class TradingManager extends EventEmitter {
   private static instance: TradingManager;
   private workflow: TradingWorkflow | null = null;
   private state: TradingState;
-  private logger: Logger;
+  private logger: UnifiedLogger;
+  private readonly context = 'TradingManager';
   private signals: SignalEvent[] = [];
   private orders: OrderEvent[] = [];
   private equityHistory: Array<{ timestamp: number; equity: number }> = [];
@@ -50,7 +51,7 @@ export class TradingManager extends EventEmitter {
 
   private constructor() {
     super();
-    this.logger = Logger.getInstance('TradingManager');
+    this.logger = UnifiedLogger.getInstance();
     this.state = {
       isRunning: false,
       cycleCount: 0,
@@ -167,7 +168,11 @@ export class TradingManager extends EventEmitter {
         const sCfg: StreamingConfig = { symbols, timeframes };
         this.streaming = new StreamingIngestion(exchange, sCfg);
         this.streaming.on('gap:detected', async gap => {
-          this.logger.warn('Market data gap detected', { gap } as Record<string, unknown>);
+          this.logger.warn(
+            'Market data gap detected',
+            { gap } as Record<string, unknown>,
+            this.context
+          );
           // Attempt a lightweight targeted backfill to warm caches (best-effort)
           try {
             const tf = gap.timeframe as Timeframe;
@@ -178,18 +183,36 @@ export class TradingManager extends EventEmitter {
             );
             await exchange.getCandlesticks(gap.symbol, tf, estBars);
           } catch (e) {
-            this.logger.warn('Backfill attempt failed', { error: (e as Error)?.message });
+            this.logger.warn(
+              'Backfill attempt failed',
+              { error: (e as Error)?.message },
+              this.context
+            );
           }
         });
-        this.streaming.on('stream:error', e => this.logger.warn('Streaming error', e));
+        this.streaming.on('stream:error', e =>
+          this.logger.warn(
+            'Streaming error',
+            e instanceof Error ? { error: e.message } : { error: String(e) },
+            this.context
+          )
+        );
         this.streaming.start(5_000);
       }
     } catch (e) {
-      this.logger.warn('Failed to enable bar-driven scheduling; falling back to timer', e);
+      this.logger.warn(
+        'Failed to enable bar-driven scheduling; falling back to timer',
+        e instanceof Error ? { error: e.message } : { error: String(e) },
+        this.context
+      );
     }
 
     this.workflow.start().catch(error => {
-      this.logger.error('Trading workflow error', error);
+      this.logger.error(
+        'Trading workflow error',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       this.emit('error', error);
     });
 
@@ -205,7 +228,7 @@ export class TradingManager extends EventEmitter {
       throw new Error('No trading workflow is running');
     }
 
-    this.logger.info('Stopping trading workflow...');
+    this.logger.info('Stopping trading workflow...', {}, this.context);
     await this.workflow.stop();
     this.workflow = null;
 
@@ -222,7 +245,7 @@ export class TradingManager extends EventEmitter {
   }
 
   async pause(): Promise<void> {
-    this.logger.info('Pausing trading workflow...');
+    this.logger.info('Pausing trading workflow...', {}, this.context);
     // Note: Workflow doesn't have pause yet, this is a placeholder
     this.emit('system:state', { ...this.state, paused: true });
   }
@@ -308,7 +331,11 @@ export class TradingManager extends EventEmitter {
               this.latestRisk = risk;
               this.emit('risk:update', risk);
             } catch (error) {
-              this.logger.warn('Risk snapshot failed', error);
+              this.logger.warn(
+                'Risk snapshot failed',
+                error instanceof Error ? { error: error.message } : { error: String(error) },
+                this.context
+              );
             }
           } else {
             // Fallback risk snapshot when exchange lacks getPortfolioMetrics
@@ -370,11 +397,19 @@ export class TradingManager extends EventEmitter {
               this.latestRisk = risk;
               this.emit('risk:update', risk);
             } catch (error) {
-              this.logger.warn('Fallback risk snapshot failed', error);
+              this.logger.warn(
+                'Fallback risk snapshot failed',
+                error instanceof Error ? { error: error.message } : { error: String(error) },
+                this.context
+              );
             }
           }
         } catch (error) {
-          this.logger.error('Error emitting updates', error);
+          this.logger.error(
+            'Error emitting updates',
+            error instanceof Error ? error : new Error(String(error)),
+            this.context
+          );
         }
       }
     }, 5000); // Emit updates every 5 seconds
@@ -493,10 +528,14 @@ export class TradingManager extends EventEmitter {
     const key = `${symbol}:${side}`;
     if (stopLoss === undefined && takeProfit === undefined) {
       this.customExitPlans.delete(key);
-      this.logger.info(`Cleared custom exit plan for ${key}`);
+      this.logger.info(`Cleared custom exit plan for ${key}`, {}, this.context);
     } else {
       this.customExitPlans.set(key, { stopLoss, takeProfit });
-      this.logger.info(`Set custom exit plan for ${key}: SL=${stopLoss}, TP=${takeProfit}`);
+      this.logger.info(
+        `Set custom exit plan for ${key}: SL=${stopLoss}, TP=${takeProfit}`,
+        {},
+        this.context
+      );
     }
   }
 

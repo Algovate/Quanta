@@ -508,6 +508,74 @@ quanta config init
 
 ## Log Commands
 
+### `log console` - View Console Output
+
+View console output logs captured during `trade start` and `server start` commands.
+
+```bash
+quanta log console [options]
+
+Options:
+  --lines <n>           Show last N lines (default: 50)
+  -f, --follow         Follow mode (real-time updates, like tail -f)
+  --context <context>  Filter by logger context (e.g., TradeStart, Server)
+  --level <level>      Filter by log level (info|warn|error|debug)
+  --grep <pattern>     Search/filter by pattern in message
+  --format <format>    Output format (formatted|raw, default: formatted)
+```
+
+**Examples:**
+
+```bash
+# View last 50 lines from all contexts
+quanta log console
+
+# Follow in real-time (like tail -f)
+quanta log console --follow
+
+# Follow only trade start output
+quanta log console --follow --context TradeStart
+
+# View server startup output
+quanta log console --lines 100 --context Server
+
+# Filter by level
+quanta log console --level error
+
+# Search for specific pattern
+quanta log console --grep "Configuration"
+
+# Raw output (no ANSI color codes)
+quanta log console --format raw
+```
+
+**Output:**
+
+The command displays console output exactly as it appeared during startup, preserving chalk formatting and colors:
+
+```
+🏆 Quanta Trading System
+AI-powered quantitative trading with real-time decision making
+
+📊 Configuration:
+   Mode: paper
+   Exchange: Paper (OKX, testnet)
+   Market Type: spot
+   Coins: BTC, ETH, SOL
+   MarketType: spot | Effective risk → lev: 1-1x, SL: 5.0%, risk/trade: 5.0%, maxPos: 6
+
+🚀 Starting trading workflow...
+Press Ctrl+C to stop
+```
+
+**Follow Mode:**
+
+Use `--follow` or `-f` to watch logs in real-time (similar to `tail -f`). The command polls the database every second for new entries and displays them as they're written.
+
+**Note:** Console output is stored in tiered storage (L0/L1/L2/L3) and can be queried even after the process has stopped.
+
+---
+
 ### `log query` - Query Operations
 
 Query operations with various filters for analysis and debugging.

@@ -2,7 +2,7 @@ import axios from 'axios';
 import { MarketData } from '../data/market.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
 import type { TechnicalIndicators, MarketData as TMarketData } from '../types/index.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { withRetry, createRetryConfig } from '../utils/retry.js';
 import { CircuitBreaker, createCircuitBreaker } from '../utils/circuit-breaker.js';
 import {
@@ -66,7 +66,8 @@ export class OpenRouterClient {
   private apiKey: string;
   private model: string;
   private temperature: number;
-  private logger: Logger;
+  private logger: UnifiedLogger;
+  private readonly context = 'OpenRouter';
   private circuitBreaker: CircuitBreaker;
   private promptGroupName: string;
   private promptGroup: PromptGroup | null = null;
@@ -80,7 +81,7 @@ export class OpenRouterClient {
     this.apiKey = apiKey;
     this.model = model;
     this.temperature = temperature;
-    this.logger = Logger.getInstance('OpenRouter');
+    this.logger = UnifiedLogger.getInstance();
     this.circuitBreaker = createCircuitBreaker('OpenRouter', {
       failureThreshold: 5,
       resetTimeout: 60000, // 1 minute
@@ -100,13 +101,17 @@ export class OpenRouterClient {
     if (!this.promptGroup) {
       try {
         this.promptGroup = loadPromptGroup(this.promptGroupName);
-        this.logger.info(`Loaded prompt group: ${this.promptGroupName}`);
+        this.logger.info(`Loaded prompt group: ${this.promptGroupName}`, {}, this.context);
       } catch (error) {
         const errorMessage =
           error instanceof Error
             ? error.message
             : `Failed to load prompt group "${this.promptGroupName}"`;
-        this.logger.error(`Failed to load prompt group: ${errorMessage}`, error);
+        this.logger.error(
+          `Failed to load prompt group: ${errorMessage}`,
+          error instanceof Error ? error : new Error(String(error)),
+          this.context
+        );
         throw new Error(
           `Cannot load prompt group "${this.promptGroupName}". ` +
             `Please ensure the prompt configuration file exists at config/prompts/${this.promptGroupName}.json`
@@ -626,21 +631,29 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
                 error.response.status < 500 &&
                 error.response.status !== 429
               ) {
-                this.logger.warn('Not retrying OpenRouter API call due to client error', {
-                  status: error.response.status,
-                  message: error.message,
-                });
+                this.logger.warn(
+                  'Not retrying OpenRouter API call due to client error',
+                  {
+                    status: error.response.status,
+                    message: error.message,
+                  },
+                  this.context
+                );
                 return false;
               }
               // Retry on network errors, timeouts, 5xx errors, and rate limits (429)
               return true;
             },
             onRetry: (attempt: number, error: any) => {
-              this.logger.warn('Retrying OpenRouter API call', {
-                attempt,
-                error: error instanceof Error ? error.message : String(error),
-                status: error.response?.status,
-              });
+              this.logger.warn(
+                'Retrying OpenRouter API call',
+                {
+                  attempt,
+                  error: error instanceof Error ? error.message : String(error),
+                  status: error.response?.status,
+                },
+                this.context
+              );
             },
           })
         );
@@ -649,7 +662,8 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
         // Fallback when circuit is open - return empty response
         this.logger.error(
           'OpenRouter circuit breaker is OPEN, returning empty response',
-          new Error('Circuit breaker open')
+          new Error('Circuit breaker open'),
+          this.context
         );
         return '{"signals": []}';
       }
@@ -683,7 +697,11 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
         timestamp: Date.now(),
       }));
     } catch (error) {
-      this.logger.error('Error parsing AI response', error, { rawResponse: response });
+      this.logger.error(
+        'Error parsing AI response',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return [];
     }
   }

@@ -7,7 +7,7 @@ import {
   verifyLeverageConsistency,
   updateAccountEquity,
 } from './position-calculations.js';
-import { Logger } from '../utils/logger.js';
+import { UnifiedLogger } from '../logging/index.js';
 import { PositionUpdateManager } from './position-manager.js';
 
 // Constants for memory management
@@ -26,7 +26,8 @@ export class SimulatorExchange implements Exchange {
   private marketData: Map<string, Candlestick[]>;
   private dataSourceExchange?: Exchange;
   private completedTrades: CompletedTrade[] = [];
-  private logger = Logger.getInstance('SimulatorExchange');
+  private logger = UnifiedLogger.getInstance();
+  private readonly context = 'SimulatorExchange';
   private positionManager: PositionUpdateManager;
   private orderMetadata: Map<string, OrderMetadata> = new Map();
 
@@ -530,9 +531,13 @@ export class SimulatorExchange implements Exchange {
         updateAccountEquity(this.account, this.positions);
       } catch (e) {
         const err = e as Error;
-        this.logger.warn(`Failed to refresh marks after order for ${order.symbol}`, {
-          error: err?.message || String(e),
-        });
+        this.logger.warn(
+          `Failed to refresh marks after order for ${order.symbol}`,
+          {
+            error: err?.message || String(e),
+          },
+          this.context
+        );
       }
 
       // Update order with execution details
@@ -599,15 +604,19 @@ export class SimulatorExchange implements Exchange {
       // Only log when there is a meaningful mismatch on the notional-based check;
       // margin-based derived figure can legitimately differ due to definition.
       if (!leverageCheck.isValid) {
-        this.logger.debug(`Position leverage mismatch for ${position.symbol}:`, {
-          stored: leverageCheck.stored,
-          fromNotional: leverageCheck.fromNotional,
-          fromMargin: leverageCheck.fromMargin,
-          notional: position.notional,
-          marginUsed: position.marginUsed,
-          size: position.size,
-          markPrice: currentPrice,
-        });
+        this.logger.debug(
+          `Position leverage mismatch for ${position.symbol}:`,
+          {
+            stored: leverageCheck.stored,
+            fromNotional: leverageCheck.fromNotional,
+            fromMargin: leverageCheck.fromMargin,
+            notional: position.notional,
+            marginUsed: position.marginUsed,
+            size: position.size,
+            markPrice: currentPrice,
+          },
+          this.context
+        );
       }
     }
   }
