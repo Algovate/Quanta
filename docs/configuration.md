@@ -179,7 +179,29 @@ TRADING_PRICE_SANITY_ENABLED=true
 TRADING_PRICE_SANITY_MAX_DEVIATION=0.05
 # Funding warnings (perpetuals)
 TRADING_FUNDING_WARNINGS=true
+
+# Logging (Lite Mode)
+# Override JSONL log directory (defaults to ./logs/text)
+LOG_DIR=/absolute/path/to/logs/text
 ```
+
+### Logging (Lite Mode)
+
+You can optionally set logging defaults in `config/config.json` under `logging`:
+
+```json
+{
+  "logging": {
+    "level": "info",
+    "textLogDir": "./logs/text",
+    "retentionDays": 7
+  }
+}
+```
+
+- `level`: Text log capture level for the JSONL writer.
+- `textLogDir`: Directory for JSONL text logs. Environment variable `LOG_DIR` overrides this.
+- `retentionDays`: Keep daily-rotated JSONL files for this many days.
 
 ## CLI Configuration
 
@@ -245,7 +267,7 @@ The system automatically validates and adjusts risk parameters based on `marketT
 - **Max Risk**: Range `3% - 5%`
 - **Max Positions**: Range `6 - 10`
 
-**Swap/Perp Market (`marketType: "swap"`, `"perp"`, or `"perpetual"`):**
+**Swap/Perp Market (`marketType: "swap"`, "perp", or "perpetual"):**
 
 - **Leverage**: Clamped to `3x - 10x` (leverage supported)
 - **Stop Loss**: Range `1% - 2%`

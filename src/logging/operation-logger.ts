@@ -27,7 +27,7 @@ import { normalizeError } from './utils.js';
 
 export class OperationLogger {
   private static instance: OperationLogger;
-  
+
   // Store original console methods to avoid recursion when console interception is enabled
   private originalConsole: {
     log: typeof console.log;
@@ -44,7 +44,8 @@ export class OperationLogger {
       log: console.log.bind(console),
       warn: console.warn.bind(console),
       error: console.error.bind(console),
-    };}
+    };
+  }
 
   static getInstance(): OperationLogger {
     if (!OperationLogger.instance) {

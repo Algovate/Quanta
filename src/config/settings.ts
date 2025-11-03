@@ -1,3 +1,4 @@
+import { UnifiedLogger } from '../logging/index.js';
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
@@ -409,7 +410,9 @@ function loadConfigFromFile(): Partial<Config> {
       return JSON.parse(configData);
     }
   } catch (error) {
-    console.warn('Warning: Failed to load config file, using defaults:', error);
+    UnifiedLogger.getInstance()
+      .getOriginalConsole()
+      .warn('Warning: Failed to load config file, using defaults:', error as unknown);
   }
   return {};
 }
@@ -588,9 +591,11 @@ export function saveConfig(config: Partial<Config>): void {
     const currentConfig = getConfig();
     const mergedConfig = { ...currentConfig, ...config };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(mergedConfig, null, 2));
-    console.log(`Configuration saved to ${CONFIG_FILE}`);
+    UnifiedLogger.getInstance().getOriginalConsole().log(`Configuration saved to ${CONFIG_FILE}`);
   } catch (error) {
-    console.error('Failed to save configuration:', error);
+    UnifiedLogger.getInstance()
+      .getOriginalConsole()
+      .error('Failed to save configuration:', error as unknown);
     throw error;
   }
 }
@@ -601,9 +606,11 @@ export function resetConfig(): void {
       fs.unlinkSync(CONFIG_FILE);
     }
     globalConfig = null;
-    console.log('Configuration reset to defaults');
+    UnifiedLogger.getInstance().getOriginalConsole().log('Configuration reset to defaults');
   } catch (error) {
-    console.error('Failed to reset configuration:', error);
+    UnifiedLogger.getInstance()
+      .getOriginalConsole()
+      .error('Failed to reset configuration:', error as unknown);
     throw error;
   }
 }

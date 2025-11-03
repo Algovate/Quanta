@@ -45,8 +45,9 @@ export class PromptCommands {
 
   private static async viewPrompt(options: ViewPromptOptions): Promise<void> {
     // Use originalConsole to bypass logger interception and ensure output displays
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-    
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+
     if (options.list) {
       PromptCommands.listPromptGroups(originalConsole);
       return;
@@ -66,13 +67,20 @@ export class PromptCommands {
     if (options.rendered) {
       const exampleContext = PromptCommands.createExampleContext();
       PromptCommands.displayExampleContext(exampleContext, originalConsole);
-      PromptCommands.displayRenderedPrompts(promptGroup, exampleContext, displayOptions, originalConsole);
+      PromptCommands.displayRenderedPrompts(
+        promptGroup,
+        exampleContext,
+        displayOptions,
+        originalConsole
+      );
     } else {
       PromptCommands.displayRawPrompts(promptGroup, displayOptions, originalConsole);
       PromptCommands.displayTemplateVariables(promptGroup, displayOptions, originalConsole);
     }
 
     originalConsole.log('');
+    // Ensure clean shutdown for CLI
+    logger.shutdown();
   }
 
   private static listPromptGroups(originalConsole: { log: typeof console.log }): void {
@@ -102,7 +110,11 @@ export class PromptCommands {
     return config.ai.prompt.activeGroup;
   }
 
-  private static displayMetadata(promptGroup: PromptGroup, groupName: string, originalConsole: { log: typeof console.log }): void {
+  private static displayMetadata(
+    promptGroup: PromptGroup,
+    groupName: string,
+    originalConsole: { log: typeof console.log }
+  ): void {
     originalConsole.log(chalk.bold('\n📝 Prompt Group: ') + chalk.cyan(groupName));
     if (promptGroup.metadata.description) {
       originalConsole.log(chalk.gray(`   Description: ${promptGroup.metadata.description}`));
@@ -135,7 +147,10 @@ export class PromptCommands {
     };
   }
 
-  private static displayExampleContext(context: Record<string, string | number>, originalConsole: { log: typeof console.log }): void {
+  private static displayExampleContext(
+    context: Record<string, string | number>,
+    originalConsole: { log: typeof console.log }
+  ): void {
     originalConsole.log(chalk.gray('Using example values for rendering:\n'));
     Object.entries(context).forEach(([key, value]) => {
       originalConsole.log(chalk.gray(`  ${key}: ${value}`));
@@ -166,7 +181,11 @@ export class PromptCommands {
     }
   }
 
-  private static displayRawPrompts(promptGroup: PromptGroup, options: DisplayOptions, originalConsole: { log: typeof console.log }): void {
+  private static displayRawPrompts(
+    promptGroup: PromptGroup,
+    options: DisplayOptions,
+    originalConsole: { log: typeof console.log }
+  ): void {
     if (options.showSystem) {
       PromptCommands.displayPrompt('SYSTEM PROMPT (RAW)', promptGroup.system, originalConsole);
     }
@@ -176,13 +195,21 @@ export class PromptCommands {
     }
   }
 
-  private static displayPrompt(title: string, content: string, originalConsole: { log: typeof console.log }): void {
+  private static displayPrompt(
+    title: string,
+    content: string,
+    originalConsole: { log: typeof console.log }
+  ): void {
     originalConsole.log(chalk.bold.cyan(`\n=== ${title} ===\n`));
     originalConsole.log(content);
     originalConsole.log('');
   }
 
-  private static displayTemplateVariables(promptGroup: PromptGroup, options: DisplayOptions, originalConsole: { log: typeof console.log }): void {
+  private static displayTemplateVariables(
+    promptGroup: PromptGroup,
+    options: DisplayOptions,
+    originalConsole: { log: typeof console.log }
+  ): void {
     const systemVars = PromptCommands.extractVariables(promptGroup.system);
     const userVars = PromptCommands.extractVariables(promptGroup.user);
 
@@ -202,7 +229,11 @@ export class PromptCommands {
     }
   }
 
-  private static displayVariableList(title: string, variables: string[], originalConsole: { log: typeof console.log }): void {
+  private static displayVariableList(
+    title: string,
+    variables: string[],
+    originalConsole: { log: typeof console.log }
+  ): void {
     originalConsole.log(chalk.yellow(`  ${title}:`));
     variables.forEach(v => originalConsole.log(chalk.gray(`    {{${v}}}`)));
     originalConsole.log('');

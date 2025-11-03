@@ -2161,14 +2161,7 @@ export class TradingWorkflow {
           },
           this.loggerContext
         );
-        if (!this.isBackgroundMode) {
-          const ec = validation.equityCheck;
-          console.warn(
-            chalk.yellow(
-              `Equity mismatch → reported: $${ec.accountEquity?.toFixed?.(2)}, expected: $${ec.calculatedEquity?.toFixed?.(2)} | balance: $${ec.balance?.toFixed?.(2)}, unrealized: $${ec.unrealizedPnl?.toFixed?.(2)} | diff: $${ec.diff?.toFixed?.(2)}`
-            )
-          );
-        }
+        // Suppress direct console output; structured log above already recorded
       }
       if (validation.marginCheck && !validation.marginCheck.isValid) {
         this.unifiedLogger.warn(
@@ -2179,14 +2172,7 @@ export class TradingWorkflow {
           },
           this.loggerContext
         );
-        if (!this.isBackgroundMode) {
-          const mc = validation.marginCheck;
-          console.warn(
-            chalk.yellow(
-              `Available margin mismatch → reported: $${mc.accountAvailable?.toFixed?.(2)}, expected: $${mc.calculatedAvailable?.toFixed?.(2)} | equity: $${mc.equity?.toFixed?.(2)}, used: $${mc.usedMargin?.toFixed?.(2)} | diff: $${mc.diff?.toFixed?.(2)}`
-            )
-          );
-        }
+        // Suppress direct console output; structured log above already recorded
       }
     }
   }

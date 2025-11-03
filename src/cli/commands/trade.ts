@@ -166,9 +166,10 @@ export class TradeCommands {
     apiSecret?: string,
     testnet: boolean = true
   ): Promise<Exchange> {
+    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
     if (mode === 'simulation') {
       // Pure mock data simulator
-      console.log('📊 Simulation mode: Using pure mock data (no real exchange data)');
+      originalConsole.log('📊 Simulation mode: Using pure mock data (no real exchange data)');
       return new SimulatorExchange(10000);
     } else if (mode === 'paper') {
       // Paper trading: real data with simulated execution
@@ -413,9 +414,9 @@ export class TradeCommands {
     const { BacktestReport } = await import('../../analytics/report.js');
     const { BacktestRenderer } = await import('../../utils/cli-render.js');
     const { format, addMonths, subMonths } = await import('date-fns');
-
-    console.log(chalk.cyan('📈 Quanta Backtest'));
-    console.log(chalk.gray('Historical strategy validation\n'));
+    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+    originalConsole.log(chalk.cyan('📈 Quanta Backtest'));
+    originalConsole.log(chalk.gray('Historical strategy validation\n'));
 
     // Get config for default coins
     const config = getConfig();
@@ -486,13 +487,13 @@ export class TradeCommands {
       seed: options.seed ? Number(options.seed) : undefined,
     };
 
-    console.log(chalk.blue('📊 Backtest Configuration:'));
-    console.log(`   Period: ${backtestConfig.startDate} to ${backtestConfig.endDate}`);
-    console.log(`   Coins: ${coins.join(', ')}`);
-    console.log(`   Initial Balance: $${initialBalance.toLocaleString()}`);
-    console.log(`   Max Positions: ${backtestConfig.maxPositions}`);
-    console.log(`   Cycle Period: ${backtestConfig.cyclePeriod / 1000 / 60} minutes`);
-    console.log('');
+    originalConsole.log(chalk.blue('📊 Backtest Configuration:'));
+    originalConsole.log(`   Period: ${backtestConfig.startDate} to ${backtestConfig.endDate}`);
+    originalConsole.log(`   Coins: ${coins.join(', ')}`);
+    originalConsole.log(`   Initial Balance: $${initialBalance.toLocaleString()}`);
+    originalConsole.log(`   Max Positions: ${backtestConfig.maxPositions}`);
+    originalConsole.log(`   Cycle Period: ${backtestConfig.cyclePeriod / 1000 / 60} minutes`);
+    originalConsole.log('');
 
     // Configuration will be printed after dates are resolved below
 
@@ -531,7 +532,7 @@ export class TradeCommands {
 
       if (options.json) {
         // eslint-disable-next-line no-console
-        console.log(JSON.stringify(result, null, 2));
+        originalConsole.log(JSON.stringify(result, null, 2));
       } else {
         // Generate and display compact report
         const report = new BacktestReport(result, {
@@ -541,54 +542,56 @@ export class TradeCommands {
           showEquity: options.noEquity !== true,
         });
         report.displayReport();
-        console.log(chalk.green('✅ Backtest completed successfully!'));
+        originalConsole.log(chalk.green('✅ Backtest completed successfully!'));
       }
     } catch (error) {
       if (error instanceof Error) {
-        console.error(chalk.red(`\n❌ Error: ${error.message}`));
+        originalConsole.error(chalk.red(`\n❌ Error: ${error.message}`));
       } else {
-        console.error(chalk.red(`\n❌ Error: ${String(error)}`));
+        originalConsole.error(chalk.red(`\n❌ Error: ${String(error)}`));
       }
 
-      console.log(chalk.yellow('\n💡 Troubleshooting:'));
-      console.log(chalk.gray('  1. Verify date format is YYYY-MM-DD'));
-      console.log(chalk.gray('  2. Ensure start date is before end date'));
-      console.log(chalk.gray('  3. Check coin symbols are valid'));
+      originalConsole.log(chalk.yellow('\n💡 Troubleshooting:'));
+      originalConsole.log(chalk.gray('  1. Verify date format is YYYY-MM-DD'));
+      originalConsole.log(chalk.gray('  2. Ensure start date is before end date'));
+      originalConsole.log(chalk.gray('  3. Check coin symbols are valid'));
 
       throw error;
     }
   }
 
   private static async showStatus(): Promise<void> {
-    console.log(chalk.cyan('📊 Quanta Status'));
-    console.log(chalk.gray('Current system state\n'));
+    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+    originalConsole.log(chalk.cyan('📊 Quanta Status'));
+    originalConsole.log(chalk.gray('Current system state\n'));
 
     const config = getConfig();
 
-    console.log(chalk.blue('⚙️  Configuration:'));
-    console.log(`   Mode: ${config.mode}`);
-    console.log(`   Coins: ${config.trading.coins.join(', ')}`);
-    console.log(`   Max Positions: ${config.trading.maxPositions}`);
-    console.log(`   Cycle Period: ${config.trading.cyclePeriod / 1000}s`);
-    console.log(`   Stop Loss: ${(config.trading.stopLoss * 100).toFixed(1)}%`);
-    console.log('');
+    originalConsole.log(chalk.blue('⚙️  Configuration:'));
+    originalConsole.log(`   Mode: ${config.mode}`);
+    originalConsole.log(`   Coins: ${config.trading.coins.join(', ')}`);
+    originalConsole.log(`   Max Positions: ${config.trading.maxPositions}`);
+    originalConsole.log(`   Cycle Period: ${config.trading.cyclePeriod / 1000}s`);
+    originalConsole.log(`   Stop Loss: ${(config.trading.stopLoss * 100).toFixed(1)}%`);
+    originalConsole.log('');
 
-    console.log(chalk.blue('🤖 AI Configuration:'));
-    console.log(`   Model: ${config.ai.model}`);
-    console.log(`   Temperature: ${config.ai.temperature}`);
-    console.log('');
+    originalConsole.log(chalk.blue('🤖 AI Configuration:'));
+    originalConsole.log(`   Model: ${config.ai.model}`);
+    originalConsole.log(`   Temperature: ${config.ai.temperature}`);
+    originalConsole.log('');
 
-    console.log(chalk.yellow('⚠️  Live status monitoring not yet implemented'));
+    originalConsole.log(chalk.yellow('⚠️  Live status monitoring not yet implemented'));
   }
 
   private static async pauseTrading(options: { reason: string }): Promise<void> {
-    console.log(chalk.cyan('⏸️  Pausing Trading System'));
-    console.log(chalk.gray('='.repeat(60)));
-    console.log(`Reason: ${options.reason}\n`);
+    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+    originalConsole.log(chalk.cyan('⏸️  Pausing Trading System'));
+    originalConsole.log(chalk.gray('='.repeat(60)));
+    originalConsole.log(`Reason: ${options.reason}\n`);
 
     try {
       // Check if trading system is running
-      console.log(chalk.blue('📊 Checking system status...'));
+      originalConsole.log(chalk.blue('📊 Checking system status...'));
 
       // In a real implementation, this would:
       // 1. Check for running workflow
@@ -596,13 +599,13 @@ export class TradeCommands {
       // 3. Save current state
       // 4. Notify monitoring systems
 
-      console.log(chalk.yellow('⚠️  Pause functionality not yet implemented'));
-      console.log(chalk.gray('   This will:'));
-      console.log(chalk.gray('   - Pause trading cycles'));
-      console.log(chalk.gray('   - Keep positions open'));
-      console.log(chalk.gray('   - Save state for resumption'));
+      originalConsole.log(chalk.yellow('⚠️  Pause functionality not yet implemented'));
+      originalConsole.log(chalk.gray('   This will:'));
+      originalConsole.log(chalk.gray('   - Pause trading cycles'));
+      originalConsole.log(chalk.gray('   - Keep positions open'));
+      originalConsole.log(chalk.gray('   - Save state for resumption'));
     } catch (error) {
-      console.error(chalk.red('❌ Error pausing trading system'));
+      originalConsole.error(chalk.red('❌ Error pausing trading system'));
       throw error;
     }
   }
@@ -611,42 +614,43 @@ export class TradeCommands {
     graceful?: boolean;
     force?: boolean;
   }): Promise<void> {
+    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
     const graceful = options.graceful || false;
     const force = options.force || false;
 
-    console.log(chalk.cyan('🛑 Stopping Trading System'));
-    console.log(chalk.gray('='.repeat(60)));
-    console.log(`Mode: ${graceful ? 'Graceful' : force ? 'Force' : 'Standard'}\n`);
+    originalConsole.log(chalk.cyan('🛑 Stopping Trading System'));
+    originalConsole.log(chalk.gray('='.repeat(60)));
+    originalConsole.log(`Mode: ${graceful ? 'Graceful' : force ? 'Force' : 'Standard'}\n`);
 
     try {
-      console.log(chalk.blue('📊 Checking active positions...'));
+      originalConsole.log(chalk.blue('📊 Checking active positions...'));
 
       if (graceful) {
-        console.log(chalk.yellow('⏳ Graceful shutdown: Finishing current trades...'));
-        console.log(chalk.gray('   - Waiting for open orders to complete'));
-        console.log(chalk.gray('   - Closing positions safely'));
-        console.log(chalk.gray('   - Saving final state'));
+        originalConsole.log(chalk.yellow('⏳ Graceful shutdown: Finishing current trades...'));
+        originalConsole.log(chalk.gray('   - Waiting for open orders to complete'));
+        originalConsole.log(chalk.gray('   - Closing positions safely'));
+        originalConsole.log(chalk.gray('   - Saving final state'));
       } else if (force) {
-        console.log(chalk.red('⚠️  Force stop: Immediate termination'));
-        console.log(chalk.gray('   - Stopping all trading activity immediately'));
-        console.log(chalk.gray('   - Positions may remain open'));
+        originalConsole.log(chalk.red('⚠️  Force stop: Immediate termination'));
+        originalConsole.log(chalk.gray('   - Stopping all trading activity immediately'));
+        originalConsole.log(chalk.gray('   - Positions may remain open'));
       } else {
-        console.log(chalk.yellow('⏹️  Standard stop: Safe shutdown'));
-        console.log(chalk.gray('   - Stopping new trade cycles'));
-        console.log(chalk.gray('   - Completing current operations'));
+        originalConsole.log(chalk.yellow('⏹️  Standard stop: Safe shutdown'));
+        originalConsole.log(chalk.gray('   - Stopping new trade cycles'));
+        originalConsole.log(chalk.gray('   - Completing current operations'));
       }
 
-      console.log('');
-      console.log(chalk.yellow('⚠️  Stop functionality not yet implemented'));
-      console.log(chalk.gray('   This will:'));
-      console.log(chalk.gray('   - Stop trading workflow'));
-      console.log(chalk.gray('   - Close or keep positions (based on mode)'));
-      console.log(chalk.gray('   - Save session summary'));
+      originalConsole.log('');
+      originalConsole.log(chalk.yellow('⚠️  Stop functionality not yet implemented'));
+      originalConsole.log(chalk.gray('   This will:'));
+      originalConsole.log(chalk.gray('   - Stop trading workflow'));
+      originalConsole.log(chalk.gray('   - Close or keep positions (based on mode)'));
+      originalConsole.log(chalk.gray('   - Save session summary'));
 
-      console.log('');
-      console.log(chalk.green('💡 Tip: Use Ctrl+C to interrupt running trade commands'));
+      originalConsole.log('');
+      originalConsole.log(chalk.green('💡 Tip: Use Ctrl+C to interrupt running trade commands'));
     } catch (error) {
-      console.error(chalk.red('❌ Error stopping trading system'));
+      originalConsole.error(chalk.red('❌ Error stopping trading system'));
       throw error;
     }
   }
@@ -693,13 +697,14 @@ export class TradeCommands {
 
       // API keys optional but show warning
       if (!exchangeApiKey || !exchangeApiSecret) {
-        console.log(chalk.yellow('⚠️  Warning: Running paper trading without API keys'));
-        console.log(
+        const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+        originalConsole.log(chalk.yellow('⚠️  Warning: Running paper trading without API keys'));
+        originalConsole.log(
           chalk.gray(
             '   Some features may be limited. Consider adding API keys to config.json for full access.'
           )
         );
-        console.log('');
+        originalConsole.log('');
       }
     }
     // simulation mode - no validation needed

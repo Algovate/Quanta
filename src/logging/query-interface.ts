@@ -9,7 +9,8 @@
  * - Trace reconstruction
  */
 
-import { StorageLayer } from './storage-layer.js';
+import fs from 'fs';
+import path from 'path';
 import type { OperationLog, SystemSnapshot, TextLog } from './types.js';
 
 export interface QueryOptions {
@@ -57,13 +58,10 @@ export interface Statistics {
 
 export class QueryInterface {
   private static instance: QueryInterface;
-  private storageLayer: StorageLayer;
   private cache: Map<string, { result: QueryResult; timestamp: number }> = new Map();
   private cacheTTL: number = 60000; // 1 minute
 
-  private constructor() {
-    this.storageLayer = StorageLayer.getInstance();
-  }
+  private constructor() {}
 
   static getInstance(): QueryInterface {
     if (!QueryInterface.instance) {
@@ -82,66 +80,8 @@ export class QueryInterface {
       return cached.result;
     }
 
-    // Get from L0 cache first
-    let operations = this.storageLayer.getOperationsFromL0(10000);
-
-    // Get from L1 database
-    const l1Options: {
-      cycleId?: number;
-      traceId?: string;
-      operationId?: string;
-      operationType?: string;
-      status?: string;
-      symbol?: string;
-      startTime?: number;
-      endTime?: number;
-      limit?: number;
-      offset?: number;
-    } = {};
-
-    if (options.cycleId !== undefined) {
-      l1Options.cycleId = options.cycleId;
-    }
-    if (options.traceId) {
-      l1Options.traceId = options.traceId;
-    }
-    if (options.operationId) {
-      l1Options.operationId = options.operationId;
-    }
-    if (options.operationType) {
-      l1Options.operationType = options.operationType;
-    }
-    if (options.status) {
-      l1Options.status = options.status;
-    }
-    if (options.symbol) {
-      l1Options.symbol = options.symbol;
-    }
-    if (options.startTime !== undefined) {
-      l1Options.startTime = options.startTime;
-    }
-    if (options.endTime !== undefined) {
-      l1Options.endTime = options.endTime;
-    }
-
-    // Get more from L1 if needed (but don't use offset/limit here as we'll handle pagination later)
-    const l1Ops = await this.storageLayer.getOperationsFromL1({
-      ...l1Options,
-      limit: 10000, // Get a large batch
-    });
-
-    // Combine L0 and L1, deduplicate by operationId
-    const opsMap = new Map<string, OperationLog>();
-    for (const op of operations) {
-      opsMap.set(op.operationId, op);
-    }
-    for (const op of l1Ops) {
-      if (!opsMap.has(op.operationId)) {
-        opsMap.set(op.operationId, op);
-      }
-    }
-
-    operations = Array.from(opsMap.values());
+    // Lite mode: operations are not persisted. Return empty minimal result.
+    let operations: OperationLog[] = [];
 
     // Apply filters
     if (options.startTime !== undefined) {
@@ -407,50 +347,16 @@ export class QueryInterface {
     limit?: number;
     offset?: number;
   }): Promise<{ logs: TextLog[]; total: number; hasMore: boolean }> {
-    // Get from L0 cache first (has formattedMessage)
-    const l0Logs = this.storageLayer.getTextLogsFromL0(10000);
-
-    // Get from L1 database (may not have formattedMessage)
-    const l1Logs = await this.storageLayer.getTextLogsFromL1({
+    // Read JSONL files produced by UnifiedLogger Lite
+    let logs = await this.readJsonlTextLogs({
       context: options.context,
       level: options.level,
       since: options.since,
       until: options.until,
       cycleId: options.cycleId,
-      limit: 10000,
+      maxFiles: 7,
+      maxLines: 50000,
     });
-
-    // Combine L0 and L1, deduplicate by logId
-    // Strategy: Prefer L0 entries (they have formattedMessage) but merge with L1 for completeness
-    const logsMap = new Map<string, TextLog>();
-
-    // Add all L1 logs first (they have more historical entries)
-    for (const log of l1Logs) {
-      logsMap.set(log.logId, log);
-    }
-
-    // Override with L0 logs if they exist (preserve formattedMessage and other L0 fields)
-    // L0 logs are fresher and have formattedMessage
-    for (const log of l0Logs) {
-      const existing = logsMap.get(log.logId);
-      if (existing) {
-        // Merge: Keep L1 data but restore formattedMessage from L0
-        // Also update other fields from L0 if log is more recent
-        existing.formattedMessage = log.formattedMessage || existing.formattedMessage;
-        if (log.timestamp >= existing.timestamp) {
-          // L0 log is same or newer, prefer its fields
-          Object.assign(existing, log);
-        }
-      } else {
-        // L0 log not in L1 yet, add it
-        logsMap.set(log.logId, log);
-      }
-    }
-
-    let logs = Array.from(logsMap.values());
-
-    // Sort by timestamp descending
-    logs.sort((a, b) => b.timestamp - a.timestamp);
 
     // Apply filters (if not already applied in SQL)
     if (options.context) {
@@ -482,5 +388,87 @@ export class QueryInterface {
       total,
       hasMore,
     };
+  }
+
+  private async readJsonlTextLogs(options: {
+    context?: string;
+    level?: 'info' | 'warn' | 'error' | 'debug';
+    since?: number;
+    until?: number;
+    cycleId?: number;
+    maxFiles: number;
+    maxLines: number;
+  }): Promise<TextLog[]> {
+    const logDir = process.env.LOG_DIR || path.join('.', 'logs', 'text');
+    const filePrefix = 'text-logs-';
+    const files = await this.safeReadDir(logDir);
+    const jsonlFiles = files
+      .filter(f => f.startsWith(filePrefix) && f.endsWith('.jsonl'))
+      .map(f => ({ name: f, full: path.join(logDir, f) }));
+
+    // Sort by mtime desc
+    const withStats = await Promise.all(
+      jsonlFiles.map(async f => ({ f, stat: await this.safeStat(f.full) }))
+    );
+    const sorted = withStats
+      .filter(s => !!s.stat)
+      .sort((a, b) => (b.stat!.mtimeMs || 0) - (a.stat!.mtimeMs || 0))
+      .slice(0, options.maxFiles)
+      .map(s => s.f.full);
+
+    const collected: TextLog[] = [];
+    for (const fullPath of sorted) {
+      const content = await this.safeReadFile(fullPath);
+      if (!content) continue;
+      const lines = content.split('\n');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const obj = JSON.parse(line) as TextLog;
+          collected.push(obj);
+          if (collected.length >= options.maxLines) break;
+        } catch {
+          // ignore bad lines
+        }
+      }
+      if (collected.length >= options.maxLines) break;
+    }
+
+    // Sort desc and filter
+    collected.sort((a, b) => b.timestamp - a.timestamp);
+
+    return collected.filter(log => {
+      if (options.context && log.context !== options.context) return false;
+      if (options.level && log.level !== options.level) return false;
+      if (options.cycleId !== undefined && (log.cycleId || 0) !== options.cycleId) return false;
+      if (options.since !== undefined && log.timestamp < options.since) return false;
+      if (options.until !== undefined && log.timestamp > options.until) return false;
+      return true;
+    });
+  }
+
+  private async safeReadDir(dir: string): Promise<string[]> {
+    try {
+      if (!fs.existsSync(dir)) return [];
+      return await fs.promises.readdir(dir);
+    } catch {
+      return [];
+    }
+  }
+
+  private async safeStat(file: string): Promise<fs.Stats | null> {
+    try {
+      return await fs.promises.stat(file);
+    } catch {
+      return null;
+    }
+  }
+
+  private async safeReadFile(file: string): Promise<string | null> {
+    try {
+      return await fs.promises.readFile(file, 'utf-8');
+    } catch {
+      return null;
+    }
   }
 }

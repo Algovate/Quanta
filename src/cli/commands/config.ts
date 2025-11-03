@@ -74,7 +74,8 @@ export class ConfigCommands {
 
   private static async showConfig(options: { format: string }): Promise<void> {
     // Use originalConsole to bypass logger interception and prevent database initialization hang
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
     const config = getConfig();
 
     if (options.format === 'json') {
@@ -110,7 +111,8 @@ export class ConfigCommands {
       if (config.backtest) {
         originalConsole.log(chalk.blue('🔬 Backtest Settings:'));
         originalConsole.log(`   Initial Balance: $${config.backtest.initialBalance}`);
-        if (config.backtest.startDate) originalConsole.log(`   Start Date: ${config.backtest.startDate}`);
+        if (config.backtest.startDate)
+          originalConsole.log(`   Start Date: ${config.backtest.startDate}`);
         if (config.backtest.endDate) originalConsole.log(`   End Date: ${config.backtest.endDate}`);
         originalConsole.log('');
       }
@@ -135,11 +137,14 @@ export class ConfigCommands {
         originalConsole.log(`   Status: ${chalk.yellow('Using defaults + environment variables')}`);
       }
     }
+    // Ensure clean shutdown for CLI
+    logger.shutdown();
   }
 
   private static async setConfig(key: string, value: string): Promise<void> {
     // Use originalConsole to bypass logger interception and prevent database initialization hang
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
     const config = getConfig();
     const keys = key.split('.');
 
@@ -160,6 +165,7 @@ export class ConfigCommands {
     // Save to file
     saveConfig(config);
     originalConsole.log(chalk.green(`✅ Configuration updated: ${key} = ${value}`));
+    logger.shutdown();
   }
 
   private static parseValue(value: string): any {
@@ -178,7 +184,8 @@ export class ConfigCommands {
 
   private static async validateConfig(): Promise<void> {
     // Use originalConsole to bypass logger interception and prevent database initialization hang
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
     originalConsole.log(chalk.cyan('🔍 Validating Configuration'));
     originalConsole.log(chalk.gray('Checking system settings\n'));
 
@@ -215,26 +222,33 @@ export class ConfigCommands {
       originalConsole.log(chalk.red('❌ Configuration validation failed:'));
       originalConsole.log(chalk.red(`   ${error}`));
     }
+    // Ensure clean shutdown for CLI
+    logger.shutdown();
   }
 
   private static async saveConfig(): Promise<void> {
     // Use originalConsole to bypass logger interception and prevent database initialization hang
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
     const config = getConfig();
     saveConfig(config);
     originalConsole.log(chalk.green('✅ Configuration saved to file'));
+    logger.shutdown();
   }
 
   private static async resetConfig(): Promise<void> {
     // Use originalConsole to bypass logger interception and prevent database initialization hang
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
     resetConfig();
     originalConsole.log(chalk.green('✅ Configuration reset to defaults'));
+    logger.shutdown();
   }
 
   private static async initConfig(): Promise<void> {
     // Use originalConsole to bypass logger interception and prevent database initialization hang
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
     const examplePath = getConfigExamplePath();
     const configPath = getConfigFilePath();
 
@@ -242,6 +256,7 @@ export class ConfigCommands {
       originalConsole.log(chalk.yellow('⚠️  Configuration file already exists'));
       originalConsole.log(chalk.gray(`   File: ${configPath}`));
       originalConsole.log(chalk.gray('   Use "config reset" to reset to defaults'));
+      logger.shutdown();
       return;
     }
 
@@ -254,5 +269,7 @@ export class ConfigCommands {
       originalConsole.log(chalk.red('❌ Example configuration file not found'));
       originalConsole.log(chalk.gray(`   Expected: ${examplePath}`));
     }
+    // Ensure clean shutdown for CLI
+    logger.shutdown();
   }
 }

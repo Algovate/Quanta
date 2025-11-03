@@ -145,10 +145,11 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 
 Console output shows both Total P&L and Unrealized P&L explicitly.
 
-### Logging Behavior
+### Logging Behavior (Lite)
 
-- Foreground (interactive terminal): console output is synchronous to preserve event order; structured logs still persist to files.
-- Background (non-TTY): buffered logger outputs to both console and files for efficiency.
+- Console output is intercepted and written to JSONL files under `logs/text/` (override with `LOG_DIR`).
+- Use `quanta log console` (with `--follow`, `--context`, `--level`, `--grep`) to view logs.
+- For CLI user-facing messages, print via `UnifiedLogger.getInstance().getOriginalConsole()` to bypass interception.
 
 ### Execution Messages
 

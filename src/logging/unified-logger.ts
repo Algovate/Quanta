@@ -8,12 +8,7 @@
 
 import { AsyncLocalStorage } from 'async_hooks';
 import { OperationLogger } from './operation-logger.js';
-import { ErrorAggregator } from './error-aggregator.js';
-import { MetricsCollector } from './metrics-collector.js';
-import { StateSnapshotService } from './state-snapshot.js';
-import { Sampler } from './sampler.js';
-import { StorageLayer } from './storage-layer.js';
-import { StorageOptimizer } from './storage-optimizer.js';
+import { JsonlWriter } from './writers/jsonl-writer.js';
 import type {
   TraceContext,
   OperationLog,
@@ -74,12 +69,7 @@ export class UnifiedLogger {
 
   // Components
   private operationLogger: OperationLogger;
-  private errorAggregator: ErrorAggregator;
-  private metricsCollector: MetricsCollector;
-  private stateSnapshot: StateSnapshotService;
-  private sampler: Sampler;
-  private storageLayer: StorageLayer;
-  private storageOptimizer: StorageOptimizer;
+  private jsonlWriter: JsonlWriter<Record<string, unknown>>;
 
   // State
   private initialized: boolean = false;
@@ -94,12 +84,12 @@ export class UnifiedLogger {
 
   private constructor() {
     this.operationLogger = OperationLogger.getInstance();
-    this.errorAggregator = ErrorAggregator.getInstance();
-    this.metricsCollector = MetricsCollector.getInstance();
-    this.stateSnapshot = StateSnapshotService.getInstance();
-    this.sampler = Sampler.getInstance();
-    this.storageLayer = StorageLayer.getInstance();
-    this.storageOptimizer = StorageOptimizer.getInstance();
+    // Initialize a simple JSONL writer for text logs (non-tiered)
+    this.jsonlWriter = new JsonlWriter<{ [key: string]: unknown }>({
+      directory: process.env.LOG_DIR || './logs/text',
+      filePrefix: 'text-logs',
+      retentionDays: 7,
+    });
     this.operationContextStorage = new AsyncLocalStorage<OperationContext>();
 
     // Store original console methods
@@ -125,9 +115,7 @@ export class UnifiedLogger {
       return;
     }
 
-    this.setupOperationHandlers();
-    this.setupErrorAggregationHandlers();
-    this.setupSnapshotHandlers();
+    // Lite mode has no background handlers
     this.setupConsoleInterception();
 
     this.initialized = true;
@@ -236,10 +224,10 @@ export class UnifiedLogger {
       traceId: opContext?.traceId,
     };
 
-    // Store asynchronously
-    this.storageLayer.storeTextLog(textLog).catch(err => {
+    // Store asynchronously to JSONL (non-tiered)
+    this.jsonlWriter.append(textLog as unknown as Record<string, unknown>).catch(err => {
       // Use original console to avoid recursion
-      this.originalConsole.error('Failed to store text log:', err);
+      this.originalConsole.error('Failed to write text log:', err);
     });
   }
 
@@ -259,86 +247,7 @@ export class UnifiedLogger {
     return this.resolveContextFromOperation(operation.operationType);
   }
 
-  /**
-   * Set up operation completion handlers
-   */
-  private setupOperationHandlers(): void {
-    this.operationLogger.onOperationComplete(operation => {
-      // Queue operation for batch write
-      this.storageOptimizer.queueOperation(operation);
-
-      // Record operation time
-      this.metricsCollector.recordOperationTime(
-        operation.operationType,
-        operation.metrics.duration
-      );
-
-      // Handle operation errors
-      if (operation.status === 'failed' && operation.error) {
-        this.handleOperationError(operation);
-      }
-
-      // Record business metrics
-      this.recordBusinessMetrics(operation);
-    });
-  }
-
-  /**
-   * Handle operation errors
-   */
-  private handleOperationError(operation: OperationLog): void {
-    if (!operation.error) {
-      return;
-    }
-
-    this.errorAggregator.recordError(operation.error, {
-      cycleId: operation.cycleId,
-      symbol: operation.symbol,
-      operationId: operation.operationId,
-      context: operation.context,
-    });
-
-    // Record error in metrics
-    this.metricsCollector.recordError(operation.error.type, operation.cycleId);
-  }
-
-  /**
-   * Record business-specific metrics based on operation type
-   */
-  private recordBusinessMetrics(operation: OperationLog): void {
-    if (operation.operationType === 'signal_generation') {
-      this.metricsCollector.recordSignalGeneration(operation.status === 'completed');
-    } else if (operation.operationType === 'order_execution') {
-      this.metricsCollector.recordOrderExecution(operation.status === 'completed');
-    }
-  }
-
-  /**
-   * Set up error aggregation handlers
-   */
-  private setupErrorAggregationHandlers(): void {
-    this.errorAggregator.onAggregatedError(async () => {
-      const allAggregated = this.errorAggregator.getAggregatedErrors();
-      await this.storageLayer.storeAggregatedErrors(allAggregated);
-    });
-  }
-
-  /**
-   * Set up snapshot handlers
-   */
-  private setupSnapshotHandlers(): void {
-    this.stateSnapshot.onSnapshot(snapshot => {
-      // Queue snapshot for batch write
-      this.storageOptimizer.queueSnapshot(snapshot);
-
-      // Update and store metrics snapshot
-      const metricsSnapshot = this.metricsCollector.createSnapshot(snapshot.cycleId);
-      this.storageLayer.storeMetricsSnapshot(metricsSnapshot).catch(err => {
-        // Use original console to avoid recursion
-        this.originalConsole.error('Error storing metrics snapshot:', err);
-      });
-    });
-  }
+  // Lite mode: no background handlers or aggregations
 
   /**
    * Create trace context for a cycle
@@ -413,9 +322,7 @@ export class UnifiedLogger {
   /**
    * Record API call latency
    */
-  recordAPILatency(endpoint: string, latency: number): void {
-    this.metricsCollector.recordAPILatency(endpoint, latency);
-  }
+  recordAPILatency(_endpoint: string, _latency: number): void {}
 
   /**
    * Record full API call details (request/response)
@@ -439,8 +346,7 @@ export class UnifiedLogger {
     latency: number,
     error?: Error
   ): void {
-    // Record latency for metrics
-    this.metricsCollector.recordAPILatency(endpoint, latency);
+    // Lite mode: no metrics collection
 
     const opContext = this.getOperationContext();
     if (!opContext?.operationId) {
@@ -568,36 +474,17 @@ export class UnifiedLogger {
   /**
    * Record cycle execution time
    */
-  recordCycleTime(cycleId: number, duration: number): void {
-    this.metricsCollector.recordCycleTime(cycleId, duration);
-  }
+  recordCycleTime(_cycleId: number, _duration: number): void {}
 
   /**
    * Record error directly
    */
   recordError(
-    error: Error | unknown,
-    context: { cycleId: number; symbol?: string; operationId?: string }
-  ): void {
-    this.errorAggregator.recordError(error, {
-      cycleId: context.cycleId,
-      symbol: context.symbol,
-      operationId: context.operationId,
-    });
+    _error: Error | unknown,
+    _context: { cycleId: number; symbol?: string; operationId?: string }
+  ): void {}
 
-    const errorType = this.extractErrorType(error);
-    this.metricsCollector.recordError(errorType, context.cycleId);
-  }
-
-  /**
-   * Extract error type from error object
-   */
-  private extractErrorType(error: Error | unknown): string {
-    if (error instanceof Error) {
-      return error.constructor.name;
-    }
-    return 'UnknownError';
-  }
+  // Lite mode: no error type extraction helper needed
 
   /**
    * Create system snapshot
@@ -631,41 +518,75 @@ export class UnifiedLogger {
       duration: number;
     }>
   ): SystemSnapshot {
-    return this.stateSnapshot.createSnapshot(
+    return {
+      snapshotId: this.generateLogId(),
+      timestamp: Date.now(),
       cycleId,
       account,
       positions,
-      circuitBreakers,
-      recentOperations
-    );
+      systemMetrics: {
+        uptime: 0,
+        errorRate: 0,
+        avgCycleTime: 0,
+        memoryUsage: { heapUsed: 0, heapTotal: 0, rss: 0 },
+      },
+      circuitBreakers: circuitBreakers.map(cb => ({
+        name: cb.name,
+        state: cb.state,
+        failureCount: cb.failureCount,
+        lastFailure: cb.lastFailure,
+        lastSuccess: cb.lastSuccess,
+      })),
+      recentOperations: recentOperations.map(op => ({
+        operationId: op.operationId,
+        type: op.type,
+        status: op.status,
+        duration: op.duration,
+      })),
+    };
   }
 
   /**
    * Get aggregated errors
    */
   getAggregatedErrors(): AggregatedError[] {
-    return this.errorAggregator.getAggregatedErrors();
+    return [];
   }
 
   /**
    * Get current metrics snapshot
    */
-  getMetricsSnapshot(cycleId?: number): MetricsSnapshot {
-    return this.metricsCollector.createSnapshot(cycleId || 0);
+  getMetricsSnapshot(_cycleId?: number): MetricsSnapshot {
+    return {
+      timestamp: Date.now(),
+      cycleId: 0,
+      errorRate: { overall: 0, byType: {}, bySymbol: {}, trend: 'stable' },
+      performance: {
+        cycleTime: { p50: 0, p75: 0, p90: 0, p95: 0, p99: 0, avg: 0 },
+        apiLatency: {},
+        operationTime: {},
+      },
+      business: {
+        signalGenerationSuccess: 0,
+        orderExecutionSuccess: 0,
+        positionProfitability: 0,
+      },
+    };
   }
 
   /**
    * Get current error rate
    */
   getErrorRate(): number {
-    return this.metricsCollector.getErrorRate();
+    return 0;
   }
 
   /**
    * Get operations by cycle
    */
-  async getOperationsByCycle(cycleId: number): Promise<OperationLog[]> {
-    return this.storageLayer.getOperationsByCycle(cycleId);
+  async getOperationsByCycle(_cycleId: number): Promise<OperationLog[]> {
+    // Not supported in Lite mode without tiered storage
+    return [];
   }
 
   /**
@@ -700,32 +621,34 @@ export class UnifiedLogger {
   /**
    * Get snapshot by ID
    */
-  async getSnapshotById(snapshotId: string): Promise<SystemSnapshot | null> {
-    return this.storageLayer.getSnapshotById(snapshotId);
+  async getSnapshotById(_snapshotId: string): Promise<SystemSnapshot | null> {
+    // Not supported in Lite mode without tiered storage
+    return null;
   }
 
   /**
    * Get current sampling state
    */
   getSamplingState(): 'normal' | 'warning' | 'critical' {
-    return this.sampler.getState();
+    return 'normal';
   }
 
   /**
    * Should log based on log type
    */
   shouldLog(
-    logType: 'operation' | 'system' | 'api' | 'debug',
-    errorOccurred: boolean = false
+    _logType: 'operation' | 'system' | 'api' | 'debug',
+    _errorOccurred: boolean = false
   ): boolean {
-    return this.sampler.shouldLog(logType, errorOccurred);
+    return true;
   }
 
   /**
    * Cleanup old data
    */
-  async cleanup(maxCycles: number = 1000): Promise<void> {
-    await this.storageLayer.cleanup(maxCycles);
+  async cleanup(_maxCycles: number = 1000): Promise<void> {
+    // No-op in Lite mode
+    return;
   }
 
   /**
@@ -904,9 +827,9 @@ export class UnifiedLogger {
       traceId: opContext?.traceId,
     };
 
-    // Store in tiered storage
-    this.storageLayer.storeTextLog(textLog).catch(err => {
-      this.originalConsole.error('Failed to store text log:', err);
+    // Store to JSONL (non-tiered)
+    this.jsonlWriter.append(textLog as unknown as Record<string, unknown>).catch(err => {
+      this.originalConsole.error('Failed to write text log:', err);
     });
 
     // NOTE: We do NOT output to console here - all console output should go through
@@ -920,15 +843,7 @@ export class UnifiedLogger {
    * This is useful for CLI commands that need to exit cleanly
    */
   shutdown(): void {
-    // Stop all background intervals
-    if (this.metricsCollector && typeof this.metricsCollector.stop === 'function') {
-      this.metricsCollector.stop();
-    }
-    if (this.errorAggregator && typeof this.errorAggregator.stop === 'function') {
-      this.errorAggregator.stop();
-    }
-    if (this.storageOptimizer && typeof this.storageOptimizer.stop === 'function') {
-      this.storageOptimizer.stop();
-    }
+    // Close JSONL writer stream
+    void this.jsonlWriter.close();
   }
 }

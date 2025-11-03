@@ -44,16 +44,11 @@ Complete documentation index for the Quanta AI trading system.
   - API configuration
   - Abbreviation guide
 
-- **[Logging Guide](logging-guide.md)** (52KB)
-  - Core concepts (Cycle, Trace, Operation, Stage, Snapshot)
-  - Operation-driven logging system
-  - Operation lifecycle tracking
-  - Error aggregation
-  - System snapshots
-  - Metrics collection
-  - Query interface and CLI commands
-  - Storage architecture
-  - Algorithm correctness verification
+- **[Logging Guide](logging-guide.md)** (Lite)
+  - JSONL text logging (daily-rotated)
+  - Console interception and original console usage
+  - `quanta log console` usage (filters, follow)
+  - Configuration (`LOG_DIR`, `logging.textLogDir`, `retentionDays`)
 - **[Error Handling & Resilience](error-handling.md)** (20KB)
   - Circuit breaker patterns
   - Retry strategies

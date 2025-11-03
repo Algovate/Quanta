@@ -93,17 +93,11 @@
 
   "logging": {
     "level": "info",
-    "_comment_level": "Log level: 'error', 'warn', 'info', 'debug' (default: 'info')",
-    "fileOutput": true,
-    "_comment_fileOutput": "Enable file-based logging (default: true)",
-    "logDir": "./logs",
-    "_comment_logDir": "Directory for log files (default: './logs')",
-    "maxFileSize": 10485760,
-    "_comment_maxFileSize": "Maximum log file size in bytes (default: 10MB)",
-    "maxFiles": 14,
-    "_comment_maxFiles": "Number of days to keep logs (default: 14)",
-    "backgroundMode": false,
-    "_comment_backgroundMode": "Force background mode (auto-detected if false)"
+    "_comment_level": "Text log level for JSONL capture: 'error' | 'warn' | 'info' | 'debug'",
+    "textLogDir": "./logs/text",
+    "_comment_textLogDir": "Directory for JSONL text logs (overridden by LOG_DIR env)",
+    "retentionDays": 7,
+    "_comment_retentionDays": "How many days of JSONL files to retain (rotation is daily)"
   },
 
   "simulation": {
