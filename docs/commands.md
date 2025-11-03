@@ -580,6 +580,7 @@ The command displays console output exactly as it appeared during operation, pre
 Use `--follow` or `-f` to watch logs in real-time (similar to `tail -f`). The command polls JSONL text logs every second for new entries and displays them as they're written.
 
 Notes:
+
 - Lite logging writes to daily-rotated JSONL files under `logs/text/` (override via `LOG_DIR`).
 - Only `log console` is available; advanced log subcommands are hidden in Lite mode.
 

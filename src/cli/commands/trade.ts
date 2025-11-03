@@ -531,7 +531,6 @@ export class TradeCommands {
       const result = await engine.runBacktest();
 
       if (options.json) {
-        // eslint-disable-next-line no-console
         originalConsole.log(JSON.stringify(result, null, 2));
       } else {
         // Generate and display compact report

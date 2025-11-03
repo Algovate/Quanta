@@ -16,6 +16,8 @@ import {
   EXCHANGE_PRECISION,
 } from '../utils/precision.js';
 import { validatePrice } from '../utils/price-validation.js';
+import { UnifiedLogger } from '../logging/index.js';
+import { TOLERANCES } from '../execution/constants/tolerances.js';
 
 /**
  * Calculate notional value for a position
@@ -86,7 +88,15 @@ export function updatePositionWithPrice(position: Position, currentPrice: number
   // Skip update if price is 0 or invalid (better than using invalid price)
   if (currentPrice <= 0 || !isFinite(currentPrice)) {
     // Don't throw here - log warning and skip update to preserve last valid markPrice
-    console.warn(`Skipping position update for ${position.symbol}: invalid price ${currentPrice}`);
+    const logger = UnifiedLogger.getInstance();
+    logger.warn(
+      'Skipping position update: invalid price',
+      {
+        symbol: position.symbol,
+        price: currentPrice,
+      },
+      'PositionCalculations'
+    );
     return;
   }
 
@@ -201,15 +211,20 @@ export function updateAccountEquity(account: Account, positions: Position[]): vo
 
   // Verify: equity - usedMargin = availableMargin (with tolerance for rounding)
   const diff = Math.abs(account.equity - account.usedMargin - account.availableMargin);
-  if (diff > 0.01) {
-    console.warn('Account calculation mismatch!', {
-      equity: account.equity,
-      usedMargin: account.usedMargin,
-      availableMargin: account.availableMargin,
-      balance: account.balance,
-      unrealizedPnl: unrealizedPnlNum,
-      diff,
-    });
+  if (diff > TOLERANCES.EQUITY_DRIFT) {
+    const logger = UnifiedLogger.getInstance();
+    logger.warn(
+      'Account calculation mismatch',
+      {
+        equity: account.equity,
+        usedMargin: account.usedMargin,
+        availableMargin: account.availableMargin,
+        balance: account.balance,
+        unrealizedPnl: unrealizedPnlNum,
+        diff,
+      },
+      'PositionCalculations'
+    );
   }
 }
 

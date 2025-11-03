@@ -96,7 +96,7 @@ export class BacktestRenderer {
     const now = Date.now();
     if (now - this.lastHeartbeat < Math.max(this.updateIntervalMs, 1500)) return;
     if (this.mode === 'quiet') return;
-    // eslint-disable-next-line no-console
+
     console.log(chalk.gray(`⏳ ${label || 'Working...'} (${new Date().toLocaleTimeString()})`));
     this.lastHeartbeat = now;
   }
@@ -118,7 +118,6 @@ export class BacktestRenderer {
     // Drawdown detection via tracker
     const { crossed, ddPct } = this.ddTracker.update(info.equity);
     if (crossed !== null) {
-      // eslint-disable-next-line no-console
       console.log(
         `RISK | dd=${ddPct.toFixed(1)}% crossed ${crossed}% | eq=$${info.equity.toFixed(0)}${
           info.leverage !== undefined ? ` | lev=${info.leverage.toFixed(2)}` : ''
@@ -158,7 +157,7 @@ export class BacktestRenderer {
     const line = `#${info.cycleCount}  Eq:$${info.equity.toFixed(0)}  P:${info.positions}  G/A/R:${info.generatedSignals}/${info.acceptedSignals}/${info.rejectedSignals}  UPNL:$${info.unrealizedPnl.toFixed(0)}${
       info.exposure !== undefined ? `  EXP:$${info.exposure.toFixed(0)}` : ''
     }${info.leverage !== undefined ? `  LV:${info.leverage.toFixed(2)}` : ''}`;
-    // eslint-disable-next-line no-console
+
     console.log(line);
 
     this.lastPrinted = {

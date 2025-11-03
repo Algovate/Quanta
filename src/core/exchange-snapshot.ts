@@ -1,11 +1,16 @@
 import { Exchange, Account, Position } from '../exchange/types.js';
 import { withRetry, createRetryConfig } from '../utils/retry.js';
+import { TOLERANCES } from '../execution/constants/tolerances.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export class ExchangeSnapshotService {
   private exchange: Exchange;
+  private readonly logger: UnifiedLogger;
+  private readonly context = 'ExchangeSnapshot';
 
   constructor(exchange: Exchange) {
     this.exchange = exchange;
+    this.logger = UnifiedLogger.getInstance();
   }
 
   /**
@@ -29,10 +34,16 @@ export class ExchangeSnapshotService {
         snapshot.account.balance +
         snapshot.positions.reduce((sum, p) => sum + (p.unrealizedPnl || 0), 0);
       const equityDiff = Math.abs(snapshot.account.equity - calculatedEquity);
-      // Allow small drift due to rounding (0.01 USD tolerance)
-      if (equityDiff > 0.01) {
-        console.warn(
-          `Potential snapshot inconsistency detected: equity=${snapshot.account.equity}, calculated=${calculatedEquity}, diff=${equityDiff}`
+      // Allow small drift due to rounding
+      if (equityDiff > TOLERANCES.EQUITY_DRIFT) {
+        this.logger.warn(
+          'Potential snapshot inconsistency detected',
+          {
+            equity: snapshot.account.equity,
+            calculated: calculatedEquity,
+            diff: equityDiff,
+          },
+          this.context
         );
       }
       return snapshot;
@@ -40,8 +51,10 @@ export class ExchangeSnapshotService {
 
     // Fallback: fetch sequentially (potential time drift between calls)
     // Log warning about potential inconsistency
-    console.warn(
-      'Exchange does not support atomic getSnapshot() - fetching sequentially may cause time drift'
+    this.logger.warn(
+      'Exchange does not support atomic getSnapshot() - fetching sequentially may cause time drift',
+      {},
+      this.context
     );
     const account = await this.exchange.getAccount();
     const positions = await this.exchange.getPositions();
@@ -50,9 +63,15 @@ export class ExchangeSnapshotService {
     const calculatedEquity =
       account.balance + positions.reduce((sum, p) => sum + (p.unrealizedPnl || 0), 0);
     const equityDiff = Math.abs(account.equity - calculatedEquity);
-    if (equityDiff > 0.01) {
-      console.warn(
-        `Snapshot inconsistency after sequential fetch: equity=${account.equity}, calculated=${calculatedEquity}, diff=${equityDiff}`
+    if (equityDiff > TOLERANCES.EQUITY_DRIFT) {
+      this.logger.warn(
+        'Snapshot inconsistency after sequential fetch',
+        {
+          equity: account.equity,
+          calculated: calculatedEquity,
+          diff: equityDiff,
+        },
+        this.context
       );
     }
 

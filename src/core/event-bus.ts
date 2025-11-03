@@ -3,6 +3,10 @@
  * Provides type-safe event emission and subscription across the application
  */
 
+import { UnifiedLogger } from '../logging/index.js';
+
+const logger = UnifiedLogger.getInstance();
+
 /**
  * Signal information passed in events
  */
@@ -161,7 +165,11 @@ class TypedEventBus {
       try {
         listener(payload);
       } catch (error) {
-        console.error(`Error in event listener for '${event}':`, error);
+        logger.error(
+          `Error in event listener for '${event}'`,
+          error instanceof Error ? error : new Error(String(error)),
+          'EventBus'
+        );
       }
     }
   }

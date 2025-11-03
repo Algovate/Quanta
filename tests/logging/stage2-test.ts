@@ -58,7 +58,7 @@ async function testStorageLayer() {
   await storage.storeOperation(testOperation);
 
   // Test retrieval from L0
-  const l0Ops = storage.getOperationsFromL0(10);
+  const l0Ops = await storage.getOperationsFromL0(10);
   assert.ok(l0Ops.length > 0, 'Should have operations in L0');
 
   // Test L1 SQLite database

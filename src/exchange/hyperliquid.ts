@@ -2,10 +2,13 @@ import * as ccxt from 'ccxt';
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
 import { getConfig } from '../config/settings.js';
 import { mapAccountFromBalance, mapPositionsStandard, mapOHLCV } from './ccxt-helpers.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export class HyperliquidExchange implements Exchange {
   private exchange: ccxt.hyperliquid;
   private isTestnet: boolean;
+  private logger = UnifiedLogger.getInstance();
+  private readonly context = 'HyperliquidExchange';
 
   /**
    * Convert standard symbol format (e.g., BTC/USDT) to Hyperliquid perpetual format (e.g., BTC/USDC:USDC)
@@ -71,7 +74,11 @@ export class HyperliquidExchange implements Exchange {
     try {
       this.exchange = new ccxt.hyperliquid(exchangeOptions);
     } catch (error) {
-      console.error('Error initializing Hyperliquid:', error);
+      this.logger.error(
+        'Error initializing Hyperliquid',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw new Error('Failed to initialize Hyperliquid exchange');
     }
   }
@@ -86,7 +93,11 @@ export class HyperliquidExchange implements Exchange {
       // Prefer USDC for Hyperliquid
       return mapAccountFromBalance(balance, 'USDC');
     } catch (error) {
-      console.error('Error fetching account from Hyperliquid:', error);
+      this.logger.error(
+        'Error fetching account from Hyperliquid',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error;
     }
   }
@@ -100,7 +111,11 @@ export class HyperliquidExchange implements Exchange {
       const positions = await this.exchange.fetchPositions();
       return mapPositionsStandard(positions as unknown[]);
     } catch (error) {
-      console.error('Error fetching positions from Hyperliquid:', error);
+      this.logger.error(
+        'Error fetching positions from Hyperliquid',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return [];
     }
   }
@@ -117,7 +132,11 @@ export class HyperliquidExchange implements Exchange {
       const ohlcv = await this.exchange.fetchOHLCV(hyperliquidSymbol, timeframe, undefined, limit);
       return ohlcv.map(mapOHLCV);
     } catch (error) {
-      console.error('Error fetching candlesticks from Hyperliquid:', error);
+      this.logger.error(
+        'Error fetching candlesticks from Hyperliquid',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error;
     }
   }
@@ -149,7 +168,11 @@ export class HyperliquidExchange implements Exchange {
 
       return this.mapOrder(order);
     } catch (error) {
-      console.error('Error placing order on Hyperliquid:', error);
+      this.logger.error(
+        'Error placing order on Hyperliquid',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error;
     }
   }
@@ -185,7 +208,11 @@ export class HyperliquidExchange implements Exchange {
       await this.exchange.cancelOrder(orderId, hyperliquidSymbol);
       return true;
     } catch (error) {
-      console.error('Error canceling order on Hyperliquid:', error);
+      this.logger.error(
+        'Error canceling order on Hyperliquid',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return false;
     }
   }
@@ -208,7 +235,11 @@ export class HyperliquidExchange implements Exchange {
         timestamp: ticker.timestamp || Date.now(),
       };
     } catch (error) {
-      console.error('Error fetching ticker from Hyperliquid:', error);
+      this.logger.error(
+        'Error fetching ticker from Hyperliquid',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error;
     }
   }

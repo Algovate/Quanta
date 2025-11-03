@@ -10,6 +10,7 @@ import type { UnifiedLogger } from '../logging/index.js';
 import type { OrderEvent, RiskSnapshot, SignalEvent } from './types.js';
 import { EventBus } from '../core/event-bus.js';
 import { createLogger } from './utils/logger.js';
+import { RiskSnapshotAggregator } from './risk-snapshot-aggregator.js';
 
 export interface TradingState {
   isRunning: boolean;
@@ -34,6 +35,7 @@ export class TradingManager extends EventEmitter {
   private state: TradingState;
   private logger: UnifiedLogger;
   private readonly context: string;
+  private riskAggregator: RiskSnapshotAggregator;
   private signals: SignalEvent[] = [];
   private orders: OrderEvent[] = [];
   private equityHistory: Array<{ timestamp: number; equity: number }> = [];
@@ -55,6 +57,7 @@ export class TradingManager extends EventEmitter {
     const { logger, context } = createLogger('TradingManager');
     this.logger = logger;
     this.context = context;
+    this.riskAggregator = new RiskSnapshotAggregator(logger, context);
     this.state = {
       isRunning: false,
       cycleCount: 0,
@@ -284,129 +287,15 @@ export class TradingManager extends EventEmitter {
             });
           }
 
-          // Emit risk snapshot if portfolio metrics are available
-          type ExchangeWithPM = Exchange & {
-            getPortfolioMetrics: () => Promise<{
-              leverage: number;
-              totalExposure: number;
-              exposureBySymbol: Record<string, number>;
-              totalUnrealizedPnl: number;
-            }>;
-          };
-          const maybePM = exchange as unknown as Partial<ExchangeWithPM>;
-          if (typeof maybePM.getPortfolioMetrics === 'function') {
-            try {
-              const pm = await maybePM.getPortfolioMetrics();
-              // Derive additional portfolio quality metrics from current positions
-              const avgLev = enrichedPositions.length
-                ? enrichedPositions.reduce((sum, p) => sum + (p.leverage || 0), 0) /
-                  enrichedPositions.length
-                : 0;
-              // Simple correlation/diversification proxies aligned with PositionMonitorService
-              const sides = enrichedPositions.map(p => p.side);
-              const allSameSide = sides.length > 0 && sides.every(side => side === sides[0]);
-              let correlationScore = allSameSide ? 0.8 : 0.3;
-              correlationScore = Math.min(
-                1,
-                correlationScore * (enrichedPositions.length > 0 ? 3 / enrichedPositions.length : 1)
-              );
-              const uniqueSymbols = new Set(enrichedPositions.map(p => p.symbol)).size;
-              const diversificationBase =
-                enrichedPositions.length > 1 ? uniqueSymbols / enrichedPositions.length : 1;
-              const diversificationScore = allSameSide
-                ? diversificationBase * 0.7
-                : diversificationBase;
-
-              const risk: RiskSnapshot = {
-                timestamp: Date.now(),
-                marginRatio: account.marginRatio,
-                usedMargin: account.usedMargin,
-                availableMargin: account.availableMargin,
-                leverage: pm.leverage,
-                totalExposure: pm.totalExposure,
-                exposureBySymbol: pm.exposureBySymbol,
-                averageLeverage: Number.isFinite(avgLev) ? avgLev : 0,
-                correlationScore: Math.max(0, Math.min(1, correlationScore)),
-                diversificationScore: Math.max(0, Math.min(1, diversificationScore)),
-                flags: [],
-              };
-              if (risk.marginRatio > 0.5) risk.flags.push('High margin usage');
-              if (pm.totalUnrealizedPnl < -account.equity * 0.05) risk.flags.push('Drawdown > 5%');
-              this.latestRisk = risk;
-              this.emit('risk:update', risk);
-            } catch (error) {
-              this.logger.warn(
-                'Risk snapshot failed',
-                error instanceof Error ? { error: error.message } : { error: String(error) },
-                this.context
-              );
-            }
-          } else {
-            // Fallback risk snapshot when exchange lacks getPortfolioMetrics
-            try {
-              // Compute exposure by symbol (unlevered)
-              const exposureBySymbol: Record<string, number> = {};
-              let totalExposure = 0;
-              for (const p of enrichedPositions) {
-                // Validate markPrice before calculating exposure
-                // Only include positions with valid prices in exposure calculation
-                const validPrice = p.markPrice > 0 && isFinite(p.markPrice) ? p.markPrice : 0;
-                const value = Math.abs((p.size || 0) * validPrice);
-                exposureBySymbol[p.symbol] = (exposureBySymbol[p.symbol] || 0) + value;
-                totalExposure += value;
-              }
-              const leverage = account.equity > 0 ? totalExposure / account.equity : 0;
-
-              // Derive additional portfolio quality metrics from current positions
-              const avgLev = enrichedPositions.length
-                ? enrichedPositions.reduce((sum, p) => sum + (p.leverage || 0), 0) /
-                  enrichedPositions.length
-                : 0;
-              const sides = enrichedPositions.map(p => p.side);
-              const allSameSide = sides.length > 0 && sides.every(side => side === sides[0]);
-              let correlationScore = allSameSide ? 0.8 : 0.3;
-              correlationScore = Math.min(
-                1,
-                correlationScore * (enrichedPositions.length > 0 ? 3 / enrichedPositions.length : 1)
-              );
-              const uniqueSymbols = new Set(enrichedPositions.map(p => p.symbol)).size;
-              const diversificationBase =
-                enrichedPositions.length > 1 ? uniqueSymbols / enrichedPositions.length : 1;
-              const diversificationScore = allSameSide
-                ? diversificationBase * 0.7
-                : diversificationBase;
-
-              const risk: RiskSnapshot = {
-                timestamp: Date.now(),
-                marginRatio: account.marginRatio,
-                usedMargin: account.usedMargin,
-                availableMargin: account.availableMargin,
-                leverage,
-                totalExposure,
-                exposureBySymbol,
-                averageLeverage: Number.isFinite(avgLev) ? avgLev : 0,
-                correlationScore: Math.max(0, Math.min(1, correlationScore)),
-                diversificationScore: Math.max(0, Math.min(1, diversificationScore)),
-                flags: [],
-              };
-              if (risk.marginRatio > 0.5) risk.flags.push('High margin usage');
-              // Approximate unrealized PnL sum for drawdown flag when pm unavailable
-              const totalUnrealizedPnl = enrichedPositions.reduce(
-                (s, p) => s + (p.unrealizedPnl || 0),
-                0
-              );
-              if (account.equity > 0 && totalUnrealizedPnl < -account.equity * 0.05) {
-                risk.flags.push('Drawdown > 5%');
-              }
-              this.latestRisk = risk;
-              this.emit('risk:update', risk);
-            } catch (error) {
-              this.logger.warn(
-                'Fallback risk snapshot failed',
-                error instanceof Error ? { error: error.message } : { error: String(error) },
-                this.context
-              );
-            }
+          // Emit risk snapshot using aggregator
+          const risk = await this.riskAggregator.generateRiskSnapshot(
+            account,
+            enrichedPositions,
+            exchange
+          );
+          if (risk) {
+            this.latestRisk = risk;
+            this.emit('risk:update', risk);
           }
         } catch (error) {
           this.logger.error(

@@ -173,7 +173,11 @@ export class BinanceExchange implements Exchange {
         timestamp: Date.now(),
       };
     } catch (error) {
-      console.error('Error placing order on Binance:', error);
+      this.logger.error(
+        'Error placing order on Binance',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error;
     }
   }
@@ -187,7 +191,11 @@ export class BinanceExchange implements Exchange {
       await this.exchange.cancelOrder(orderId, symbol);
       return true;
     } catch (error) {
-      console.error('Error canceling order on Binance:', error);
+      this.logger.error(
+        'Error canceling order on Binance',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return false;
     }
   }

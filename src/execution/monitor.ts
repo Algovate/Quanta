@@ -1,9 +1,10 @@
 import { Exchange, Position } from '../exchange/types.js';
 import { RiskManager } from './risk.js';
 import { OrderExecutor } from './orders.js';
-import { POSITION_MONITORING, ORDER_EXECUTION } from './constants.js';
+import { POSITION_MONITORING, ORDER_EXECUTION, RETRIES, TIMEOUTS } from './constants.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { calculateUnrealizedPnl, aggregatePositionMetrics } from './position-utils.js';
+import { getValidPriceOrThrow } from '../utils/price-validation.js';
 
 export interface PositionMonitor {
   checkStopLoss(position: Position, currentPrice: number): boolean;
@@ -162,33 +163,23 @@ export class PositionMonitorService implements PositionMonitor {
       reason: string;
       details?: Record<string, any>;
     }> = [];
-    const MAX_RETRIES = 3;
-    const TIMEOUT_MS = 5000;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    for (let attempt = 1; attempt <= RETRIES.POSITION_MONITORING_MAX; attempt++) {
       try {
         // Fetch current price with timeout
         const ticker = await Promise.race([
           exchange.getTicker(position.symbol),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Ticker fetch timeout')), TIMEOUT_MS)
+            setTimeout(() => reject(new Error('Ticker fetch timeout')), TIMEOUTS.TICKER_FETCH_MS)
           ),
         ]);
 
         const currentPrice = (ticker as { price: number }).price;
 
-        // Validate price - use strict validation
-        if (
-          currentPrice === undefined ||
-          currentPrice === null ||
-          !isFinite(currentPrice) ||
-          currentPrice <= 0
-        ) {
-          throw new Error(`Invalid price received: ${currentPrice} (must be finite and > 0)`);
-        }
+        // Validate price - use strict validation utility
+        const validatedPrice = getValidPriceOrThrow(currentPrice, 'monitorPositions');
 
         // Maintenance margin/liquidation check (highest priority)
-        const maint = this.riskManager.checkMaintenance(position, currentPrice);
+        const maint = this.riskManager.checkMaintenance(position, validatedPrice);
         if (maint.shouldLiquidate) {
           const reason = `Maintenance margin breached (ratio ${maint.marginRatio.toFixed(2)})`;
           decisions.push({
@@ -201,7 +192,7 @@ export class PositionMonitorService implements PositionMonitor {
               maintenanceMargin: maint.maintenanceMargin,
             },
           });
-          await this.executePositionClose(position, currentPrice, reason);
+          await this.executePositionClose(position, validatedPrice, reason);
           return {
             symbol: position.symbol,
             side: position.side,
@@ -211,7 +202,7 @@ export class PositionMonitorService implements PositionMonitor {
 
         const key = position.symbol;
         const st = this.stateBySymbol.get(key) || {};
-        const rMultiple = this.riskManager.computeRMultiple(position, currentPrice);
+        const rMultiple = this.riskManager.computeRMultiple(position, validatedPrice);
 
         // Partial take-profit at 1R: close 50% and move stop to breakeven (once)
         try {
@@ -280,11 +271,11 @@ export class PositionMonitorService implements PositionMonitor {
               {
                 const stopLossPrice = this.riskManager.getEffectiveStopLossPrice(
                   position,
-                  currentPrice
+                  validatedPrice
                 );
                 const takeProfitPrice = this.riskManager.getEffectiveTakeProfitPrice(
                   position,
-                  currentPrice
+                  validatedPrice
                 );
                 this.logger.info(
                   `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${stopLossPrice.toFixed(2)} tp=@${takeProfitPrice.toFixed(2)}`,
@@ -316,7 +307,7 @@ export class PositionMonitorService implements PositionMonitor {
                   threshold: ORDER_EXECUTION.FLAT_R_MULTIPLE_THRESHOLD,
                 },
               });
-              await this.executePositionClose(position, currentPrice, reason);
+              await this.executePositionClose(position, validatedPrice, reason);
               this.stateBySymbol.delete(key); // Clean up state
               return {
                 symbol: position.symbol,
@@ -341,7 +332,7 @@ export class PositionMonitorService implements PositionMonitor {
         }
 
         // Check if position should be closed by stops/targets
-        const { shouldClose, reason } = this.shouldClosePosition(position, currentPrice);
+        const { shouldClose, reason } = this.shouldClosePosition(position, validatedPrice);
         if (shouldClose) {
           let decisionType: 'stop_loss' | 'take_profit' | 'emergency' = 'stop_loss';
           if (reason.includes('Take profit')) decisionType = 'take_profit';
@@ -352,11 +343,11 @@ export class PositionMonitorService implements PositionMonitor {
             action: 'close',
             reason,
             details: {
-              currentPrice,
+              currentPrice: validatedPrice,
               entryPrice: position.entryPrice,
             },
           });
-          await this.executePositionClose(position, currentPrice, reason);
+          await this.executePositionClose(position, validatedPrice, reason);
           this.stateBySymbol.delete(key); // Clean up state on close
         }
 
@@ -366,11 +357,11 @@ export class PositionMonitorService implements PositionMonitor {
           decisions,
         };
       } catch (error) {
-        const isLastAttempt = attempt === MAX_RETRIES;
+        const isLastAttempt = attempt === RETRIES.POSITION_MONITORING_MAX;
 
         if (isLastAttempt) {
           this.logger.error(
-            `Failed to monitor ${position.symbol} after ${MAX_RETRIES} attempts`,
+            `Failed to monitor ${position.symbol} after ${RETRIES.POSITION_MONITORING_MAX} attempts`,
             error instanceof Error ? error : new Error(String(error)),
             this.context
           );
@@ -391,7 +382,7 @@ export class PositionMonitorService implements PositionMonitor {
         // Exponential backoff before retry
         const backoffMs = 1000 * Math.pow(2, attempt - 1);
         this.logger.warn(
-          `Retry ${attempt}/${MAX_RETRIES} for ${position.symbol} after ${backoffMs}ms`,
+          `Retry ${attempt}/${RETRIES.POSITION_MONITORING_MAX} for ${position.symbol} after ${backoffMs}ms`,
           {
             error: error instanceof Error ? error.message : String(error),
           },

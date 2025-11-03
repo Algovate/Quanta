@@ -41,6 +41,7 @@ Record schema (one JSON object per line):
 ```
 
 Notes:
+
 - `message` is ANSI-stripped for easy grepping and machine reads.
 - `formattedMessage` may include ANSI styles for pretty terminal rendering.
 
@@ -73,11 +74,13 @@ quanta log console --format raw
 ### Common recipes
 
 - Only errors, live:
+
 ```bash
 quanta log console --level error --follow --format raw
 ```
 
 - Search for entries related to a component:
+
 ```bash
 quanta log console --grep "Execution|Position" --lines 500
 ```
@@ -123,10 +126,12 @@ Optional defaults in `config/config.json`:
 ## Migration from tiered logging
 
 Removed features in Lite mode:
+
 - L0/L1/L2/L3 storage, SQLite database, snapshots, aggregated errors, metrics persistence, sampling.
 - CLI commands tied to those features are hidden or no-ops (e.g., `log query/trace/stats/snapshot/storage/cleanup`).
 
 Alternatives now:
+
 - Use `quanta log console` with filters for operational visibility.
 - Emit structured fields in `metadata` for richer context when needed.
 - Persist domain data you need elsewhere (e.g., your own stores) rather than relying on logger tiers.
@@ -136,17 +141,20 @@ Alternatives now:
 ## FAQ
 
 ### Can I still use `console.log`?
+
 Yes, but intercepted `console.*` writes go to JSONL instead of the terminal. For CLI output that must be shown, use:
 
 ```ts
 const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-originalConsole.log("User-visible message");
+originalConsole.log('User-visible message');
 ```
 
 ### Why don’t commands hang anymore?
+
 Lite logger avoids background intervals and ensures file streams are closed on shutdown. Commands call `UnifiedLogger.getInstance().shutdown()` before exiting.
 
 ### Where are logs stored and how do I clean them?
+
 JSONL files are in `logs/text/` (or `LOG_DIR`). Retention deletes files older than `retentionDays`. Manual cleanup is just deleting old files.
 
 ---

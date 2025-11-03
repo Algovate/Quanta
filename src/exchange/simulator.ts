@@ -172,9 +172,10 @@ export class SimulatorExchange implements Exchange {
         this.updateMarketData(symbol, timeframe, candles);
         return candles.slice(-limit);
       } catch (error) {
-        console.warn(
-          `Failed to fetch real market data for ${symbol} ${timeframe}, falling back to mock data:`,
-          error
+        this.logger.warn(
+          `Failed to fetch real market data for ${symbol} ${timeframe}, falling back to mock data`,
+          { error: error instanceof Error ? error.message : String(error) },
+          this.context
         );
       }
     }
@@ -314,9 +315,10 @@ export class SimulatorExchange implements Exchange {
       try {
         return await this.dataSourceExchange.getTicker(normalizedSymbol);
       } catch (error) {
-        console.warn(
-          `Failed to fetch real ticker data for ${normalizedSymbol}, falling back to mock data:`,
-          error
+        this.logger.warn(
+          `Failed to fetch real ticker data for ${normalizedSymbol}, falling back to mock data`,
+          { error: error instanceof Error ? error.message : String(error) },
+          this.context
         );
       }
     }
@@ -454,7 +456,11 @@ export class SimulatorExchange implements Exchange {
         return ticker.price;
       } catch (error) {
         // Fall back to mock data if real data fetch fails
-        console.warn(`Failed to fetch real price for ${symbol}, using mock data:`, error);
+        this.logger.warn(
+          `Failed to fetch real price for ${symbol}, using mock data`,
+          { error: error instanceof Error ? error.message : String(error) },
+          this.context
+        );
       }
     }
 

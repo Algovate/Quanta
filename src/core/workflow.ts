@@ -2438,7 +2438,7 @@ export class TradingWorkflow {
   /**
    * @deprecated Console output suppressed - use "quanta log console" instead
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   // @ts-expect-error - Deprecated method, kept for reference
   private _logConsoleCycleSummary(
     _account: Account,
@@ -2467,7 +2467,7 @@ export class TradingWorkflow {
   /**
    * @deprecated Removed - console output suppressed, use "quanta log console" instead
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   // @ts-expect-error - Deprecated method, kept for reference
   private _logAccountStatus(
     _account: Account,
@@ -2491,7 +2491,7 @@ export class TradingWorkflow {
   /**
    * @deprecated Removed - console output suppressed, use "quanta log console" instead
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   // @ts-expect-error - Deprecated method, kept for reference
   private _logRiskStatus(
     _account: Account,
@@ -2504,7 +2504,7 @@ export class TradingWorkflow {
   /**
    * @deprecated Removed - console output suppressed, use "quanta log console" instead
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   // @ts-expect-error - Deprecated method, kept for reference
   private _logPositions(_positions: Position[]): void {
     // Method body removed - console output suppressed
@@ -2513,7 +2513,7 @@ export class TradingWorkflow {
   /**
    * @deprecated Removed - console output suppressed, use "quanta log console" instead
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   // @ts-expect-error - Deprecated method, kept for reference
   private _logCycleCountdown(): void {
     // Method body removed - console output suppressed

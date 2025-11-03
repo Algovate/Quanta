@@ -17,6 +17,7 @@ import {
 import { PerformanceAnalytics } from '../analytics/index.js';
 import { parseUTCDateString } from '../utils/index.js';
 import { UnifiedLogger } from '../logging/index.js';
+import { ProgressTracker } from './backtest/progress-tracker.js';
 import cliProgress from 'cli-progress';
 
 // Constants
@@ -25,16 +26,6 @@ const TIME_CONSTANTS = {
   SIMULATION_INTERVAL: 3 * 60 * 1000, // 3 minutes
   SNAPSHOT_INTERVAL: 15 * 60 * 1000, // 15 minutes
   PROGRESS_UPDATE_THRESHOLD: 5, // percentage
-} as const;
-
-// Progress bar configuration
-const PROGRESS_BAR_CONFIG = {
-  format: '{bar} | {percentage}% | {duration}s',
-  barCompleteChar: '\u2588',
-  barIncompleteChar: '\u2591',
-  hideCursor: true,
-  clearOnComplete: false,
-  linewrap: false,
 } as const;
 
 interface TradingCycleContext {
@@ -61,57 +52,6 @@ export interface BacktestEngineCallbacks {
     unrealizedPnl: number;
   }) => void;
   onSnapshot?: (snapshot: EquitySnapshot) => void;
-}
-
-/**
- * Progress tracker for backtest progress reporting
- */
-class ProgressTracker {
-  private startSimulationTime: number;
-  private lastProgressUpdate: number = 0;
-  private simulationStartTime: number;
-  private simulationEndTime: number;
-
-  constructor(startTime: number, endTime: number) {
-    this.simulationStartTime = startTime;
-    this.simulationEndTime = endTime;
-    this.startSimulationTime = Date.now();
-  }
-
-  startProgressBar(): cliProgress.SingleBar {
-    const bar = new cliProgress.SingleBar(PROGRESS_BAR_CONFIG, cliProgress.Presets.shades_classic);
-    bar.start(100, 0);
-    return bar;
-  }
-
-  async updateProgress(currentTime: number, bar: cliProgress.SingleBar): Promise<void> {
-    const totalDuration = this.simulationEndTime - this.simulationStartTime;
-    const progress = Math.max(0, ((currentTime - this.simulationStartTime) / totalDuration) * 100);
-
-    // Update on first call and every 0.5% progress to show real-time feedback
-    if (this.lastProgressUpdate > 0 && progress - this.lastProgressUpdate < 0.5) {
-      return;
-    }
-
-    // Calculate elapsed time in seconds
-    const elapsedMs = Date.now() - this.startSimulationTime;
-    const elapsedSec = Math.floor(elapsedMs / 1000);
-
-    const progressValue = Math.floor(Math.min(progress, 100));
-    bar.update(progressValue, {
-      duration: elapsedSec,
-    });
-    this.lastProgressUpdate = progress;
-  }
-
-  stopProgressBar(bar: cliProgress.SingleBar): void {
-    bar.update(100);
-    bar.stop();
-  }
-
-  getElapsedTime(): number {
-    return Date.now() - this.startSimulationTime;
-  }
 }
 
 export class BacktestEngine {
@@ -229,11 +169,16 @@ export class BacktestEngine {
 
   private displayDataSourceInfo(): void {
     if (this.dataSourceInfo) {
-      console.log(`📊 Data Source: Simulated historical data`);
-      console.log(`   Total Candles: ${this.dataSourceInfo.totalCandles.toLocaleString()}`);
-      console.log(`   Timeframes: ${this.dataSourceInfo.timeframes}`);
-      console.log(`   Breakdown: ${this.dataSourceInfo.details.join(', ')}`);
-      console.log('');
+      const logger = UnifiedLogger.getInstance();
+      logger.info(
+        `📊 Data Source: Simulated historical data`,
+        {
+          totalCandles: this.dataSourceInfo.totalCandles.toLocaleString(),
+          timeframes: this.dataSourceInfo.timeframes,
+          breakdown: this.dataSourceInfo.details.join(', '),
+        },
+        'BacktestEngine'
+      );
     }
   }
 

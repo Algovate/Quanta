@@ -15,6 +15,7 @@ export class CoinbaseExchange implements Exchange {
   private isTestnet: boolean;
   private marketsState: MarketsState = { promise: null };
   private logger = UnifiedLogger.getInstance();
+  private readonly context = 'CoinbaseExchange';
 
   constructor(apiKey?: string, apiSecret?: string, testnet: boolean = true) {
     this.isTestnet = testnet;
@@ -72,7 +73,11 @@ export class CoinbaseExchange implements Exchange {
       const balance = await this.exchange.fetchBalance();
       return mapAccountFromBalance(balance, 'USDT');
     } catch (error) {
-      console.error('Error fetching account from Coinbase:', error);
+      this.logger.error(
+        'Error fetching account from Coinbase',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error;
     }
   }
@@ -87,7 +92,11 @@ export class CoinbaseExchange implements Exchange {
       const positions = await this.exchange.fetchPositions();
       return mapPositionsStandard(positions as unknown[]);
     } catch (error) {
-      console.error('Error fetching positions from Coinbase:', error);
+      this.logger.error(
+        'Error fetching positions from Coinbase',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return [];
     }
   }
@@ -105,7 +114,11 @@ export class CoinbaseExchange implements Exchange {
       const ohlcv = await this.exchange.fetchOHLCV(symbol, mappedTimeframe, undefined, limit);
       return ohlcv.map(mapOHLCV);
     } catch (error) {
-      console.error('Error fetching candlesticks from Coinbase:', error);
+      this.logger.error(
+        'Error fetching candlesticks from Coinbase',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error;
     }
   }
@@ -142,7 +155,11 @@ export class CoinbaseExchange implements Exchange {
         timestamp: Date.now(),
       };
     } catch (error) {
-      console.error('Error placing order on Coinbase:', error);
+      this.logger.error(
+        'Error placing order on Coinbase',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error;
     }
   }
@@ -156,7 +173,11 @@ export class CoinbaseExchange implements Exchange {
       await this.exchange.cancelOrder(orderId, symbol);
       return true;
     } catch (error) {
-      console.error('Error canceling order on Coinbase:', error);
+      this.logger.error(
+        'Error canceling order on Coinbase',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       return false;
     }
   }
@@ -177,7 +198,11 @@ export class CoinbaseExchange implements Exchange {
         timestamp: ticker.timestamp || Date.now(),
       };
     } catch (error) {
-      console.error('Error fetching ticker from Coinbase:', error);
+      this.logger.error(
+        'Error fetching ticker from Coinbase',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
       throw error;
     }
   }
