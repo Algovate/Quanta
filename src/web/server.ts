@@ -11,6 +11,7 @@ import {
   registerDataRoutes,
   registerMarketRoutes,
   registerBacktestRoutes,
+  registerActivityRoutes,
 } from './routes/index.js';
 import { createPriceCache, createKlineCache } from './utils/cache.js';
 import { createLogger } from './utils/logger.js';
@@ -117,6 +118,7 @@ export class APIServer {
     registerDataRoutes(this.app, this.tradingManager);
     registerMarketRoutes(this.app, this.tradingManager);
     registerBacktestRoutes(this.app);
+    registerActivityRoutes(this.app, this.tradingManager);
   }
 
   private setupWebSocket(): void {
