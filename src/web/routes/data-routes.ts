@@ -100,6 +100,22 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
     }
   });
 
+  // Trades (recent completed executions)
+  router.get('/api/trades', (req: Request, res: Response) => {
+    try {
+      const limit = parseQueryLimit(req.query.limit, 50, 1, 200);
+      const items = tradingManager.getTrades(limit) || [];
+      res.json(items);
+    } catch (error) {
+      logger.error(
+        'Error getting trades',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
+      res.status(500).json({ error: 'Failed to get trades' });
+    }
+  });
+
   // Risk snapshot
   router.get('/api/risk', (_req: Request, res: Response) => {
     try {

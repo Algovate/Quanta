@@ -4,7 +4,7 @@ import { RiskManager, PositionSizing } from './risk.js';
 import { ensureUsdtSuffix } from '../utils/symbol-utils.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { TradingManager } from '../web/trading-manager.js';
-import type { OrderEvent } from '../web/types.js';
+import type { OrderEvent, TradeEvent } from '../web/types.js';
 import { getConfig } from '../config/settings.js';
 
 // Type guard to check if exchange is SimulatorExchange with metadata support
@@ -148,6 +148,66 @@ export class OrderExecutor {
     }
   }
 
+  private pushTradeEvent(
+    order: Order,
+    orderId: string,
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    source: string,
+    reason: string,
+    realizedPnl?: number,
+    fees?: number
+  ): void {
+    try {
+      const event: TradeEvent = {
+        id: `${orderId}-${Date.now()}`, // unique trade ID
+        orderId, // link to order
+        timestamp: Date.now(),
+        symbol,
+        side,
+        amount,
+        price: order.price, // execution price (required for trades)
+        source,
+        reason,
+        ...(fees !== undefined ? { fee: fees, feeAsset: 'USDT' } : {}),
+        ...(realizedPnl !== undefined ? { realizedPnl } : {}),
+      };
+      TradingManager.getInstance().pushTrade(event);
+    } catch (error) {
+      // TradingManager might not be initialized in backtest mode
+      // This is non-critical, so we log at debug level
+      this.logger.debug(
+        'Failed to push trade to TradingManager',
+        error instanceof Error ? { error: error.message } : { error: String(error) },
+        this.context
+      );
+    }
+  }
+
+  /**
+   * Helper to push both order and trade events (if order is filled)
+   */
+  private pushOrderAndTradeEvents(
+    order: Order,
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    source: string,
+    reason: string,
+    price?: number,
+    realizedPnl?: number,
+    fees?: number
+  ): void {
+    // Always emit order event
+    this.pushOrderEvent(order, symbol, side, amount, source, reason, price);
+
+    // Emit trade event if order was filled
+    if (order.status === 'filled') {
+      this.pushTradeEvent(order, order.id, symbol, side, amount, source, reason, realizedPnl, fees);
+    }
+  }
+
   async executeSignal(
     signal: TradingSignal,
     account: Account,
@@ -252,7 +312,7 @@ export class OrderExecutor {
       if (isSimulatorExchange(this.exchange)) {
         this.exchange.setOrderMetadata?.(order.id, 'AI', 'signal');
       }
-      this.pushOrderEvent(order, symbol, side, amount, 'AI', 'signal', price);
+      this.pushOrderAndTradeEvents(order, symbol, side, amount, 'AI', 'signal', price);
 
       // Check if order was actually filled
       if (order.status === 'filled') {
@@ -328,12 +388,23 @@ export class OrderExecutor {
       if (isSimulatorExchange(this.exchange)) {
         this.exchange.setOrderMetadata?.(order.id, 'AI', 'signal');
       }
-      this.pushOrderEvent(order, symbol, side, exactAmount, 'AI', 'signal');
 
       const realizedPnl =
         priceForPnl !== undefined
           ? calculatePositionPnl(position.side, priceForPnl, position.entryPrice, position.size)
           : undefined;
+
+      // Emit order and trade events for filled close orders with realized PnL
+      this.pushOrderAndTradeEvents(
+        order,
+        symbol,
+        side,
+        exactAmount,
+        'AI',
+        'signal',
+        undefined,
+        realizedPnl
+      );
 
       return { success: true, order, realizedPnl, fees: 0 };
     } catch (error) {
@@ -369,7 +440,8 @@ export class OrderExecutor {
       if (isSimulatorExchange(this.exchange)) {
         this.exchange.setOrderMetadata?.(order.id, source, reason);
       }
-      this.pushOrderEvent(order, symbol, side, amount, source, reason, currentPrice);
+      this.pushOrderAndTradeEvents(order, symbol, side, amount, source, reason, currentPrice);
+
       return { success: true, order };
     } catch (error) {
       return this.handleError(context, error);

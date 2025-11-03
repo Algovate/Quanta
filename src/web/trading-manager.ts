@@ -7,7 +7,7 @@ import type { Exchange } from '../exchange/types.js';
 import type { MarketDataProvider } from '../data/market.js';
 import type { OpenRouterClient } from '../ai/agent.js';
 import type { UnifiedLogger } from '../logging/index.js';
-import type { OrderEvent, RiskSnapshot, SignalEvent } from './types.js';
+import type { OrderEvent, RiskSnapshot, SignalEvent, TradeEvent } from './types.js';
 import { EventBus } from '../core/event-bus.js';
 import { createLogger } from './utils/logger.js';
 import { RiskSnapshotAggregator } from './risk-snapshot-aggregator.js';
@@ -38,6 +38,7 @@ export class TradingManager extends EventEmitter {
   private riskAggregator: RiskSnapshotAggregator;
   private signals: SignalEvent[] = [];
   private orders: OrderEvent[] = [];
+  private trades: TradeEvent[] = [];
   private equityHistory: Array<{ timestamp: number; equity: number }> = [];
   private latestRisk: RiskSnapshot | null = null;
   private updateIntervalId?: NodeJS.Timeout;
@@ -411,6 +412,19 @@ export class TradingManager extends EventEmitter {
 
   getOrders(limit: number = 50): OrderEvent[] {
     return this.orders.slice(0, limit);
+  }
+
+  // Trades buffer management
+  pushTrade(tradeEvent: TradeEvent): void {
+    // Trades are immutable - just append
+    this.trades.unshift(tradeEvent);
+    this.trades = this.trades.slice(0, 50);
+
+    this.emit('trade:executed', tradeEvent);
+  }
+
+  getTrades(limit: number = 50): TradeEvent[] {
+    return this.trades.slice(0, limit);
   }
 
   // Equity history buffer management
