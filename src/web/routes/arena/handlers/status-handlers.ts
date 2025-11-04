@@ -164,6 +164,36 @@ export function createListArenasHandler(arenaService: ArenaService) {
 }
 
 /**
+ * List only running arenas
+ */
+export function createListRunningArenasHandler(arenaService: ArenaService) {
+  return async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const arenas = await arenaService.arenaManager.listArenas();
+      const running = (arenas || []).filter(a => a.status === 'running');
+      res.json({ success: true, arenas: running });
+    } catch (error) {
+      sendErrorResponse(res, error, 'Failed to list running arenas', 500);
+    }
+  };
+}
+
+/**
+ * List history (non-running) arenas
+ */
+export function createListHistoryArenasHandler(arenaService: ArenaService) {
+  return async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const arenas = await arenaService.arenaManager.listArenas();
+      const history = (arenas || []).filter(a => a.status !== 'running');
+      res.json({ success: true, arenas: history });
+    } catch (error) {
+      sendErrorResponse(res, error, 'Failed to list historical arenas', 500);
+    }
+  };
+}
+
+/**
  * Get detailed drone list for an arena
  */
 export function createGetDronesHandler(arenaService: ArenaService) {

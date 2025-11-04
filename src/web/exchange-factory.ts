@@ -1,12 +1,19 @@
 import { getConfig } from '../config/settings.js';
 import { Exchange } from '../exchange/types.js';
 
-export async function createExchangeForMode(): Promise<Exchange> {
+export async function createExchangeForMode(
+  envOverride?: 'simulation' | 'paper' | 'live' | 'simulate'
+): Promise<Exchange> {
   const config = getConfig();
   const { SimulatorExchange } = await import('../exchange/simulator.js');
   const { PaperExchange } = await import('../exchange/paper.js');
 
-  const mode = config.mode || 'simulation';
+  // Environment determines data/execution source; allow override
+  const env = (envOverride || (config as any).env || 'simulate') as
+    | 'simulate'
+    | 'paper'
+    | 'live'
+    | 'simulation';
   const exchangeName = config.exchange?.name || 'simulator';
   const exchangeApiKey = config.exchange?.apiKey;
   const exchangeApiSecret = config.exchange?.apiSecret;
@@ -24,10 +31,10 @@ export async function createExchangeForMode(): Promise<Exchange> {
     ) as Exchange;
   }
 
-  if (mode === 'simulation') {
+  if (env === 'simulate' || env === 'simulation') {
     return new SimulatorExchange(10000) as unknown as Exchange;
   }
-  if (mode === 'paper') {
+  if (env === 'paper') {
     if (exchangeName === 'simulator') {
       throw new Error(
         'Paper mode requires a real exchange for data. Set exchange.name to okx/binance/etc.'

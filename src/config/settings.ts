@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 import { deepMerge } from '../utils/object.js';
+import { normalizeMode, normalizeEnvironment } from '../types/index.js';
 
 // Load environment variables
 dotenv.config();
@@ -158,7 +159,9 @@ const AITracingSchema = z
   });
 
 const ConfigSchema = z.object({
-  mode: z.enum(['live', 'simulation', 'paper']).default('simulation'), // backtest mode is handled by separate command
+  // Runtime targeting
+  mode: z.enum(['arena', 'strategy']).default('strategy'),
+  env: z.enum(['live', 'paper', 'simulate']).default('simulate'),
   exchange: ExchangeConfigSchema,
   ai: z.object({
     apiKey: z.string(),
@@ -304,7 +307,8 @@ function parseBooleanEnv(value: string | undefined, defaultTrue: boolean = true)
 
 // Default configuration
 const DEFAULT_CONFIG: Partial<Config> = {
-  mode: 'simulation',
+  mode: 'strategy',
+  env: 'simulate',
   exchange: {
     name: 'simulator',
     testnet: true,
@@ -419,7 +423,9 @@ function loadConfigFromFile(): Partial<Config> {
 
 function parseEnvConfig(): Partial<Config> {
   return {
-    mode: (process.env.EXCHANGE_MODE as 'live' | 'simulation' | 'paper') || 'simulation',
+    // New vars preferred; fall back to legacy EXCHANGE_MODE for environment
+    mode: normalizeMode(process.env.QUANTA_MODE || process.env.MODE),
+    env: normalizeEnvironment(process.env.QUANTA_ENV || process.env.EXCHANGE_MODE || 'simulate'),
     exchange: {
       name: process.env.EXCHANGE_NAME || 'simulator',
       apiKey: process.env.EXCHANGE_API_KEY,
@@ -576,6 +582,10 @@ export function getConfig(): Config {
       deepMerge(DEFAULT_CONFIG as Record<string, unknown>, envConfig as Record<string, unknown>),
       fileConfig as Record<string, unknown>
     ) as Partial<Config>;
+
+    // Normalize any legacy values present in file or env
+    mergedConfig.mode = normalizeMode((mergedConfig as any).mode);
+    mergedConfig.env = normalizeEnvironment((mergedConfig as any).env as string);
 
     // Apply marketType-aware risk profile to fill in safe defaults where not explicitly set
     mergedConfig = applyRiskProfileToConfig(mergedConfig);

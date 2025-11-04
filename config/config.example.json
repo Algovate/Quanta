@@ -1,6 +1,8 @@
 {
-  "mode": "simulation",
-  "_comment_mode": "Trading mode: 'simulation' (mock data), 'paper' (real data, simulated trades), 'live' (real trading). For backtesting, use 'quanta trade backtest' command",
+  "mode": "strategy",
+  "env": "simulate",
+  "_comment_mode": "Runtime mode: 'arena' (multi strategy) or 'strategy' (single).",
+  "_comment_env": "Environment: 'simulate' (mock), 'paper' (paper trading), 'live' (real).",
 
   "exchange": {
     "name": "simulator",

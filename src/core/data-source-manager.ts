@@ -33,14 +33,14 @@ export class SimpleDataSourceManager implements DataSourceManager {
   }): Exchange {
     const exchangeName = config.name.toLowerCase();
 
-    // In simulation mode with real exchange: use SimulatorExchange (mock data generation)
-    if (this.config.mode === 'simulation' && exchangeName !== 'simulator') {
+    // In simulate env with real exchange: use SimulatorExchange (mock data generation)
+    if (this.config.env === 'simulate' && exchangeName !== 'simulator') {
       const dataExchange = this.createRealExchange(exchangeName, config);
       return new SimulatorExchange(10000, dataExchange);
     }
 
-    // In paper mode with real exchange: wrap real exchange with PaperExchange (real data, simulated exec)
-    if (this.config.mode === 'paper' && exchangeName !== 'simulator') {
+    // In paper env with real exchange: wrap real exchange with PaperExchange (real data, simulated exec)
+    if (this.config.env === 'paper' && exchangeName !== 'simulator') {
       const real = this.createRealExchange(exchangeName, config);
       return new PaperExchange(real, 10000);
     }

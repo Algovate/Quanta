@@ -20,27 +20,28 @@ quanta
 
 ### `trade start` - Start AI Trading System
 
-Start the trading system in simulation, paper, or live mode.
+Start the trading system specifying runtime mode and environment.
 
 ```bash
 quanta trade start [options]
 
 Options:
-  -m, --mode <mode>        Trading mode: simulation, paper, live (default: "simulation")
+  -m, --mode <mode>        Runtime mode: arena or strategy (default: "strategy")
+  -e, --env <env>          Environment: simulate, paper, live (default: "simulate")
   -c, --coins <coins>       Comma-separated list of coins (default: "BTC,ETH,SOL")
 ```
 
 **Examples:**
 
 ```bash
-# Simulation mode (mock data - recommended for learning)
-quanta trade start --mode simulation --coins BTC,ETH,SOL
+# Strategy · Sim (default)
+quanta trade start --mode strategy --env simulate --coins BTC,ETH,SOL
 
-# Paper trading (real data, simulated execution - recommended for testing)
-quanta trade start --mode paper --coins BTC,ETH,SOL
+# Strategy · Paper (real data, simulated execution)
+quanta trade start --mode strategy --env paper --coins BTC,ETH,SOL
 
-# Live mode (use with caution - requires API keys)
-quanta trade start --mode live --coins BTC
+# Strategy · Live (requires API keys)
+quanta trade start --mode strategy --env live --coins BTC
 
 # Note: For backtesting, use the dedicated command:
 # quanta trade backtest --start 2024-01-01 --end 2024-12-31
@@ -52,7 +53,7 @@ The command displays minimal startup information:
 
 ```
 🏆 Quanta Trading System
-Mode: paper | Coins: BTC, ETH, SOL
+Mode: strategy | Env: paper | Coins: BTC, ETH, SOL
 ✔ Trading system initialized
 🚀 Trading started. Use "quanta log view" to view detailed output.
 ```
@@ -61,7 +62,8 @@ Configuration display includes:
 
 ```
 📊 Configuration:
-   Mode: paper
+   Mode: strategy
+   Env: paper
    Exchange: Paper (OKX, testnet)
    Market Type: spot
 ```
@@ -158,7 +160,8 @@ quanta trade status
 📊 Quanta Status
 ==========================================
 ⚙️  Configuration:
-   Mode: simulation
+   Mode: strategy
+   Env: simulate
    Coins: BTC, ETH, SOL
    Max Positions: 6
    Cycle Period: 180s
@@ -756,8 +759,8 @@ quanta test ai --type mock --coin BTC
 # Run simulation
 quanta simulate cycle --coins BTC,ETH,SOL --verbose
 
-# Start trading
-quanta trade start --mode simulation --coins BTC,ETH,SOL
+# Start trading (Strategy · Sim)
+quanta trade start --mode strategy --env simulate --coins BTC,ETH,SOL
 
 # View detailed output (cycle summaries, account status, positions, etc.)
 quanta log view --follow
@@ -800,6 +803,31 @@ npm run api:dev
 ```
 
 For more details, see [Error Handling & Resilience](error-handling.md#health-check-endpoints) documentation.
+
+## Arena API (for QuantaWeb)
+
+List endpoints to distinguish running vs historical arenas:
+
+```
+GET /api/arena/list       # all arenas (running + persisted)
+GET /api/arena/running    # only running arenas
+GET /api/arena/history    # non-running (persisted) arenas
+```
+
+Per-arena data endpoints (require a running arenaId):
+
+```
+GET /api/arena/status/:arenaId
+GET /api/arena/:arenaId/positions
+GET /api/arena/:arenaId/trades
+GET /api/arena/:arenaId/performance-history?timeRange=1H|4H|24H|7D
+GET /api/arena/:arenaId/ticker-prices
+```
+
+Notes:
+
+- Historical arena detail endpoints may return 404 for non-running arenas; use `/history` to enumerate and build separate flows.
+- The web UI should prefer `/running` to auto-select a live arena and avoid 404s when none are running.
 
 ---
 

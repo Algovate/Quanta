@@ -204,7 +204,8 @@ export class TradeCommands {
     program
       .command('start')
       .description('Start AI trading system')
-      .option('-m, --mode <mode>', 'Trading mode: live, simulation, paper')
+      .option('-m, --mode <mode>', 'Runtime mode: arena or strategy')
+      .option('-e, --env <env>', 'Environment: live, paper, simulate')
       .option('-c, --coins <coins>', 'Comma-separated list of coins (overrides config)')
       .action(async options => {
         await handleAsync(async () => {
@@ -276,28 +277,33 @@ export class TradeCommands {
       });
   }
 
-  private static async startTrading(options: { mode?: string; coins?: string }): Promise<void> {
-    // Get mode and config first
+  private static async startTrading(options: {
+    mode?: string;
+    env?: string;
+    coins?: string;
+  }): Promise<void> {
+    // Get config and resolve runtime mode + environment
     const config = getConfig();
-    const mode = options.mode || config.mode || 'simulation';
+    const runtimeMode = (options.mode || config.mode || 'strategy') as 'arena' | 'strategy';
+    const env = (options.env || (config as any).env || 'simulate') as 'live' | 'paper' | 'simulate';
 
     // Use CLI coins if explicitly provided, otherwise use config
     const coins = options.coins
       ? options.coins.split(',').map((c: string) => c.trim())
       : config.trading.coins;
 
-    // Validate mode parameter
-    const validModes = ['live', 'simulation', 'paper'];
-    if (!validModes.includes(mode)) {
+    // Validate environment parameter
+    const validEnvs = ['live', 'paper', 'simulate'];
+    if (!validEnvs.includes(env)) {
       throw new Error(
-        `Invalid mode: "${mode}". Valid modes are: ${validModes.join(', ')}\n` +
-          `For backtesting, use: quanta trade backtest --start <date> --end <date>\n` +
-          `Please check your config.json or use --mode flag with a valid value.`
+        `Invalid env: "${env}". Valid environments are: ${validEnvs.join(', ')}\n` +
+          `For backtesting, use: quanta trade backtest --start <date> --end <date>`
       );
     }
 
     const configUpdates = {
-      mode,
+      mode: runtimeMode,
+      env,
       trading: { coins },
     };
 
@@ -312,7 +318,9 @@ export class TradeCommands {
 
     // Console: Minimal essential info only (use originalConsole to avoid interception)
     originalConsole.log(chalk.cyan('🏆 Quanta Trading System\n'));
-    originalConsole.log(chalk.gray(`Mode: ${mode} | Coins: ${coins.join(', ')}\n`));
+    originalConsole.log(
+      chalk.gray(`Mode: ${runtimeMode} | Env: ${env} | Coins: ${coins.join(', ')}\n`)
+    );
 
     const exchangeName = updatedConfig.exchange?.name || 'simulator';
     const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
@@ -331,7 +339,7 @@ export class TradeCommands {
     // UnifiedLogger: Log configuration details
     this.displayModeConfigurationWithLogger(
       unifiedLogger,
-      mode,
+      env,
       exchangeName,
       exchangeTestnet,
       exchangeApiKey,
@@ -340,14 +348,14 @@ export class TradeCommands {
     );
 
     // Validate prerequisites based on mode
-    this.validateModeConfiguration(mode, exchangeName, exchangeApiKey, exchangeApiSecret);
+    this.validateModeConfiguration(env, exchangeName, exchangeApiKey, exchangeApiSecret);
     this.validateAIConfiguration(updatedConfig.ai?.apiKey);
 
     // Initialize components and construct exchange only once
     const spinner = ora('Initializing trading system...').start();
     unifiedLogger.info('Initializing trading system...', {}, 'TradeStart');
     const exchange = await this.getExchangeForMode(
-      mode as 'simulation' | 'paper' | 'live',
+      env as 'simulation' | 'paper' | 'live',
       exchangeName,
       exchangeApiKey,
       exchangeApiSecret,

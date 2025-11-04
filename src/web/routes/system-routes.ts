@@ -7,6 +7,21 @@ import type { TradingManager } from '../trading-manager.js';
  * Register system-related routes (status, start, stop, pause)
  */
 export function registerSystemRoutes(router: Router, tradingManager: TradingManager): void {
+  // Return current normalized config (exposes mode/env)
+  router.get('/api/config', async (_req: Request, res: Response) => {
+    try {
+      const { getConfig } = await import('../../config/settings.js');
+      const cfg = getConfig();
+      res.json({
+        mode: (cfg as any).mode,
+        env: (cfg as any).env,
+        exchange: cfg.exchange,
+        trading: cfg.trading,
+      });
+    } catch (error) {
+      sendErrorResponse(res, error, 'Failed to get config', 500);
+    }
+  });
   // Get system status
   router.get('/api/status', async (_req: Request, res: Response) => {
     try {
@@ -69,8 +84,8 @@ export function registerSystemRoutes(router: Router, tradingManager: TradingMana
   // Start trading
   router.post('/api/trade/start', async (req: Request, res: Response) => {
     try {
-      const { coins } = req.body;
-      await startTradingService(tradingManager, coins);
+      const { coins, env, mode } = req.body || {};
+      await startTradingService(tradingManager, coins, { env, mode });
 
       res.json({ success: true, message: 'Trading started' });
     } catch (error) {

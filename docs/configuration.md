@@ -10,8 +10,10 @@ Used for live trading and general settings:
 
 ```json
 {
-  "mode": "simulation",
-  "_comment_mode": "Trading mode: 'simulation' (mock data), 'paper' (real data, simulated trades), 'live' (real trading)",
+  "mode": "strategy",
+  "_comment_mode": "Runtime mode: 'arena' (multi strategy) or 'strategy' (single)",
+  "env": "simulate",
+  "_comment_env": "Environment: 'simulate' (mock), 'paper' (paper trading), 'live' (real)",
   "exchange": {
     "name": "okx",
     "_comment_name": "Exchange: 'simulator' (mock data), 'okx', 'binance', 'coinbase' (real data)",
@@ -171,8 +173,11 @@ See `config/prompts/README.md` for details on creating and using prompt groups, 
 ## Environment Variables
 
 ```bash
+# Mode/Environment (preferred)
+QUANTA_MODE=strategy   # or arena
+QUANTA_ENV=paper       # or live|simulate
+
 # Exchange
-EXCHANGE_MODE=paper
 EXCHANGE_NAME=okx
 EXCHANGE_API_KEY=your_key
 EXCHANGE_API_SECRET=your_secret

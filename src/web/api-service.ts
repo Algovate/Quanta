@@ -15,17 +15,18 @@ function supportsOrderMetadata(exchange: Exchange): exchange is Exchange & {
 
 export async function startTradingService(
   tradingManager: TradingManager,
-  coins?: string | string[]
+  coins?: string | string[],
+  opts?: { env?: 'simulate' | 'simulation' | 'paper' | 'live'; mode?: 'arena' | 'strategy' }
 ) {
   const config = getConfig();
-
-  const exchange = await createExchangeForMode();
+  const exchange = await createExchangeForMode(opts?.env);
 
   // Log effective configuration and exchange selection (parity with CLI output)
   const { logger, context: loggerContext } = createLogger('TradingService');
   try {
     logger.info('📊 Configuration:', {}, loggerContext);
-    logger.info(`   Mode: ${config.mode || 'simulation'}`, {}, loggerContext);
+    logger.info(`   Mode: ${opts?.mode ?? (config as any).mode}`, {}, loggerContext);
+    logger.info(`   Env: ${opts?.env ?? (config as any).env}`, {}, loggerContext);
     const friendly = describeExchange(exchange, config.exchange?.testnet ?? true);
     if (friendly) logger.info(`   Exchange: ${friendly}`, {}, loggerContext);
     if (config.exchange?.marketType) {

@@ -19,6 +19,8 @@ import {
   createGetAICommentaryHandler,
   createGetStatusHandler,
   createListArenasHandler,
+  createListRunningArenasHandler,
+  createListHistoryArenasHandler,
   createGetDronesHandler,
   createGetComparisonHandler,
   createGetAIAnalysisHandler,
@@ -54,6 +56,8 @@ export function registerArenaRoutes(router: Router): void {
   router.get('/api/arena/:arenaId/ai-commentary', createGetAICommentaryHandler(arenaService));
   router.get('/api/arena/status/:arenaId', createGetStatusHandler(arenaService));
   router.get('/api/arena/list', createListArenasHandler(arenaService));
+  router.get('/api/arena/running', createListRunningArenasHandler(arenaService));
+  router.get('/api/arena/history', createListHistoryArenasHandler(arenaService));
   router.get('/api/arena/:arenaId/drones', createGetDronesHandler(arenaService));
 
   // Analysis routes
