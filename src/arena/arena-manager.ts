@@ -33,6 +33,26 @@ export class ArenaManager {
    * Start a new arena with the given configuration
    */
   async startArena(config: ArenaConfig, apiKey: string): Promise<string> {
+    // Check if any arena is already running
+    const runningCount = this.getRunningCount();
+    if (runningCount > 0) {
+      const runningArenas = Array.from(this.arenas.entries())
+        .filter(([_, arena]) => arena.getState().status === 'running')
+        .map(([id, arena]) => ({ id, name: arena.getConfig().name }));
+
+      const errorMessage =
+        runningArenas.length > 0
+          ? `Cannot start arena: Another arena is already running (${runningArenas[0].id}: "${runningArenas[0].name}"). Stop it first using: quanta arena stop ${runningArenas[0].id}`
+          : 'Cannot start arena: Another arena is already running. Stop it first.';
+
+      this.logger.warn('Attempted to start arena while another is running', {
+        runningArenaId: runningArenas[0]?.id,
+        runningArenaName: runningArenas[0]?.name,
+      });
+
+      throw new Error(errorMessage);
+    }
+
     // Generate arena ID if not provided
     const arenaId = config.arenaId || `arena-${Date.now()}-${this.randomId()}`;
 

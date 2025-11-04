@@ -222,6 +222,15 @@ export class ArenaCommands {
       }
     } catch (error) {
       startSpinner.fail('Failed to start arena');
+
+      if (error instanceof Error && error.message.includes('Another arena is already running')) {
+        originalConsole.error(chalk.red(`\n❌ ${error.message}`));
+        originalConsole.log(
+          chalk.yellow('\n💡 Tip: Use "quanta arena list" to see running arenas')
+        );
+        process.exit(1);
+      }
+
       throw error;
     }
   }
