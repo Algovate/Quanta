@@ -80,20 +80,20 @@ Choose your trading mode based on your needs:
 
 ```bash
 # Option 1: Simulation mode (Mock data - best for learning)
-quanta trade start --mode simulation --coins BTC,ETH
+quanta trade start --env simulate --coins BTC,ETH
 # ✓ Uses mock data only
 # ✓ No risk, no API keys required
 # ✓ Perfect for understanding the system
 
 # Option 2: Paper trading (Real data, simulated trades - recommended for testing)
-quanta trade start --mode paper --coins BTC,ETH
+quanta trade start --env paper --coins BTC,ETH
 # ✓ Uses real market data from exchanges
 # ✓ Simulated execution (no real money)
 # ✓ Realistic market conditions
 # ✓ API keys optional
 
 # Option 3: Live trading (Real money - use with extreme caution)
-quanta trade start --mode live --coins BTC,ETH
+quanta trade start --env live --coins BTC,ETH
 # ⚠️ Real money at risk
 # ⚠️ Requires API keys
 # ⚠️ Always test in simulation/paper first!

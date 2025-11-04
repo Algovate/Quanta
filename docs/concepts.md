@@ -95,7 +95,7 @@ Quanta supports three distinct trading modes, each serving different purposes in
 
 ```bash
 # Command line
-quanta trade start --mode simulation --coins BTC,ETH,SOL
+quanta trade start --env simulate --coins BTC,ETH,SOL
 
 # Or in config.json
 {
@@ -137,7 +137,7 @@ quanta trade start --mode simulation --coins BTC,ETH,SOL
 
 ```bash
 # Command line
-quanta trade start --mode paper --coins BTC,ETH,SOL
+quanta trade start --env paper --coins BTC,ETH,SOL
 
 # Or in config.json
 {
@@ -186,7 +186,7 @@ quanta trade start --mode paper --coins BTC,ETH,SOL
 
 ```bash
 # Command line
-quanta trade start --mode live --coins BTC
+quanta trade start --env live --coins BTC
 
 # Required in config.json
 {
@@ -260,13 +260,13 @@ Quanta allows easy switching between modes through command-line flags or configu
 
 ```bash
 # Switch to simulation
-quanta trade start --mode simulation
+quanta trade start --env simulate
 
 # Switch to paper trading
-quanta trade start --mode paper
+quanta trade start --env paper
 
 # Switch to live (requires proper config)
-quanta trade start --mode live --coins BTC
+quanta trade start --env live --coins BTC
 ```
 
 All modes share the same risk management and AI logic, ensuring consistency across environments.

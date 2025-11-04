@@ -10,6 +10,12 @@ import { RiskManager } from '../../execution/risk.js';
 import { OrderExecutor } from '../../execution/orders.js';
 import { PositionMonitorService } from '../../execution/monitor.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import {
+  validateCoins,
+  validateAIType,
+  validatePositiveNumber,
+  validatePositiveInt,
+} from '../shared/validation.js';
 
 interface SimulateConfig {
   simulation: {
@@ -121,46 +127,23 @@ export class SimulateCommands {
     const simulateConfig = SimulateCommands.loadSimulateConfig();
 
     // Parse and validate options with simulation config as base
-    const coins = options.coins.split(',').map((c: string) => c.trim().toUpperCase());
-    const initialBalance =
-      parseFloat(options.initialBalance) ||
-      simulateConfig.simulation?.defaultInitialBalance ||
-      10000;
+    const coins = validateCoins(options.coins);
+    const initialBalance = validatePositiveNumber(
+      options.initialBalance,
+      simulateConfig.simulation?.defaultInitialBalance || 10000
+    );
     const verbose = options.verbose || simulateConfig.logging?.verbose || false;
-    const maxPositions =
-      parseInt(options.maxPositions) || simulateConfig.simulation?.defaultMaxPositions || 6;
+    const maxPositions = validatePositiveInt(
+      options.maxPositions,
+      simulateConfig.simulation?.defaultMaxPositions || 6
+    );
 
     // New: parse multi-cycle controls
-    const cycles = Math.max(1, parseInt(options.cycles ?? '1')) || 1;
-    const intervalMs = Math.max(0, parseInt(options.interval ?? '3000')) || 3000;
+    const cycles = Math.max(1, validatePositiveInt(options.cycles ?? '1', 1));
+    const intervalMs = Math.max(0, validatePositiveInt(options.interval ?? '3000', 3000));
 
-    // Validate options
-    const aiType = options.ai.toLowerCase();
-    if (aiType !== 'mock' && aiType !== 'real') {
-      console.error(chalk.red('❌ Error: Invalid AI type. Use "mock" or "real"'));
-      console.log(chalk.yellow('   Example: --ai mock (or --ai real)'));
-      process.exit(1);
-    }
-
-    const useRealAI = aiType === 'real';
-
-    // Validate coins
-    if (coins.length === 0) {
-      console.error(chalk.red('❌ Error: At least one coin is required'));
-      process.exit(1);
-    }
-
-    // Validate balance
-    if (initialBalance <= 0) {
-      console.error(chalk.red('❌ Error: Initial balance must be greater than 0'));
-      process.exit(1);
-    }
-
-    // Validate max positions
-    if (maxPositions <= 0) {
-      console.error(chalk.red('❌ Error: Max positions must be greater than 0'));
-      process.exit(1);
-    }
+    // Validate AI type
+    const useRealAI = validateAIType(options.ai) === 'real';
 
     console.log(chalk.cyan('🎯 Quanta - Multi-Coin Trade Cycle Simulation'));
     console.log(chalk.gray('='.repeat(60)));

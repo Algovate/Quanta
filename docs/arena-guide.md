@@ -108,7 +108,9 @@ quanta arena start --config config/arena/my-arena.json
 quanta arena start --config my-arena --duration 30
 
 # Mode is always paper (real market data with simulated execution)
-quanta arena start --config my-arena --mode paper
+quanta arena start --config my-arena
+
+Note: Arena only supports paper mode. For historical testing, use `quanta trade backtest` instead of arena.
 ```
 
 ### 3. Monitor Status

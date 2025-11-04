@@ -11,12 +11,13 @@ Complete reference for all Quanta commands.
 ```
 quanta
 ├── trade      Trading operations (5 sub-commands)
+├── arena      Multi-drone trading arena (6 sub-commands)
 ├── test       Testing and validation (2 sub-commands)
 ├── config     Configuration management (6 sub-commands)
 ├── simulate   Simulation and demonstration (1 sub-command)
 ├── server     Web server for trading UI (3 sub-commands)
 ├── log        Log viewing (console; Lite mode)
-├── prompts    Prompt group management (1 sub-command)
+├── prompts    Prompt group management (3 sub-commands)
 └── help       Show help information
 ```
 
@@ -24,13 +25,12 @@ quanta
 
 ### `trade start` - Start AI Trading System
 
-Start the trading system specifying runtime mode and environment.
+Start the trading system specifying environment and coins.
 
 ```bash
 quanta trade start [options]
 
 Options:
-  -m, --mode <mode>        Runtime mode: arena or strategy (default: "strategy")
   -e, --env <env>          Environment: simulate, paper, live (default: "simulate")
   -c, --coins <coins>       Comma-separated list of coins (default: "BTC,ETH,SOL")
 ```
@@ -39,13 +39,13 @@ Options:
 
 ```bash
 # Strategy · Sim (default)
-quanta trade start --mode strategy --env simulate --coins BTC,ETH,SOL
+quanta trade start --env simulate --coins BTC,ETH,SOL
 
 # Strategy · Paper (real data, simulated execution)
-quanta trade start --mode strategy --env paper --coins BTC,ETH,SOL
+quanta trade start --env paper --coins BTC,ETH,SOL
 
 # Strategy · Live (requires API keys)
-quanta trade start --mode strategy --env live --coins BTC
+quanta trade start --env live --coins BTC
 
 # Note: For backtesting, use the dedicated command:
 # quanta trade backtest --start 2024-01-01 --end 2024-12-31
@@ -57,7 +57,7 @@ The command displays minimal startup information:
 
 ```
 🏆 Quanta Trading System
-Mode: strategy | Env: paper | Coins: BTC, ETH, SOL
+Env: paper | Coins: BTC, ETH, SOL
 ✔ Trading system initialized
 🚀 Trading started. Use "quanta log view" to view detailed output.
 ```
@@ -66,11 +66,31 @@ Configuration display includes:
 
 ```
 📊 Configuration:
-   Mode: strategy
    Env: paper
    Exchange: Paper (OKX, testnet)
    Market Type: spot
 ```
+
+**Note:** For multi-drone arena trading, use the `arena` command instead:
+
+```bash
+quanta arena start --config <config-name>
+```
+
+### API Error Responses
+
+All API endpoints return standardized error objects:
+
+```json
+{
+  "code": "E_INVALID_CONFIG",
+  "message": "Invalid arena configuration",
+  "details": {},
+  "timestamp": 1712345678901
+}
+```
+
+Common codes: `E_SESSION_ACTIVE`, `E_INVALID_ENV`, `E_INVALID_CONFIG`, `E_MISSING_API_KEY`, `E_VALIDATION_ERROR`, `E_NOT_FOUND`.
 
 Risk parameter validation:
 
@@ -350,6 +370,11 @@ quanta simulate cycle --coins BTC,ETH \
 # Real AI simulation
 quanta simulate cycle --coins BTC --ai real --verbose
 ```
+
+Note:
+
+- `simulate cycle` is a developer/demo tool for single or few cycles. It is ideal for learning and quick checks.
+- `quanta trade start --env simulate` runs the full trading workflow continuously in a simulation environment for production-like behavior.
 
 ---
 
@@ -764,7 +789,7 @@ quanta test ai --type mock --coin BTC
 quanta simulate cycle --coins BTC,ETH,SOL --verbose
 
 # Start trading (Strategy · Sim)
-quanta trade start --mode strategy --env simulate --coins BTC,ETH,SOL
+quanta trade start --env simulate --coins BTC,ETH,SOL
 
 # View detailed output (cycle summaries, account status, positions, etc.)
 quanta log view --follow

@@ -7,7 +7,7 @@ Complete guide to trading with Quanta.
 ### 1. Simulation Mode (Mock Data - Recommended for Learning)
 
 ```bash
-quanta trade start --mode simulation --coins BTC,ETH,SOL
+quanta trade start --env simulate --coins BTC,ETH,SOL
 ```
 
 **Features:**
@@ -21,7 +21,7 @@ quanta trade start --mode simulation --coins BTC,ETH,SOL
 ### 2. Paper Trading Mode (Real Data, Simulated Execution - Recommended for Testing)
 
 ```bash
-quanta trade start --mode paper --coins BTC,ETH,SOL
+quanta trade start --env paper --coins BTC,ETH,SOL
 ```
 
 **Features:**
@@ -35,7 +35,7 @@ quanta trade start --mode paper --coins BTC,ETH,SOL
 ### 3. Live Mode (Real Trading - Use with Caution)
 
 ```bash
-quanta trade start --mode live --coins BTC
+quanta trade start --env live --coins BTC
 ```
 
 **Requirements:**
@@ -51,10 +51,10 @@ quanta trade start --mode live --coins BTC
 
 ```bash
 # Start with simulation mode (mock data)
-quanta trade start --mode simulation --coins BTC,ETH,SOL
+quanta trade start --env simulate --coins BTC,ETH,SOL
 
 # Or start with paper trading (real data, simulated execution)
-quanta trade start --mode paper --coins BTC,ETH,SOL
+quanta trade start --env paper --coins BTC,ETH,SOL
 ```
 
 ### 2. Monitor Status

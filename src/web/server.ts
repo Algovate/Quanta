@@ -17,6 +17,7 @@ import {
 import { createPriceCache, createKlineCache } from './utils/cache.js';
 import { createLogger } from './utils/logger.js';
 import { EventBus } from '../core/event-bus.js';
+import { errorResponder } from './middleware/error-responder.js';
 
 const { logger, context: loggerContext } = createLogger('Server');
 
@@ -122,6 +123,9 @@ export class APIServer {
     registerBacktestRoutes(this.app);
     registerActivityRoutes(this.app, this.tradingManager);
     registerArenaRoutes(this.app);
+
+    // Error responder middleware (must be registered after all routes)
+    this.app.use(errorResponder);
   }
 
   private setupWebSocket(): void {

@@ -16,6 +16,7 @@ import { PerformanceComparator } from '../../arena/analysis/performance-comparat
 import { CostAnalyzer } from '../../arena/analysis/cost-analyzer.js';
 import { handleAsync } from '../../utils/error-handler.js';
 import { UnifiedLogger } from '../../logging/index.js';
+import { checkSessionConflict } from '../shared/session-guard.js';
 
 export class ArenaCommands {
   private static isRunning = false;
@@ -133,6 +134,9 @@ export class ArenaCommands {
   }): Promise<void> {
     const logger = UnifiedLogger.getInstance();
     const originalConsole = logger.getOriginalConsole();
+
+    // Session guard: check for active execution sessions
+    await checkSessionConflict();
 
     originalConsole.log(chalk.cyan('🏟️  Quanta Arena - Multi-Drone Trading System'));
     originalConsole.log(chalk.gray('='.repeat(70)));

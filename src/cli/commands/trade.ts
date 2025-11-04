@@ -10,6 +10,8 @@ import { TradingWorkflow } from '../../core/index.js';
 import { handleAsync } from '../../utils/index.js';
 import { formatExchangeFriendlyName } from '../utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
+import { checkSessionConflict } from '../shared/session-guard.js';
+import { validateEnv, validateCoins } from '../shared/validation.js';
 import type { Config } from '../../config/settings.js';
 import type { WorkflowConfig } from '../../types/index.js';
 import type { Exchange } from '../../exchange/types.js';
@@ -204,7 +206,6 @@ export class TradeCommands {
     program
       .command('start')
       .description('Start AI trading system')
-      .option('-m, --mode <mode>', 'Runtime mode: arena or strategy')
       .option('-e, --env <env>', 'Environment: live, paper, simulate')
       .option('-c, --coins <coins>', 'Comma-separated list of coins (overrides config)')
       .action(async options => {
@@ -277,29 +278,20 @@ export class TradeCommands {
       });
   }
 
-  private static async startTrading(options: {
-    mode?: string;
-    env?: string;
-    coins?: string;
-  }): Promise<void> {
-    // Get config and resolve runtime mode + environment
+  private static async startTrading(options: { env?: string; coins?: string }): Promise<void> {
+    // Get config and resolve environment
     const config = getConfig();
-    const runtimeMode = (options.mode || config.mode || 'strategy') as 'arena' | 'strategy';
-    const env = (options.env || (config as any).env || 'simulate') as 'live' | 'paper' | 'simulate';
+    // Trade start only supports strategy mode (use 'arena start' for multi-drone arena)
+    const runtimeMode = 'strategy' as const;
 
-    // Use CLI coins if explicitly provided, otherwise use config
-    const coins = options.coins
-      ? options.coins.split(',').map((c: string) => c.trim())
-      : config.trading.coins;
+    // Validate and parse environment
+    const env = validateEnv(options.env || config.env || 'simulate');
 
-    // Validate environment parameter
-    const validEnvs = ['live', 'paper', 'simulate'];
-    if (!validEnvs.includes(env)) {
-      throw new Error(
-        `Invalid env: "${env}". Valid environments are: ${validEnvs.join(', ')}\n` +
-          `For backtesting, use: quanta trade backtest --start <date> --end <date>`
-      );
-    }
+    // Validate and parse coins
+    const coins = options.coins ? validateCoins(options.coins) : config.trading.coins;
+
+    // Session guard: check for active execution sessions
+    await checkSessionConflict();
 
     const configUpdates = {
       mode: runtimeMode,
@@ -318,9 +310,7 @@ export class TradeCommands {
 
     // Console: Minimal essential info only (use originalConsole to avoid interception)
     originalConsole.log(chalk.cyan('🏆 Quanta Trading System\n'));
-    originalConsole.log(
-      chalk.gray(`Mode: ${runtimeMode} | Env: ${env} | Coins: ${coins.join(', ')}\n`)
-    );
+    originalConsole.log(chalk.gray(`Env: ${env} | Coins: ${coins.join(', ')}\n`));
 
     const exchangeName = updatedConfig.exchange?.name || 'simulator';
     const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;

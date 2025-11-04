@@ -70,6 +70,16 @@ export class ConfigCommands {
           await ConfigCommands.initConfig();
         }, 'ConfigCommands.init');
       });
+
+    program
+      .command('list')
+      .description('List configuration keys and current values')
+      .option('-p, --prefix <path>', 'Only list keys under this path (e.g., ai, trading)')
+      .action(async (options: { prefix?: string }) => {
+        await handleAsync(async () => {
+          await ConfigCommands.listKeys(options.prefix);
+        }, 'ConfigCommands.list');
+      });
   }
 
   private static async showConfig(options: { format: string }): Promise<void> {
@@ -270,6 +280,53 @@ export class ConfigCommands {
       originalConsole.log(chalk.gray(`   Expected: ${examplePath}`));
     }
     // Ensure clean shutdown for CLI
+    logger.shutdown();
+  }
+
+  private static async listKeys(prefix?: string): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+    const config = getConfig();
+
+    function isObject(value: unknown): value is Record<string, unknown> {
+      return !!value && typeof value === 'object' && !Array.isArray(value);
+    }
+
+    function flatten(
+      obj: Record<string, unknown>,
+      base = ''
+    ): Array<{ key: string; value: unknown }> {
+      const out: Array<{ key: string; value: unknown }> = [];
+      for (const [k, v] of Object.entries(obj)) {
+        const key = base ? `${base}.${k}` : k;
+        if (isObject(v)) {
+          out.push(...flatten(v as Record<string, unknown>, key));
+        } else {
+          out.push({ key, value: v });
+        }
+      }
+      return out;
+    }
+
+    const target = prefix
+      ? (prefix
+          .split('.')
+          .reduce((acc: any, part: string) => (acc ? acc[part] : undefined), config as any) ?? {})
+      : config;
+    const pairs = isObject(target) ? flatten(target as Record<string, unknown>, prefix || '') : [];
+
+    if (pairs.length === 0) {
+      originalConsole.log(chalk.yellow('No configuration keys found for the given scope.'));
+      logger.shutdown();
+      return;
+    }
+
+    originalConsole.log(chalk.cyan('\n📋 Configuration Keys' + (prefix ? ` (${prefix})` : '')));
+    for (const { key, value } of pairs) {
+      const display = typeof value === 'string' ? value : JSON.stringify(value);
+      originalConsole.log(`  ${key}: ${display}`);
+    }
+    originalConsole.log('');
     logger.shutdown();
   }
 }

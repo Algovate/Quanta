@@ -76,6 +76,27 @@ export class CLIApplication {
 
     // Help command
     HelpCommand.register(this.program);
+
+    // Top-level status (aggregated)
+    this.program
+      .command('status')
+      .description('Show aggregated system status (trade/arena/server)')
+      .action(async () => {
+        try {
+          const res = await fetch('http://localhost:3001/health');
+          if (res.ok) {
+            console.log('✅ Server: running on http://localhost:3001');
+          } else {
+            console.log('❌ Server: not responding');
+          }
+        } catch {
+          console.log('❌ Server: not running');
+        }
+        // Recommend sub-status commands for details
+        console.log(
+          'ℹ️  For details: quanta trade status | quanta arena status | quanta server status'
+        );
+      });
   }
 
   public run(): void {
