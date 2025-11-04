@@ -25,6 +25,7 @@ import type { WorkflowConfig } from '../types/index.js';
 import type { Exchange } from '../exchange/types.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { getConfig, getExchangeConfig } from '../config/settings.js';
+import { ExecutionSessionManager } from '../web/execution-session-manager.js';
 
 export class DroneInstance extends EventEmitter {
   private workflow: TradingWorkflow;
@@ -328,11 +329,22 @@ export class DroneInstance extends EventEmitter {
 
   async start(): Promise<void> {
     const logger = UnifiedLogger.getInstance();
+    const sessionManager = ExecutionSessionManager.getInstance();
+    const activeSession = sessionManager.getActive();
+
     logger.info(
       `Starting drone ${this.config.id}`,
       {
         arenaId: this.arenaId,
         droneId: this.config.id,
+        droneName: this.config.name,
+        executionSession: activeSession
+          ? {
+              mode: activeSession.mode,
+              env: activeSession.env,
+              id: activeSession.id,
+            }
+          : undefined,
       },
       'DroneInstance'
     );
@@ -342,11 +354,22 @@ export class DroneInstance extends EventEmitter {
 
   async stop(): Promise<void> {
     const logger = UnifiedLogger.getInstance();
+    const sessionManager = ExecutionSessionManager.getInstance();
+    const activeSession = sessionManager.getActive();
+
     logger.info(
       `Stopping drone ${this.config.id}`,
       {
         arenaId: this.arenaId,
         droneId: this.config.id,
+        droneName: this.config.name,
+        executionSession: activeSession
+          ? {
+              mode: activeSession.mode,
+              env: activeSession.env,
+              id: activeSession.id,
+            }
+          : undefined,
       },
       'DroneInstance'
     );

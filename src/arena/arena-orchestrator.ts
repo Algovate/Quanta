@@ -15,6 +15,7 @@ import { AICallQueue } from './ai-call-queue.js';
 import { ArenaStorage } from './arena-storage.js';
 import { EventBus } from '../core/event-bus.js';
 import { UnifiedLogger } from '../logging/index.js';
+import { ExecutionSessionManager } from '../web/execution-session-manager.js';
 
 export class ArenaOrchestrator extends EventEmitter {
   private drones: Map<string, DroneInstance> = new Map();
@@ -80,11 +81,23 @@ export class ArenaOrchestrator extends EventEmitter {
     this.state.status = 'running';
     this.state.startTime = Date.now();
 
+    // Get ExecutionSession context for logging
+    const sessionManager = ExecutionSessionManager.getInstance();
+    const activeSession = sessionManager.getActive();
+
     this.logger.info(
       `Starting arena ${this.arenaId}`,
       {
         arenaId: this.arenaId,
         droneCount: this.config.drones.length,
+        executionSession: activeSession
+          ? {
+              mode: activeSession.mode,
+              env: activeSession.env,
+              id: activeSession.id,
+              startTime: activeSession.startTime,
+            }
+          : undefined,
       },
       this.context
     );
@@ -178,11 +191,20 @@ export class ArenaOrchestrator extends EventEmitter {
         startTime: this.state.startTime,
       });
 
+      // Get ExecutionSession context for logging
+      const currentSession = ExecutionSessionManager.getInstance().getActive();
       this.logger.info(
         `Arena ${this.arenaId} started successfully`,
         {
           arenaId: this.arenaId,
           droneCount: this.drones.size,
+          executionSession: currentSession
+            ? {
+                mode: currentSession.mode,
+                env: currentSession.env,
+                id: currentSession.id,
+              }
+            : undefined,
         },
         this.context
       );
@@ -217,7 +239,25 @@ export class ArenaOrchestrator extends EventEmitter {
       return;
     }
 
-    this.logger.info(`Stopping arena ${this.arenaId}`, {}, this.context);
+    // Get ExecutionSession context before stopping
+    const sessionManager = ExecutionSessionManager.getInstance();
+    const activeSession = sessionManager.getActive();
+
+    this.logger.info(
+      `Stopping arena ${this.arenaId}`,
+      {
+        arenaId: this.arenaId,
+        executionSession: activeSession
+          ? {
+              mode: activeSession.mode,
+              env: activeSession.env,
+              id: activeSession.id,
+              duration: Date.now() - activeSession.startTime,
+            }
+          : undefined,
+      },
+      this.context
+    );
 
     try {
       // Stop all drones in parallel
@@ -244,11 +284,20 @@ export class ArenaOrchestrator extends EventEmitter {
         duration: this.state.endTime - this.state.startTime,
       });
 
+      // Use activeSession captured before stopping (session may be released after stop)
       this.logger.info(
         `Arena ${this.arenaId} stopped successfully`,
         {
           arenaId: this.arenaId,
           duration: this.state.endTime - this.state.startTime,
+          executionSession: activeSession
+            ? {
+                mode: activeSession.mode,
+                env: activeSession.env,
+                id: activeSession.id,
+                duration: Date.now() - activeSession.startTime,
+              }
+            : undefined,
         },
         this.context
       );

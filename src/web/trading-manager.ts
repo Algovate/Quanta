@@ -156,6 +156,19 @@ export class TradingManager extends EventEmitter {
       sessionManager.acquire(session);
       sessionAcquired = true;
 
+      this.logger.info(
+        'Trading workflow execution session started',
+        {
+          executionSession: {
+            mode: session.mode,
+            env: session.env,
+            id: session.id,
+            startTime: session.startTime,
+          },
+        },
+        this.context
+      );
+
       // Store references for health checks
       this.exchange = exchange;
       this.marketDataProvider = marketDataProvider;
@@ -303,7 +316,24 @@ export class TradingManager extends EventEmitter {
     this.emit('system:state', { ...this.state });
 
     // Release exclusive session
-    ExecutionSessionManager.getInstance().release('workflow');
+    const sessionManager = ExecutionSessionManager.getInstance();
+    const activeSession = sessionManager.getActive();
+    sessionManager.release('workflow');
+
+    this.logger.info(
+      'Trading workflow execution session stopped',
+      {
+        executionSession: activeSession
+          ? {
+              mode: activeSession.mode,
+              env: activeSession.env,
+              id: activeSession.id,
+              duration: Date.now() - activeSession.startTime,
+            }
+          : undefined,
+      },
+      this.context
+    );
   }
 
   async pause(): Promise<void> {

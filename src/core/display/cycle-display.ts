@@ -17,9 +17,38 @@ export class CycleDisplay {
   /**
    * Format cycle header with emphasis
    */
-  formatCycleHeader(cycleCount: number): string {
+  formatCycleHeader(
+    cycleCount: number,
+    options?: {
+      executionSession?: {
+        mode: 'arena' | 'strategy';
+        env: 'simulate' | 'simulation' | 'paper' | 'live';
+        id: string;
+      };
+      arenaContext?: {
+        arenaId: string;
+        droneId: string;
+      };
+    }
+  ): string {
     const header = chalk.bold.white(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    const title = chalk.bold.cyan(`  🔄 CYCLE ${cycleCount} - ${formatUTCTimeCompact(Date.now())}`);
+    let title = chalk.bold.cyan(`  🔄 CYCLE ${cycleCount} - ${formatUTCTimeCompact(Date.now())}`);
+
+    // Add ExecutionSession info
+    if (options?.executionSession) {
+      const session = options.executionSession;
+      const modeColor = session.mode === 'arena' ? chalk.magenta : chalk.blue;
+      const envColor =
+        session.env === 'live' ? chalk.red : session.env === 'paper' ? chalk.yellow : chalk.gray;
+      title += ` | ${modeColor(session.mode.toUpperCase())} | ${envColor(session.env.toUpperCase())}`;
+    }
+
+    // Add arena/drone context
+    if (options?.arenaContext) {
+      const { arenaId, droneId } = options.arenaContext;
+      title += ` | ${chalk.magenta(`Arena:${arenaId}`)} | ${chalk.cyan(`Drone:${droneId}`)}`;
+    }
+
     return `${header}\n${title}\n${header}`;
   }
 

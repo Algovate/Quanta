@@ -1,10 +1,13 @@
 import type { ExecutionSession, ExecutionEnv } from './types/execution-session.js';
 import { createExecutionSession, getExecutionEnv } from './utils/execution-session-utils.js';
 import { getConfig } from '../config/settings.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export class ExecutionSessionManager {
   private static instance: ExecutionSessionManager;
   private active: ExecutionSession | null = null;
+  private logger = UnifiedLogger.getInstance();
+  private readonly context = 'ExecutionSessionManager';
 
   private constructor() {}
 
@@ -40,16 +43,51 @@ export class ExecutionSessionManager {
   acquire(session: ExecutionSession): void {
     if (this.active) {
       const current = this.active;
+      this.logger.warn(
+        'Execution session conflict detected',
+        {
+          currentMode: current.mode,
+          currentId: current.id,
+          currentEnv: current.env,
+          attemptedMode: session.mode,
+          attemptedId: session.id,
+          attemptedEnv: session.env,
+        },
+        this.context
+      );
       throw new Error(
         `Another execution session is active (mode: ${current.mode}, id: ${current.id}). Stop it before starting a new one.`
       );
     }
     this.active = { ...session, running: true };
+    this.logger.info(
+      'Execution session acquired',
+      {
+        mode: session.mode,
+        env: session.env,
+        id: session.id,
+        startTime: session.startTime,
+      },
+      this.context
+    );
   }
 
   release(id?: string): void {
     if (!this.active) return;
     if (!id || this.active.id === id) {
+      const released = this.active;
+      const duration = Date.now() - released.startTime;
+      this.logger.info(
+        'Execution session released',
+        {
+          id: released.id,
+          mode: released.mode,
+          env: released.env,
+          duration,
+          durationFormatted: `${Math.floor(duration / 1000)}s`,
+        },
+        this.context
+      );
       this.active = null;
     }
   }

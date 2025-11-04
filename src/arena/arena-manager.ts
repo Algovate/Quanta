@@ -59,6 +59,21 @@ export class ArenaManager {
       sessionManager.acquire(session);
       sessionAcquired = true;
 
+      this.logger.info(
+        `Arena ${arenaId} execution session started`,
+        {
+          arenaId,
+          executionSession: {
+            mode: session.mode,
+            env: session.env,
+            id: session.id,
+            startTime: session.startTime,
+          },
+          droneCount: config.drones.length,
+        },
+        this.context
+      );
+
       const orchestrator = new ArenaOrchestrator(arenaId, finalConfig, apiKey);
       this.arenas.set(arenaId, orchestrator);
 
@@ -114,9 +129,25 @@ export class ArenaManager {
       await arena.stop();
       this.arenas.delete(arenaId);
       // Release exclusive session
-      ExecutionSessionManager.getInstance().release(arenaId);
+      const sessionManager = ExecutionSessionManager.getInstance();
+      const activeSession = sessionManager.getActive();
+      sessionManager.release(arenaId);
 
-      this.logger.info(`Arena ${arenaId} stopped successfully`, {}, this.context);
+      this.logger.info(
+        `Arena ${arenaId} stopped successfully`,
+        {
+          arenaId,
+          executionSession: activeSession
+            ? {
+                mode: activeSession.mode,
+                env: activeSession.env,
+                id: activeSession.id,
+                duration: Date.now() - activeSession.startTime,
+              }
+            : undefined,
+        },
+        this.context
+      );
     } catch (error) {
       this.logger.error(
         `Error stopping arena ${arenaId}`,

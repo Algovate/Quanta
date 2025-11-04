@@ -16,6 +16,7 @@ import { ExchangeSnapshotService } from './exchange-snapshot.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { formatUTCTimeCompact, formatUTCLogTime } from '../utils/time.js';
 import { createTickerPriceGetter } from '../utils/ticker-cache.js';
+import { ExecutionSessionManager } from '../web/execution-session-manager.js';
 
 // Decision information types for signal execution
 interface SignalDecisionInfo {
@@ -553,6 +554,22 @@ export class TradingWorkflow {
     this.isCycleRunning = true;
 
     const cycleStartTime = Date.now();
+
+    // Get ExecutionSession context for logging
+    const sessionManager = ExecutionSessionManager.getInstance();
+    const activeSession = sessionManager.getActive();
+
+    // Extract drone/arena context from loggerContext (format: "Arena:${arenaId}:Drone:${droneId}")
+    let arenaId: string | undefined;
+    let droneId: string | undefined;
+    if (this.loggerContext.startsWith('Arena:')) {
+      const parts = this.loggerContext.split(':');
+      if (parts.length >= 4 && parts[0] === 'Arena' && parts[2] === 'Drone') {
+        arenaId = parts[1];
+        droneId = parts[3];
+      }
+    }
+
     const cycleOperationId = this.unifiedLogger.startOperation(
       this.unifiedLogger.createTraceContext(this.state.cycleCount + 1),
       'trading_cycle',
@@ -560,6 +577,21 @@ export class TradingWorkflow {
         cycleCount: this.state.cycleCount + 1,
         coins: this.config.coins,
         cyclePeriod: this.config.cyclePeriod,
+        executionSession: activeSession
+          ? {
+              mode: activeSession.mode,
+              env: activeSession.env,
+              id: activeSession.id,
+              startTime: activeSession.startTime,
+            }
+          : undefined,
+        arenaContext:
+          arenaId && droneId
+            ? {
+                arenaId,
+                droneId,
+              }
+            : undefined,
       }
     );
 
@@ -583,11 +615,40 @@ export class TradingWorkflow {
       // Record cycle start in unified logger
       this.unifiedLogger.startStage(cycleOperationId, 'cycle_start', {
         cycleCount: this.state.cycleCount,
+        executionSession: activeSession
+          ? {
+              mode: activeSession.mode,
+              env: activeSession.env,
+              id: activeSession.id,
+            }
+          : undefined,
+        arenaContext:
+          arenaId && droneId
+            ? {
+                arenaId,
+                droneId,
+              }
+            : undefined,
       });
 
       // Display cycle header with emphasis
       this.emitLog('info', '');
-      const cycleHeader = this.cycleDisplay.formatCycleHeader(this.state.cycleCount);
+      const cycleHeader = this.cycleDisplay.formatCycleHeader(this.state.cycleCount, {
+        executionSession: activeSession
+          ? {
+              mode: activeSession.mode,
+              env: activeSession.env,
+              id: activeSession.id,
+            }
+          : undefined,
+        arenaContext:
+          arenaId && droneId
+            ? {
+                arenaId,
+                droneId,
+              }
+            : undefined,
+      });
       this.emitLog('info', cycleHeader);
 
       this.emitLog('info', chalk.gray('⏳ Fetching account data...'));
