@@ -66,15 +66,6 @@ export function createStartArenaHandler(arenaService: ArenaService) {
         })),
       });
     } catch (error) {
-      // Return 409 Conflict for concurrent arena attempts
-      if (error instanceof Error && error.message.includes('Another arena is already running')) {
-        res.status(409).json({
-          error: 'Another arena is already running',
-          message: error.message,
-        });
-        return;
-      }
-
       sendErrorResponse(res, error, 'Failed to start arena', 500);
     }
   };

@@ -671,29 +671,6 @@ Query historical arenas:
 quanta arena compare <arenaId>
 ```
 
-## Important Limitations
-
-### Single Arena at a Time
-
-Only one arena can be running simultaneously across the system.
-
-- **Why**: Prevents resource conflicts (AI rate limiting, logging, memory)
-- **What to do**: Stop the running arena before starting a new one
-- **Check status**: Use `quanta arena list` to see running arenas
-- **Stop command**: `quanta arena stop <arenaId>`
-
-**Example**:
-```bash
-# Check what's running
-quanta arena list
-
-# Stop the running arena
-quanta arena stop arena-1234567890-abc123
-
-# Now you can start a new one
-quanta arena start --config my-arena
-```
-
 ## Best Practices
 
 1. **Start Small**: Test with 2-3 drones before scaling up
