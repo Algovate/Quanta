@@ -383,6 +383,40 @@ export class TradeCommands {
     unifiedLogger.info(chalk.green('🚀 Starting trading workflow...'), {}, 'TradeStart');
     unifiedLogger.info(chalk.gray('Press Ctrl+C to stop\n'), {}, 'TradeStart');
 
+    // Set up signal handlers for graceful shutdown
+    let isShuttingDown = false;
+    const shutdownHandler = async (signal: string) => {
+      if (isShuttingDown) {
+        // Force exit if already shutting down
+        process.exit(1);
+        return;
+      }
+      isShuttingDown = true;
+
+      originalConsole.log(chalk.yellow(`\n⏹  Shutting down trading system (${signal})...`));
+      unifiedLogger.info(
+        chalk.yellow(`Shutting down trading system (${signal})...`),
+        {},
+        'TradeStart'
+      );
+
+      try {
+        await workflow.stop();
+        unifiedLogger.shutdown();
+        originalConsole.log(chalk.green('✅ Trading system stopped gracefully'));
+        process.exit(0);
+      } catch (error) {
+        originalConsole.error(chalk.red('❌ Error during shutdown'));
+        if (error instanceof Error) {
+          unifiedLogger.error('Error during shutdown', error, 'TradeStart');
+        }
+        process.exit(1);
+      }
+    };
+
+    process.on('SIGINT', () => shutdownHandler('SIGINT'));
+    process.on('SIGTERM', () => shutdownHandler('SIGTERM'));
+
     await workflow.start();
   }
 

@@ -60,19 +60,96 @@ export function convertToTradingSignal(signal: AIResponse): TradingSignal {
 }
 
 /**
- * Parse AI response into array of TradingSignals
+ * Result of parsing AI response with error details
+ */
+export interface ParseResult {
+  signals: TradingSignal[];
+  error?: {
+    message: string;
+    step: 'extraction' | 'parsing' | 'validation' | 'conversion';
+    originalError: Error;
+  };
+}
+
+/**
+ * Parse AI response into array of TradingSignals with error details
  * Handles enhanced format with <output> tags and legacy format
  */
-export function parseAiResponse(response: string): TradingSignal[] {
+export function parseAiResponseWithDetails(response: string): ParseResult {
   try {
-    const jsonSource = extractJsonSource(response);
-    const parsed = parseJsonObject(jsonSource);
-    validateParsedResponse(parsed);
+    let jsonSource: string;
+    try {
+      jsonSource = extractJsonSource(response);
+    } catch (error) {
+      return {
+        signals: [],
+        error: {
+          message: 'Failed to extract JSON from response',
+          step: 'extraction',
+          originalError: error instanceof Error ? error : new Error(String(error)),
+        },
+      };
+    }
 
-    return parsed.signals.map(convertToTradingSignal);
-  } catch {
-    // Return empty array on any parsing error
-    // Error logging should be done by caller with context
-    return [];
+    let parsed: any;
+    try {
+      parsed = parseJsonObject(jsonSource);
+    } catch (error) {
+      return {
+        signals: [],
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          step: 'parsing',
+          originalError: error instanceof Error ? error : new Error(String(error)),
+        },
+      };
+    }
+
+    try {
+      validateParsedResponse(parsed);
+    } catch (error) {
+      return {
+        signals: [],
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          step: 'validation',
+          originalError: error instanceof Error ? error : new Error(String(error)),
+        },
+      };
+    }
+
+    try {
+      const signals = parsed.signals.map(convertToTradingSignal);
+      return { signals };
+    } catch (error) {
+      return {
+        signals: [],
+        error: {
+          message: 'Failed to convert signals',
+          step: 'conversion',
+          originalError: error instanceof Error ? error : new Error(String(error)),
+        },
+      };
+    }
+  } catch (error) {
+    // Catch-all for any unexpected errors
+    return {
+      signals: [],
+      error: {
+        message: 'Unexpected parsing error',
+        step: 'parsing',
+        originalError: error instanceof Error ? error : new Error(String(error)),
+      },
+    };
   }
+}
+
+/**
+ * Parse AI response into array of TradingSignals
+ * Handles enhanced format with <output> tags and legacy format
+ * @deprecated Use parseAiResponseWithDetails for better error handling
+ */
+export function parseAiResponse(response: string): TradingSignal[] {
+  const result = parseAiResponseWithDetails(response);
+  return result.signals;
 }

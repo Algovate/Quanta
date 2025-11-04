@@ -14,7 +14,7 @@ import {
 } from './tracing.js';
 import { loadPromptGroup, renderTemplate, type PromptGroup } from './prompt-loader.js';
 import { getConfig } from '../config/settings.js';
-import { parseAiResponse } from './prompt-parser.js';
+import { parseAiResponseWithDetails } from './prompt-parser.js';
 
 export interface AIResponse {
   coin: string;
@@ -672,17 +672,27 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
   }
 
   private parseResponse(response: string): TradingSignal[] {
-    const signals = parseAiResponse(response);
+    const result = parseAiResponseWithDetails(response);
 
     // Log error if parsing returned empty but we have a response
-    if (signals.length === 0 && response.trim().length > 0) {
-      this.logger.error(
-        'Failed to parse AI response',
-        new Error('No valid signals extracted'),
-        this.context
-      );
+    if (result.signals.length === 0 && response.trim().length > 0) {
+      // Truncate response for logging (first 500 chars)
+      const truncatedResponse =
+        response.length > 500 ? response.substring(0, 500) + '...' : response;
+
+      const errorMessage = result.error
+        ? `Failed to parse AI response at ${result.error.step} step: ${result.error.message}`
+        : 'Failed to parse AI response: No valid signals extracted';
+
+      const error = result.error?.originalError || new Error('No valid signals extracted');
+      // Attach metadata to error object for logging
+      (error as any).responsePreview = truncatedResponse;
+      (error as any).responseLength = response.length;
+      (error as any).parsingStep = result.error?.step;
+
+      this.logger.error(errorMessage, error, this.context);
     }
 
-    return signals;
+    return result.signals;
   }
 }
