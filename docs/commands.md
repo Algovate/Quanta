@@ -1031,4 +1031,4 @@ Notes:
 ---
 
 **Last Updated**: November 2025  
-**Version**: 0.5.0 (Lite)
+**Version**: 0.5.0

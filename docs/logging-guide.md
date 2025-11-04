@@ -1,10 +1,9 @@
-# Logging Guide (Lite Mode)
+# Logging Guide
 
-Quanta uses a simplified, non-tiered logging system focused on reliability, clean CLI behavior, and easy log access.
+Quanta uses a simplified logging system focused on reliability, clean CLI behavior, and easy log access.
 
 - Text logs are captured to daily-rotated JSONL files in `logs/text/`.
 - Set `LOG_DIR` to override the directory. Defaults to `./logs/text`.
-- Tiered storage (L0/L1/L2/L3), snapshots, aggregated errors, and metrics persistence are removed.
 - Manage logs with `quanta log` commands: `view`, `clean`, `list`, `stats`, and `export`.
 
 ---
@@ -212,24 +211,6 @@ Optional defaults in `config/config.json`:
 
 ---
 
-## Migration from tiered logging
-
-Removed features in Lite mode:
-
-- L0/L1/L2/L3 storage, SQLite database, snapshots, aggregated errors, metrics persistence, sampling.
-- Advanced query commands tied to tiered storage are no longer available.
-
-Alternatives now:
-
-- Use `quanta log view` with filters for operational visibility.
-- Use `quanta log stats` for aggregated statistics and error rates.
-- Use `quanta log export` to export logs for external analysis.
-- Use `quanta log clean` to manage log file retention.
-- Emit structured fields in `metadata` for richer context when needed.
-- Persist domain data you need elsewhere (e.g., your own stores) rather than relying on logger tiers.
-
----
-
 ## FAQ
 
 ### Can I still use `console.log`?
@@ -243,7 +224,7 @@ originalConsole.log('User-visible message');
 
 ### Why don't commands hang anymore?
 
-Lite logger avoids background intervals and ensures file streams are closed on shutdown. Commands call `UnifiedLogger.getInstance().shutdown()` before exiting.
+The logger avoids background intervals and ensures file streams are closed on shutdown. Commands call `UnifiedLogger.getInstance().shutdown()` before exiting.
 
 ### Where are logs stored and how do I clean them?
 
@@ -265,4 +246,4 @@ Use `quanta log list` to see available log files and their sizes.
 ---
 
 **Last Updated**: November 2025
-**Version**: 0.5.0 (Lite)
+**Version**: 0.5.0

@@ -208,12 +208,12 @@ TRADING_PRICE_SANITY_MAX_DEVIATION=0.05
 # Funding warnings (perpetuals)
 TRADING_FUNDING_WARNINGS=true
 
-# Logging (Lite Mode)
+# Logging
 # Override JSONL log directory (defaults to ./logs/text)
 LOG_DIR=/absolute/path/to/logs/text
 ```
 
-### Logging (Lite Mode)
+### Logging
 
 You can optionally set logging defaults in `config/config.json` under `logging`:
 

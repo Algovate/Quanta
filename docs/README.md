@@ -44,7 +44,7 @@ Complete documentation index for the Quanta AI trading system.
   - API configuration
   - Abbreviation guide
 
-- **[Logging Guide](logging-guide.md)** (Lite)
+- **[Logging Guide](logging-guide.md)**
   - JSONL text logging (daily-rotated)
   - Console interception and original console usage
   - `quanta log view` usage (filters, follow)
@@ -209,7 +209,6 @@ All documentation is actively maintained and continuously improved. Latest updat
 - ✅ Added exchanges support guide
 - ✅ Integrated logging guide with operation-driven logging system
 - ✅ Added log query CLI commands
-- ✅ Enhanced logging with error aggregation and snapshots
 - ✅ Added error handling and resilience documentation
 - ✅ Added position auto-close strategy documentation
 - ✅ Updated all documentation statistics and links
