@@ -14,6 +14,16 @@ export function createStartArenaHandler(arenaService: ArenaService) {
       // Validate request body
       const parseResult = ArenaConfigSchema.safeParse(req.body);
       if (!parseResult.success) {
+        // Check if error is due to backtest mode
+        const hasBacktestMode = req.body.mode === 'backtest';
+        if (hasBacktestMode) {
+          res.status(400).json({
+            error:
+              'Arena only supports "paper" mode. Use standalone backtest command for historical data testing.',
+          });
+          return;
+        }
+
         res.status(400).json({
           error: 'Invalid arena configuration',
           details: parseResult.error.errors,
@@ -22,6 +32,15 @@ export function createStartArenaHandler(arenaService: ArenaService) {
       }
 
       const config = parseResult.data as ArenaConfig;
+
+      // Additional validation: ensure mode is paper (should be caught by schema, but extra safety)
+      if (config.mode !== 'paper') {
+        res.status(400).json({
+          error:
+            'Arena only supports "paper" mode. Use standalone backtest command for historical data testing.',
+        });
+        return;
+      }
 
       // Get API key
       const globalConfig = getConfig();

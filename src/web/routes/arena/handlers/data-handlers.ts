@@ -50,9 +50,9 @@ export function createGetPositionsHandler(arenaService: ArenaService) {
       });
     } catch (error) {
       if (error instanceof Error && error.message.includes('not found')) {
-        res.status(404).json({ 
+        res.status(404).json({
           success: false,
-          error: error.message 
+          error: error.message,
         });
         return;
       } else {

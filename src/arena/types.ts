@@ -54,9 +54,7 @@ export interface ArenaSettings {
 export interface ArenaConfig {
   arenaId?: string; // Generated if not provided
   name: string;
-  mode: 'backtest' | 'paper';
-  startDate?: string; // ISO date string for backtest
-  endDate?: string; // ISO date string for backtest
+  mode: 'paper';
   drones: DroneConfig[];
   settings?: ArenaSettings;
 }

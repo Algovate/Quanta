@@ -1,6 +1,6 @@
 {
   "name": "Multi-Coin Strategy Test",
-  "mode": "backtest",
+  "mode": "paper",
   "drones": [
     {
       "id": "btc-only",

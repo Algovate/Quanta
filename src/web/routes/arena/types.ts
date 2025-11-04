@@ -5,7 +5,7 @@ import { z } from 'zod';
  */
 export const ArenaConfigSchema = z.object({
   name: z.string(),
-  mode: z.enum(['backtest', 'paper']),
+  mode: z.enum(['paper']),
   drones: z.array(
     z.object({
       id: z.string(),

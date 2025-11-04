@@ -40,7 +40,7 @@ export class DroneInstance extends EventEmitter {
     private config: DroneConfig,
     private aiCallQueue: AICallQueue,
     apiKey: string,
-    private arenaConfig?: ArenaConfig
+    _arenaConfig?: ArenaConfig
   ) {
     super();
     this.initialBalance = config.initialBalance;
@@ -56,50 +56,43 @@ export class DroneInstance extends EventEmitter {
       'DroneInstance'
     );
 
-    // Create exchange based on arena mode
-    if (this.arenaConfig?.mode === 'paper') {
-      // Paper mode: use PaperExchange with real exchange for real market data + simulated execution
-      const globalConfig = getConfig();
-      const exchangeConfig = getExchangeConfig(globalConfig);
+    // Create exchange - Arena only supports paper mode (real market data with simulated execution)
+    const globalConfig = getConfig();
+    const exchangeConfig = getExchangeConfig(globalConfig);
 
-      if (exchangeConfig.name !== 'simulator') {
-        try {
-          const realExchange = this.createRealExchange(
-            exchangeConfig.name,
-            exchangeConfig.apiKey,
-            exchangeConfig.apiSecret,
-            exchangeConfig.testnet ?? true
-          );
-          this.exchange = new PaperExchange(realExchange, config.initialBalance);
-          logger.info(
-            `Created PaperExchange for drone ${config.id}`,
-            {
-              exchange: exchangeConfig.name,
-              testnet: exchangeConfig.testnet,
-              droneId: config.id,
-            },
-            'DroneInstance'
-          );
-        } catch (error) {
-          logger.warn(
-            `Failed to create real exchange for PaperExchange, falling back to SimulatorExchange`,
-            {
-              error: error instanceof Error ? error.message : String(error),
-              exchange: exchangeConfig.name,
-              droneId: config.id,
-            },
-            'DroneInstance'
-          );
-          // Fallback to SimulatorExchange if real exchange creation fails
-          this.exchange = new SimulatorExchange(config.initialBalance);
-        }
-      } else {
-        // Simulator exchange specified, use SimulatorExchange
+    if (exchangeConfig.name !== 'simulator') {
+      try {
+        const realExchange = this.createRealExchange(
+          exchangeConfig.name,
+          exchangeConfig.apiKey,
+          exchangeConfig.apiSecret,
+          exchangeConfig.testnet ?? true
+        );
+        this.exchange = new PaperExchange(realExchange, config.initialBalance);
+        logger.info(
+          `Created PaperExchange for drone ${config.id}`,
+          {
+            exchange: exchangeConfig.name,
+            testnet: exchangeConfig.testnet,
+            droneId: config.id,
+          },
+          'DroneInstance'
+        );
+      } catch (error) {
+        logger.warn(
+          `Failed to create real exchange for PaperExchange, falling back to SimulatorExchange`,
+          {
+            error: error instanceof Error ? error.message : String(error),
+            exchange: exchangeConfig.name,
+            droneId: config.id,
+          },
+          'DroneInstance'
+        );
+        // Fallback to SimulatorExchange if real exchange creation fails
         this.exchange = new SimulatorExchange(config.initialBalance);
       }
     } else {
-      // Backtest mode or other modes: use SimulatorExchange
-      // For backtest, we might want to use BacktestExchange in the future
+      // Simulator exchange specified, use SimulatorExchange
       this.exchange = new SimulatorExchange(config.initialBalance);
     }
 

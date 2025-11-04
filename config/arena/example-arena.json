@@ -1,6 +1,6 @@
 {
   "name": "Prompt Pack Comparison Arena",
-  "mode": "backtest",
+  "mode": "paper",
   "drones": [
     {
       "id": "drone-aggressive",

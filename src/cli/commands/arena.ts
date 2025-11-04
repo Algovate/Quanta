@@ -30,7 +30,10 @@ export class ArenaCommands {
         '-c, --config <name>',
         'Arena configuration name or path (e.g., ppc or ppc.json)'
       )
-      .option('-m, --mode <mode>', 'Execution mode: backtest or paper (overrides config file)')
+      .option(
+        '-m, --mode <mode>',
+        'Execution mode: paper (real market data with simulated execution, overrides config file)'
+      )
       .option('-d, --duration <minutes>', 'Maximum runtime in minutes (optional)')
       .option('-v, --verbose', 'Verbose output', false)
       .action(
@@ -140,7 +143,34 @@ export class ArenaCommands {
 
     // Override mode if specified
     if (options.mode) {
-      config.mode = options.mode as 'backtest' | 'paper';
+      if (options.mode === 'backtest') {
+        spinner.fail('Invalid mode');
+        console.error(
+          chalk.red(
+            '  Arena only supports "paper" mode. Use standalone backtest command for historical data testing.'
+          )
+        );
+        process.exit(1);
+      }
+      if (options.mode !== 'paper') {
+        spinner.fail('Invalid mode');
+        console.error(
+          chalk.red(`  Invalid mode: "${options.mode}". Arena only supports "paper" mode.`)
+        );
+        process.exit(1);
+      }
+      config.mode = 'paper';
+    }
+
+    // Ensure config mode is paper (reject backtest if present in config file)
+    if (config.mode !== 'paper') {
+      spinner.fail('Invalid configuration');
+      console.error(
+        chalk.red(
+          '  Arena only supports "paper" mode. Use standalone backtest command for historical data testing.'
+        )
+      );
+      process.exit(1);
     }
 
     // Validate configuration

@@ -1,6 +1,6 @@
 {
   "name": "Prompt Strategy Battle Royale",
-  "mode": "backtest",
+  "mode": "paper",
   "drones": [
     {
       "id": "traditional-ta",

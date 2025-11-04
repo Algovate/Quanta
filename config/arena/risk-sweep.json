@@ -1,6 +1,6 @@
 {
   "name": "Risk Parameter Sweep",
-  "mode": "backtest",
+  "mode": "paper",
   "drones": [
     {
       "id": "risk-10pct",

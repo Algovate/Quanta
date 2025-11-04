@@ -49,7 +49,7 @@ Create a JSON file in `config/arena/`:
 ```json
 {
   "name": "My First Arena",
-  "mode": "backtest",
+  "mode": "paper",
   "drones": [
     {
       "id": "drone-1",
@@ -103,7 +103,7 @@ quanta arena start --config config/arena/my-arena.json
 # Start with duration limit
 quanta arena start --config my-arena --duration 30
 
-# Override mode (overrides mode in config file)
+# Mode is always paper (real market data with simulated execution)
 quanta arena start --config my-arena --mode paper
 ```
 
@@ -171,7 +171,7 @@ quanta log view --context ArenaManager --level info --lines 100
 ```typescript
 {
   name: string;                    // Arena name
-  mode: 'backtest' | 'paper';      // Execution mode
+  mode: 'paper';                    // Execution mode (always paper - real market data with simulated execution)
   drones: DroneConfig[];           // Array of drone configs
   settings?: {
     maxConcurrentAICalls?: number; // AI rate limiting (default: 2)
@@ -676,7 +676,7 @@ quanta arena compare <arenaId>
 1. **Start Small**: Test with 2-3 drones before scaling up
 2. **Isolate Variables**: Change one parameter at a time (prompt pack OR risk params)
 3. **Monitor Costs**: Track AI API costs, especially with many drones
-4. **Use Appropriate Duration**: Set duration limits for backtests
+4. **Use Appropriate Duration**: Set duration limits for long-running arenas
 5. **Review Correlations**: Check if drones are diversifying or correlated
 
 ## Troubleshooting
