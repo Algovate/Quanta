@@ -16,7 +16,7 @@ quanta
 ├── config     Configuration management (6 sub-commands)
 ├── simulate   Simulation and demonstration (1 sub-command)
 ├── server     Web server for trading UI (3 sub-commands)
-├── log        Log viewing (console; Lite mode)
+├── log        Log management (view, clean, list, stats, export)
 ├── prompts    Prompt group management (3 sub-commands)
 └── help       Show help information
 ```
@@ -560,7 +560,7 @@ quanta config init
 
 ---
 
-## Log Commands (Lite Mode)
+## Log Commands
 
 ### `log view` - View Console Output
 
@@ -611,10 +611,180 @@ The command displays console output exactly as it appeared during operation, pre
 
 Use `--follow` or `-f` to watch logs in real-time (similar to `tail -f`). The command polls JSONL text logs every second for new entries and displays them as they're written.
 
-Notes:
+---
 
-- Lite logging writes to daily-rotated JSONL files under `logs/text/` (override via `LOG_DIR`).
-- Only `log view` is available; advanced log subcommands are hidden in Lite mode.
+### `log clean` - Clean Old Log Files
+
+Delete old log files based on retention period or custom criteria.
+
+```bash
+quanta log clean [options]
+
+Options:
+  --all                Delete all log files (with confirmation)
+  --days <n>          Delete files older than N days
+  --force             Skip confirmation prompt
+  --dry-run           Show what would be deleted without deleting
+```
+
+**Examples:**
+
+```bash
+# Clean files older than retention period (default: 7 days)
+quanta log clean
+
+# Clean files older than 14 days
+quanta log clean --days 14
+
+# Show what would be deleted without deleting
+quanta log clean --days 14 --dry-run
+
+# Delete all log files (with confirmation)
+quanta log clean --all
+
+# Delete all files without confirmation prompt
+quanta log clean --all --force
+```
+
+**Notes:**
+
+- Default behavior deletes files older than 7 days (retention period).
+- Use `--dry-run` to preview what would be deleted.
+- Confirmation is required unless `--force` is used.
+
+---
+
+### `log list` - List Log Files
+
+Show available log files with metadata including filename, date, size, and line count.
+
+```bash
+quanta log list [options]
+
+Options:
+  --format <format>    Output format: table, json, csv (default: table)
+  --sort <field>      Sort by: date, size, name (default: date)
+```
+
+**Examples:**
+
+```bash
+# List all log files in table format
+quanta log list
+
+# List sorted by size (largest first)
+quanta log list --sort size
+
+# Export list as JSON
+quanta log list --format json
+
+# Export list as CSV
+quanta log list --format csv
+```
+
+**Output:**
+
+The table format displays:
+
+- Filename
+- Date (YYYY-MM-DD)
+- Size (human-readable)
+- Line count
+
+---
+
+### `log stats` - Show Log Statistics
+
+Display aggregated statistics from logs including entry counts, error rates, and breakdowns by level and context.
+
+```bash
+quanta log stats [options]
+
+Options:
+  --days <n>          Analyze last N days
+  --context <context> Filter by context
+  --level <level>     Filter by log level (info|warn|error|debug)
+  --format <format>   Output format: table, json (default: table)
+```
+
+**Examples:**
+
+```bash
+# Show statistics for all logs
+quanta log stats
+
+# Show statistics for last 7 days
+quanta log stats --days 7
+
+# Show statistics for errors only
+quanta log stats --level error
+
+# Show statistics for specific context
+quanta log stats --context TradeStart
+
+# Export statistics as JSON
+quanta log stats --format json
+```
+
+**Output:**
+
+The table format displays:
+
+- Total entries
+- Time range (earliest to latest)
+- Breakdown by level (info, warn, error, debug) with counts and percentages
+- Breakdown by context (top 10) with counts and percentages
+- Error rate and warning rate
+
+---
+
+### `log export` - Export Logs
+
+Export logs to different formats (JSON, CSV, TXT) with filtering options.
+
+```bash
+quanta log export [options]
+
+Options:
+  --format <format>   Export format: json, csv, txt (default: json)
+  --output <file>      Output file path (required)
+  --days <n>          Export last N days
+  --context <context> Filter by context
+  --level <level>     Filter by log level (info|warn|error|debug)
+  --since <date>      Start date (YYYY-MM-DD)
+  --until <date>      End date (YYYY-MM-DD)
+```
+
+**Examples:**
+
+```bash
+# Export all logs as JSON
+quanta log export --output logs.json
+
+# Export last 7 days as CSV
+quanta log export --output logs.csv --format csv --days 7
+
+# Export errors only as text
+quanta log export --output errors.txt --format txt --level error
+
+# Export logs for specific date range
+quanta log export --output logs.json --since 2024-01-01 --until 2024-01-31
+
+# Export logs for specific context
+quanta log export --output trade-logs.json --context TradeStart
+```
+
+**Output Formats:**
+
+- **JSON**: Pretty-printed JSON array of log entries
+- **CSV**: Comma-separated values with headers (timestamp, level, context, message, cycleId, operationId, traceId)
+- **TXT**: Plain text format with timestamp, level, context, and message
+
+**Notes:**
+
+- Logs are exported in chronological order (oldest first).
+- The `--output` option is required.
+- CSV format escapes quotes in messages.
 
 ---
 

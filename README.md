@@ -149,6 +149,10 @@ Console output shows both Total P&L and Unrealized P&L explicitly.
 
 - Console output is intercepted and written to JSONL files under `logs/text/` (override with `LOG_DIR`).
 - Use `quanta log view` (with `--follow`, `--context`, `--level`, `--grep`) to view logs.
+- Use `quanta log clean` to manage log file retention.
+- Use `quanta log list` to see available log files with metadata.
+- Use `quanta log stats` to view aggregated statistics and error rates.
+- Use `quanta log export` to export logs to JSON, CSV, or TXT formats.
 - For CLI user-facing messages, print via `UnifiedLogger.getInstance().getOriginalConsole()` to bypass interception.
 
 ### Execution Messages

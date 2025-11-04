@@ -51,7 +51,13 @@ export class HelpCommand {
     console.log('  quanta config save        Save configuration');
     console.log('  quanta config reset       Reset configuration');
     console.log('  quanta config init        Initialize configuration file');
-    console.log('  quanta log view           View console output');
+    console.log('');
+    console.log(chalk.yellow('📝 Logs'));
+    console.log('  quanta log view           View console output logs');
+    console.log('  quanta log clean          Clean old log files');
+    console.log('  quanta log list           List log files with metadata');
+    console.log('  quanta log stats          Show log statistics');
+    console.log('  quanta log export         Export logs to JSON/CSV/TXT');
     console.log('');
 
     console.log(chalk.blue('💡 Examples:'));

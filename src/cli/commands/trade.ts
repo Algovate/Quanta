@@ -12,6 +12,7 @@ import { formatExchangeFriendlyName } from '../utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
 import { checkSessionConflict } from '../shared/session-guard.js';
 import { validateEnv, validateCoins } from '../shared/validation.js';
+import { ExecutionSessionManager } from '../../web/execution-session-manager.js';
 import type { Config } from '../../config/settings.js';
 import type { WorkflowConfig } from '../../types/index.js';
 import type { Exchange } from '../../exchange/types.js';
@@ -374,6 +375,47 @@ export class TradeCommands {
 
     spinner.succeed('Trading system initialized');
 
+    // Create and acquire execution session
+    const sessionManager = ExecutionSessionManager.getInstance();
+    let sessionAcquired = false;
+    let executionSession;
+
+    try {
+      executionSession = sessionManager.createWorkflowSession(
+        env as 'simulation' | 'paper' | 'live'
+      );
+      sessionManager.acquire(executionSession);
+      sessionAcquired = true;
+
+      // Log session info
+      unifiedLogger.info(
+        'Execution session acquired',
+        {
+          mode: executionSession.mode,
+          env: executionSession.env,
+          id: executionSession.id,
+          startTime: executionSession.startTime,
+        },
+        'TradeStart'
+      );
+
+      // Show session info to user
+      originalConsole.log(
+        chalk.blue(`📋 Execution Session: ${executionSession.mode} (${executionSession.env})`)
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Another execution session')) {
+        originalConsole.error(chalk.red(`❌ ${error.message}`));
+        throw error;
+      }
+      // Log warning but continue if session creation fails
+      unifiedLogger.warn(
+        'Failed to create execution session',
+        error instanceof Error ? error : new Error(String(error)),
+        'TradeStart'
+      );
+    }
+
     // Console: Minimal status (use originalConsole to avoid interception)
     originalConsole.log(
       chalk.green('🚀 Trading started. Use "quanta log view" to view detailed output.\n')
@@ -402,10 +444,42 @@ export class TradeCommands {
 
       try {
         await workflow.stop();
+
+        // Release execution session
+        if (sessionAcquired && executionSession) {
+          sessionManager.release(executionSession.id);
+          const duration = Date.now() - executionSession.startTime;
+          originalConsole.log(
+            chalk.gray(
+              `   Session: ${executionSession.mode} (${executionSession.env}) - Runtime: ${Math.floor(duration / 1000)}s`
+            )
+          );
+          unifiedLogger.info(
+            'Execution session released',
+            {
+              id: executionSession.id,
+              mode: executionSession.mode,
+              env: executionSession.env,
+              duration,
+              durationFormatted: `${Math.floor(duration / 1000)}s`,
+            },
+            'TradeStart'
+          );
+        }
+
         unifiedLogger.shutdown();
         originalConsole.log(chalk.green('✅ Trading system stopped gracefully'));
         process.exit(0);
       } catch (error) {
+        // Still release session even on error
+        if (sessionAcquired && executionSession) {
+          try {
+            sessionManager.release(executionSession.id);
+          } catch {
+            // Ignore release errors
+          }
+        }
+
         originalConsole.error(chalk.red('❌ Error during shutdown'));
         if (error instanceof Error) {
           unifiedLogger.error('Error during shutdown', error, 'TradeStart');

@@ -1,13 +1,35 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import fs from 'fs';
 import { QueryInterface } from '../../logging/index.js';
 import { UnifiedLogger } from '../../logging/index.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import {
+  getLogFiles,
+  formatFileSize,
+  promptConfirmation,
+  calculateTimeRange,
+  parseDate,
+  parseDateEndOfDay,
+  filterLogsByGrep,
+  parseLogLevel,
+  countFileLines,
+  type LogFileMetadata,
+} from './log-helpers.js';
+import {
+  formatLogFilesAsJson,
+  formatLogFilesAsCsv,
+  formatLogFilesAsTable,
+  formatStatsAsJson,
+  formatStatsAsTable,
+  exportLogsAsJson,
+  exportLogsAsCsv,
+  exportLogsAsText,
+} from './log-formatters.js';
+import type { TextLog } from '../../logging/types.js';
 
 export class LogCommands {
   static register(program: Command): void {
-    // Lite mode: hide non-console log commands
-
     // Show console output
     program
       .command('view')
@@ -22,6 +44,63 @@ export class LogCommands {
         await handleAsync(async () => {
           await LogCommands.showConsoleOutput(options);
         }, 'LogCommands.view');
+      });
+
+    // Clean old log files
+    program
+      .command('clean')
+      .description('Clean old log files')
+      .option('--all', 'Delete all log files (with confirmation)', false)
+      .option('--days <n>', 'Delete files older than N days', parseInt)
+      .option('--force', 'Skip confirmation prompt', false)
+      .option('--dry-run', 'Show what would be deleted without deleting', false)
+      .action(async options => {
+        await handleAsync(async () => {
+          await LogCommands.cleanLogs(options);
+        }, 'LogCommands.clean');
+      });
+
+    // List log files
+    program
+      .command('list')
+      .description('List available log files with metadata')
+      .option('--format <format>', 'Output format: table, json, csv', 'table')
+      .option('--sort <field>', 'Sort by: date, size, name', 'date')
+      .action(async options => {
+        await handleAsync(async () => {
+          await LogCommands.listLogFiles(options);
+        }, 'LogCommands.list');
+      });
+
+    // Show log statistics
+    program
+      .command('stats')
+      .description('Show log statistics and aggregates')
+      .option('--days <n>', 'Analyze last N days', parseInt)
+      .option('--context <context>', 'Filter by context')
+      .option('--level <level>', 'Filter by log level (info|warn|error|debug)')
+      .option('--format <format>', 'Output format: table, json', 'table')
+      .action(async options => {
+        await handleAsync(async () => {
+          await LogCommands.showStats(options);
+        }, 'LogCommands.stats');
+      });
+
+    // Export logs
+    program
+      .command('export')
+      .description('Export logs to different formats')
+      .option('--format <format>', 'Export format: json, csv, txt', 'json')
+      .option('--output <file>', 'Output file path (required)')
+      .option('--days <n>', 'Export last N days', parseInt)
+      .option('--context <context>', 'Filter by context')
+      .option('--level <level>', 'Filter by log level (info|warn|error|debug)')
+      .option('--since <date>', 'Start date (YYYY-MM-DD)')
+      .option('--until <date>', 'End date (YYYY-MM-DD)')
+      .action(async options => {
+        await handleAsync(async () => {
+          await LogCommands.exportLogs(options);
+        }, 'LogCommands.export');
       });
   }
 
@@ -40,7 +119,7 @@ export class LogCommands {
     const originalConsole = logger.getOriginalConsole();
 
     // Parse and validate level
-    const level = this.parseLogLevel(options.level);
+    const level = parseLogLevel(options.level);
 
     try {
       // Query text logs
@@ -52,7 +131,7 @@ export class LogCommands {
       });
 
       // Filter logs by grep pattern if specified
-      const logs = this.filterLogsByGrep(result.logs, options.grep);
+      const logs = filterLogsByGrep(result.logs, options.grep);
 
       // Display logs
       if (logs.length === 0) {
@@ -93,34 +172,6 @@ export class LogCommands {
         this.cleanupResources();
       }
     }
-  }
-
-  /**
-   * Parse and validate log level option
-   */
-  private static parseLogLevel(level?: string): 'info' | 'warn' | 'error' | 'debug' | undefined {
-    if (!level) {
-      return undefined;
-    }
-    const normalized = level.toLowerCase();
-    if (['info', 'warn', 'error', 'debug'].includes(normalized)) {
-      return normalized as 'info' | 'warn' | 'error' | 'debug';
-    }
-    return undefined;
-  }
-
-  /**
-   * Filter logs by grep pattern
-   */
-  private static filterLogsByGrep<T extends { message: string; context: string }>(
-    logs: T[],
-    grep?: string
-  ): T[] {
-    if (!grep) {
-      return logs;
-    }
-    const pattern = new RegExp(grep, 'i');
-    return logs.filter(log => pattern.test(log.message) || pattern.test(log.context));
   }
 
   /**
@@ -175,7 +226,7 @@ export class LogCommands {
             limit: 100,
           });
 
-          const newLogs = this.filterLogsByGrep(newResult.logs, queryOptions.grep);
+          const newLogs = filterLogsByGrep(newResult.logs, queryOptions.grep);
 
           // Sort by timestamp ascending (oldest first)
           newLogs.sort((a, b) => a.timestamp - b.timestamp);
@@ -228,6 +279,341 @@ export class LogCommands {
       UnifiedLogger.getInstance().shutdown();
     } catch {
       // Ignore errors during cleanup
+    }
+  }
+
+  /**
+   * Clean log files
+   */
+  private static async cleanLogs(options: {
+    all?: boolean;
+    days?: number;
+    force?: boolean;
+    dryRun?: boolean;
+  }): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+    const files = await getLogFiles();
+
+    if (files.length === 0) {
+      originalConsole.log(chalk.yellow('⚠️  No log files found'));
+      return;
+    }
+
+    let filesToDelete: typeof files = [];
+
+    if (options.all) {
+      filesToDelete = files;
+    } else if (options.days) {
+      const cutoff = Date.now() - options.days * 24 * 60 * 60 * 1000;
+      filesToDelete = files.filter(f => f.mtime.getTime() < cutoff);
+    } else {
+      // Default: delete files older than retention period (7 days)
+      const retentionDays = 7;
+      const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+      filesToDelete = files.filter(f => f.mtime.getTime() < cutoff);
+    }
+
+    if (filesToDelete.length === 0) {
+      originalConsole.log(chalk.green('✓ No files to delete'));
+      return;
+    }
+
+    // Show what would be deleted
+    originalConsole.log(chalk.blue(`\n📋 Files to delete (${filesToDelete.length}):\n`));
+    let totalSize = 0;
+    for (const file of filesToDelete) {
+      totalSize += file.size;
+      originalConsole.log(
+        `  ${chalk.gray(file.name)} ${chalk.dim(`(${formatFileSize(file.size)})`)}`
+      );
+    }
+    originalConsole.log(chalk.dim(`\nTotal size: ${formatFileSize(totalSize)}\n`));
+
+    if (options.dryRun) {
+      originalConsole.log(chalk.yellow('🔍 Dry run mode - no files were deleted'));
+      return;
+    }
+
+    // Confirm deletion
+    if (!options.force) {
+      const confirmed = await promptConfirmation(`Delete ${filesToDelete.length} file(s)?`);
+      if (!confirmed) {
+        originalConsole.log(chalk.yellow('✗ Cleanup cancelled'));
+        return;
+      }
+    }
+
+    // Delete files
+    let deletedCount = 0;
+    let errorCount = 0;
+
+    for (const file of filesToDelete) {
+      try {
+        await fs.promises.unlink(file.path);
+        deletedCount++;
+      } catch (error) {
+        errorCount++;
+        originalConsole.error(chalk.red(`Failed to delete ${file.name}:`), error);
+      }
+    }
+
+    if (deletedCount > 0) {
+      originalConsole.log(chalk.green(`\n✓ Deleted ${deletedCount} file(s)`));
+    }
+    if (errorCount > 0) {
+      originalConsole.log(chalk.red(`✗ Failed to delete ${errorCount} file(s)`));
+    }
+  }
+
+  /**
+   * Sort log files by field
+   */
+  private static sortLogFiles(files: LogFileMetadata[], sortField: string): LogFileMetadata[] {
+    return [...files].sort((a, b) => {
+      if (sortField === 'date') {
+        return b.mtime.getTime() - a.mtime.getTime(); // Newest first
+      } else if (sortField === 'size') {
+        return b.size - a.size; // Largest first
+      } else if (sortField === 'name') {
+        return a.name.localeCompare(b.name);
+      }
+      return 0;
+    });
+  }
+
+  /**
+   * List log files
+   */
+  private static async listLogFiles(options: { format?: string; sort?: string }): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+    const files = await getLogFiles();
+
+    if (files.length === 0) {
+      originalConsole.log(chalk.yellow('⚠️  No log files found'));
+      return;
+    }
+
+    // Sort files
+    const sortField = options.sort || 'date';
+    const sortedFiles = this.sortLogFiles(files, sortField);
+
+    // Count lines in files
+    const filesWithLineCounts = await Promise.all(
+      sortedFiles.map(async file => ({
+        ...file,
+        lineCount: await countFileLines(file.path),
+      }))
+    );
+
+    const format = options.format || 'table';
+    let output = '';
+
+    if (format === 'json') {
+      output = formatLogFilesAsJson(filesWithLineCounts);
+    } else if (format === 'csv') {
+      output = formatLogFilesAsCsv(filesWithLineCounts);
+    } else {
+      output = formatLogFilesAsTable(filesWithLineCounts);
+    }
+
+    originalConsole.log(output);
+  }
+
+  /**
+   * Aggregate statistics from logs
+   */
+  private static aggregateStats(logs: TextLog[]): {
+    total: number;
+    byLevel: Record<string, number>;
+    byContext: Record<string, number>;
+    errors: number;
+    warnings: number;
+    errorRate: number;
+    warningRate: number;
+    timeRange: { earliest: number; latest: number };
+  } {
+    const stats = {
+      total: logs.length,
+      byLevel: {} as Record<string, number>,
+      byContext: {} as Record<string, number>,
+      errors: 0,
+      warnings: 0,
+      timeRange: {
+        earliest: Math.min(...logs.map(l => l.timestamp)),
+        latest: Math.max(...logs.map(l => l.timestamp)),
+      },
+    };
+
+    for (const log of logs) {
+      stats.byLevel[log.level] = (stats.byLevel[log.level] || 0) + 1;
+      stats.byContext[log.context] = (stats.byContext[log.context] || 0) + 1;
+      if (log.level === 'error') stats.errors++;
+      if (log.level === 'warn') stats.warnings++;
+    }
+
+    const errorRate = stats.total > 0 ? (stats.errors / stats.total) * 100 : 0;
+    const warningRate = stats.total > 0 ? (stats.warnings / stats.total) * 100 : 0;
+
+    return {
+      ...stats,
+      errorRate,
+      warningRate,
+    };
+  }
+
+  /**
+   * Show log statistics
+   */
+  private static async showStats(options: {
+    days?: number;
+    context?: string;
+    level?: string;
+    format?: string;
+  }): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+    const query = QueryInterface.getInstance();
+
+    // Calculate time range
+    const since = calculateTimeRange(options.days);
+
+    // Parse level
+    const level = parseLogLevel(options.level);
+
+    // Query logs
+    const result = await query.queryTextLogs({
+      context: options.context,
+      level,
+      since,
+      limit: 100000, // Large limit to get all matching logs
+    });
+
+    const logs = result.logs;
+
+    if (logs.length === 0) {
+      originalConsole.log(chalk.yellow('⚠️  No logs found matching the criteria'));
+      return;
+    }
+
+    // Aggregate statistics
+    const stats = this.aggregateStats(logs);
+
+    const format = options.format || 'table';
+    const output = format === 'json' ? formatStatsAsJson(stats) : formatStatsAsTable(stats);
+
+    originalConsole.log(output);
+  }
+
+  /**
+   * Calculate export time range from options
+   */
+  private static calculateExportTimeRange(options: {
+    days?: number;
+    since?: string;
+    until?: string;
+  }): { since?: number; until?: number; error?: string } {
+    let since: number | undefined;
+    let until: number | undefined;
+
+    if (options.days) {
+      since = calculateTimeRange(options.days);
+    }
+
+    if (options.since) {
+      const parsed = parseDate(options.since);
+      if (parsed === null) {
+        return { error: `Invalid --since date: ${options.since}` };
+      }
+      since = parsed;
+    }
+
+    if (options.until) {
+      const parsed = parseDateEndOfDay(options.until);
+      if (parsed === null) {
+        return { error: `Invalid --until date: ${options.until}` };
+      }
+      until = parsed;
+    }
+
+    return { since, until };
+  }
+
+  /**
+   * Export logs
+   */
+  private static async exportLogs(options: {
+    format?: string;
+    output?: string;
+    days?: number;
+    context?: string;
+    level?: string;
+    since?: string;
+    until?: string;
+  }): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const originalConsole = logger.getOriginalConsole();
+    const query = QueryInterface.getInstance();
+
+    if (!options.output) {
+      originalConsole.error(chalk.red('✗ Error: --output is required'));
+      return;
+    }
+
+    // Calculate time range
+    const timeRange = this.calculateExportTimeRange(options);
+    if (timeRange.error) {
+      originalConsole.error(chalk.red(`✗ ${timeRange.error}`));
+      return;
+    }
+
+    // Parse level
+    const level = parseLogLevel(options.level);
+
+    // Query logs
+    const result = await query.queryTextLogs({
+      context: options.context,
+      level,
+      since: timeRange.since,
+      until: timeRange.until,
+      limit: 100000, // Large limit
+    });
+
+    const logs = result.logs;
+
+    if (logs.length === 0) {
+      originalConsole.log(chalk.yellow('⚠️  No logs found matching the criteria'));
+      return;
+    }
+
+    // Sort by timestamp ascending
+    logs.sort((a, b) => a.timestamp - b.timestamp);
+
+    const format = options.format || 'json';
+    let content = '';
+
+    if (format === 'json') {
+      content = exportLogsAsJson(logs);
+    } else if (format === 'csv') {
+      content = exportLogsAsCsv(logs);
+    } else if (format === 'txt') {
+      content = exportLogsAsText(logs);
+    } else {
+      originalConsole.error(chalk.red(`✗ Invalid format: ${format}. Use json, csv, or txt`));
+      return;
+    }
+
+    // Write to file
+    try {
+      await fs.promises.writeFile(options.output, content, 'utf-8');
+      originalConsole.log(
+        chalk.green(`✓ Exported ${logs.length} log entries to ${options.output}`)
+      );
+      originalConsole.log(chalk.dim(`Format: ${format}, Size: ${formatFileSize(content.length)}`));
+    } catch (error) {
+      originalConsole.error(chalk.red(`✗ Failed to write file: ${options.output}`), error);
+      throw error;
     }
   }
 }

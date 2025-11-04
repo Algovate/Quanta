@@ -5,7 +5,7 @@ Quanta uses a simplified, non-tiered logging system focused on reliability, clea
 - Text logs are captured to daily-rotated JSONL files in `logs/text/`.
 - Set `LOG_DIR` to override the directory. Defaults to `./logs/text`.
 - Tiered storage (L0/L1/L2/L3), snapshots, aggregated errors, and metrics persistence are removed.
-- View logs with `quanta log view` (supports `--follow`, `--context`, `--level`, `--grep`, `--format`).
+- Manage logs with `quanta log` commands: `view`, `clean`, `list`, `stats`, and `export`.
 
 ---
 
@@ -71,6 +71,76 @@ quanta log view --grep "order|signal"
 quanta log view --format raw
 ```
 
+### Clean old log files
+
+```bash
+# Clean files older than retention period (default: 7 days)
+quanta log clean
+
+# Clean files older than 14 days
+quanta log clean --days 14
+
+# Show what would be deleted without deleting
+quanta log clean --days 14 --dry-run
+
+# Delete all log files (with confirmation)
+quanta log clean --all
+
+# Delete all files without confirmation
+quanta log clean --all --force
+```
+
+### List log files
+
+```bash
+# List all log files with metadata
+quanta log list
+
+# List sorted by size (largest first)
+quanta log list --sort size
+
+# Export list as JSON
+quanta log list --format json
+
+# Export list as CSV
+quanta log list --format csv
+```
+
+### Show log statistics
+
+```bash
+# Show statistics for all logs
+quanta log stats
+
+# Show statistics for last 7 days
+quanta log stats --days 7
+
+# Show statistics for errors only
+quanta log stats --level error
+
+# Show statistics for specific context
+quanta log stats --context TradeStart
+
+# Export statistics as JSON
+quanta log stats --format json
+```
+
+### Export logs
+
+```bash
+# Export all logs as JSON
+quanta log export --output logs.json
+
+# Export last 7 days as CSV
+quanta log export --output logs.csv --format csv --days 7
+
+# Export errors only as text
+quanta log export --output errors.txt --format txt --level error
+
+# Export logs for specific date range
+quanta log export --output logs.json --since 2024-01-01 --until 2024-01-31
+```
+
 ### Common recipes
 
 - Only errors, live:
@@ -83,6 +153,25 @@ quanta log view --level error --follow --format raw
 
 ```bash
 quanta log view --grep "Execution|Position" --lines 500
+```
+
+- Clean up old logs before archiving:
+
+```bash
+quanta log clean --days 30 --dry-run  # Preview
+quanta log clean --days 30             # Clean
+```
+
+- Analyze error rates:
+
+```bash
+quanta log stats --level error --days 7
+```
+
+- Export logs for analysis:
+
+```bash
+quanta log export --output errors.json --level error --days 7
 ```
 
 ---
@@ -128,11 +217,14 @@ Optional defaults in `config/config.json`:
 Removed features in Lite mode:
 
 - L0/L1/L2/L3 storage, SQLite database, snapshots, aggregated errors, metrics persistence, sampling.
-- CLI commands tied to those features are hidden or no-ops (e.g., `log query/trace/stats/snapshot/storage/cleanup`).
+- Advanced query commands tied to tiered storage are no longer available.
 
 Alternatives now:
 
 - Use `quanta log view` with filters for operational visibility.
+- Use `quanta log stats` for aggregated statistics and error rates.
+- Use `quanta log export` to export logs for external analysis.
+- Use `quanta log clean` to manage log file retention.
 - Emit structured fields in `metadata` for richer context when needed.
 - Persist domain data you need elsewhere (e.g., your own stores) rather than relying on logger tiers.
 
@@ -155,7 +247,20 @@ Lite logger avoids background intervals and ensures file streams are closed on s
 
 ### Where are logs stored and how do I clean them?
 
-JSONL files are in `logs/text/` (or `LOG_DIR`). Retention deletes files older than `retentionDays`. Manual cleanup is just deleting old files.
+JSONL files are in `logs/text/` (or `LOG_DIR`). Automatic retention deletes files older than `retentionDays` (default: 7 days). Use `quanta log clean` to manually clean old files:
+
+```bash
+# Clean files older than retention period
+quanta log clean
+
+# Clean files older than N days
+quanta log clean --days 14
+
+# Preview what would be deleted
+quanta log clean --days 14 --dry-run
+```
+
+Use `quanta log list` to see available log files and their sizes.
 
 ---
 
