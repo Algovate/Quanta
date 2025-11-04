@@ -122,7 +122,7 @@ export class DroneInstance extends EventEmitter {
       workflowConfig,
       {
         eventPrefix: `drone:${config.id}:`,
-        loggerContext: `Arena:${arenaId}:Drone:${config.id}`,
+        loggerContext: `Arena:${arenaId}:Drone:${config.id}:${config.name}`,
       }
     );
 

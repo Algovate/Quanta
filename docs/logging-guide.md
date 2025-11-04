@@ -241,7 +241,7 @@ const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
 originalConsole.log('User-visible message');
 ```
 
-### Why don’t commands hang anymore?
+### Why don't commands hang anymore?
 
 Lite logger avoids background intervals and ensures file streams are closed on shutdown. Commands call `UnifiedLogger.getInstance().shutdown()` before exiting.
 

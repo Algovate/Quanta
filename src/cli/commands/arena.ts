@@ -214,6 +214,61 @@ export class ArenaCommands {
       originalConsole.log(chalk.green('\n✅ Arena is running'));
       originalConsole.log(chalk.gray('  Use "quanta arena status" to monitor progress'));
       originalConsole.log(chalk.gray(`  Use "quanta arena stop ${arenaId}" to stop`));
+      originalConsole.log(chalk.gray('  Press Ctrl-C to stop gracefully'));
+
+      // Set up signal handlers for graceful shutdown
+      let isShuttingDown = false;
+      const shutdownHandler = async (signal: string) => {
+        if (isShuttingDown) {
+          // Force exit if already shutting down
+          process.exit(1);
+          return;
+        }
+        isShuttingDown = true;
+
+        originalConsole.log(chalk.yellow(`\n⏹  Shutting down arena (${signal})...`));
+        logger.info(
+          chalk.yellow(`Shutting down arena (${signal})...`),
+          { arenaId, signal },
+          'ArenaStart'
+        );
+
+        try {
+          await arenaManager.stopArena(arenaId);
+
+          logger.shutdown();
+          originalConsole.log(chalk.green('✅ Arena stopped gracefully'));
+          process.exit(0);
+        } catch (error) {
+          originalConsole.error(chalk.red('❌ Error during shutdown'));
+          if (error instanceof Error) {
+            logger.error('Error during shutdown', error, 'ArenaStart');
+          }
+          logger.shutdown();
+          process.exit(1);
+        }
+      };
+
+      process.on('SIGINT', () => {
+        shutdownHandler('SIGINT').catch(error => {
+          originalConsole.error(chalk.red('❌ Fatal error during shutdown'));
+          if (error instanceof Error) {
+            logger.error('Fatal error during shutdown', error, 'ArenaStart');
+          }
+          logger.shutdown();
+          process.exit(1);
+        });
+      });
+      process.on('SIGTERM', () => {
+        shutdownHandler('SIGTERM').catch(error => {
+          originalConsole.error(chalk.red('❌ Fatal error during shutdown'));
+          if (error instanceof Error) {
+            logger.error('Fatal error during shutdown', error, 'ArenaStart');
+          }
+          logger.shutdown();
+          process.exit(1);
+        });
+      });
 
       // If duration specified, stop after duration
       if (options.duration) {
@@ -222,8 +277,15 @@ export class ArenaCommands {
           originalConsole.log(chalk.yellow(`\n⏱️  Duration limit reached. Stopping arena...`));
           await arenaManager.stopArena(arenaId);
           originalConsole.log(chalk.green('✅ Arena stopped'));
+          logger.shutdown();
+          process.exit(0);
         }, durationMs);
       }
+
+      // Keep process alive until interrupted or duration limit reached
+      await new Promise(() => {
+        // Never resolves, keeps process alive until SIGINT, SIGTERM, or duration timeout
+      });
     } catch (error) {
       startSpinner.fail('Failed to start arena');
       throw error;

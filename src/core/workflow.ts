@@ -230,7 +230,37 @@ export class TradingWorkflow {
    * - Background: Buffered logger output for efficiency
    */
   private emitLog(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
-    this.cycleLogger.log(level, message);
+    // Prefix message with drone and session info when in arena context
+    let prefixedMessage = message;
+    if (this.loggerContext.startsWith('Arena:')) {
+      // Extract drone/arena context from loggerContext
+      const parts = this.loggerContext.split(':');
+      if (parts.length >= 4 && parts[0] === 'Arena' && parts[2] === 'Drone') {
+        const droneId = parts[3];
+        const droneName = parts.length >= 5 ? parts[4] : undefined;
+
+        // Get ExecutionSession information
+        const sessionManager = ExecutionSessionManager.getInstance();
+        const activeSession = sessionManager.getActive();
+
+        // Build prefix
+        const prefixParts: string[] = [];
+        if (droneName) {
+          prefixParts.push(chalk.cyan(`[${droneName}]`));
+        } else {
+          prefixParts.push(chalk.cyan(`[Drone:${droneId}]`));
+        }
+        if (activeSession) {
+          prefixParts.push(chalk.gray(`[Session:${activeSession.id}]`));
+        }
+
+        if (prefixParts.length > 0) {
+          prefixedMessage = `${prefixParts.join(' ')} ${message}`;
+        }
+      }
+    }
+
+    this.cycleLogger.log(level, prefixedMessage);
   }
 
   /**
@@ -559,14 +589,19 @@ export class TradingWorkflow {
     const sessionManager = ExecutionSessionManager.getInstance();
     const activeSession = sessionManager.getActive();
 
-    // Extract drone/arena context from loggerContext (format: "Arena:${arenaId}:Drone:${droneId}")
+    // Extract drone/arena context from loggerContext (format: "Arena:${arenaId}:Drone:${droneId}:${droneName}")
     let arenaId: string | undefined;
     let droneId: string | undefined;
+    let droneName: string | undefined;
     if (this.loggerContext.startsWith('Arena:')) {
       const parts = this.loggerContext.split(':');
       if (parts.length >= 4 && parts[0] === 'Arena' && parts[2] === 'Drone') {
         arenaId = parts[1];
         droneId = parts[3];
+        // Optional drone name (parts[4] if present)
+        if (parts.length >= 5) {
+          droneName = parts[4];
+        }
       }
     }
 
@@ -646,6 +681,7 @@ export class TradingWorkflow {
             ? {
                 arenaId,
                 droneId,
+                droneName,
               }
             : undefined,
       });
@@ -2534,7 +2570,40 @@ export class TradingWorkflow {
 
     // Structured output - bypass interception (already in operation logs)
     if (!this.isBackgroundMode) {
-      this.logToConsole('\n📈 FINAL REPORT');
+      // Extract drone/arena context from loggerContext if in arena context
+      let arenaId: string | undefined;
+      let droneId: string | undefined;
+      let droneName: string | undefined;
+      if (this.loggerContext.startsWith('Arena:')) {
+        const parts = this.loggerContext.split(':');
+        if (parts.length >= 4 && parts[0] === 'Arena' && parts[2] === 'Drone') {
+          arenaId = parts[1];
+          droneId = parts[3];
+          // Optional drone name (parts[4] if present)
+          if (parts.length >= 5) {
+            droneName = parts[4];
+          }
+        }
+      }
+
+      // Get ExecutionSession information
+      const sessionManager = ExecutionSessionManager.getInstance();
+      const activeSession = sessionManager.getActive();
+
+      // Build report header
+      let reportHeader = '\n📈 FINAL REPORT';
+      if (arenaId && droneId) {
+        if (droneName) {
+          reportHeader += ` - Drone: ${droneName} (${droneId})`;
+        } else {
+          reportHeader += ` - Drone: ${droneId}`;
+        }
+      }
+      if (activeSession) {
+        reportHeader += ` | Session: ${activeSession.id}`;
+      }
+
+      this.logToConsole(reportHeader);
       this.logToConsole('='.repeat(50));
       this.logToConsole(`Runtime: ${runtimeMinutes} minutes`);
       this.logToConsole(`Cycles: ${this.state.cycleCount}`);

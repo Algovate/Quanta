@@ -28,6 +28,7 @@ export class CycleDisplay {
       arenaContext?: {
         arenaId: string;
         droneId: string;
+        droneName?: string;
       };
     }
   ): string {
@@ -40,13 +41,17 @@ export class CycleDisplay {
       const modeColor = session.mode === 'arena' ? chalk.magenta : chalk.blue;
       const envColor =
         session.env === 'live' ? chalk.red : session.env === 'paper' ? chalk.yellow : chalk.gray;
-      title += ` | ${modeColor(session.mode.toUpperCase())} | ${envColor(session.env.toUpperCase())}`;
+      title += ` | ${modeColor(session.mode.toUpperCase())} | ${envColor(session.env.toUpperCase())} | ${chalk.gray(`Session:${session.id}`)}`;
     }
 
     // Add arena/drone context
     if (options?.arenaContext) {
-      const { arenaId, droneId } = options.arenaContext;
-      title += ` | ${chalk.magenta(`Arena:${arenaId}`)} | ${chalk.cyan(`Drone:${droneId}`)}`;
+      const { arenaId, droneId, droneName } = options.arenaContext;
+      if (droneName) {
+        title += ` | ${chalk.magenta(`Arena:${arenaId}`)} | ${chalk.cyan(`Drone:${droneName} (${droneId})`)}`;
+      } else {
+        title += ` | ${chalk.magenta(`Arena:${arenaId}`)} | ${chalk.cyan(`Drone:${droneId}`)}`;
+      }
     }
 
     return `${header}\n${title}\n${header}`;

@@ -9,13 +9,16 @@ Log contexts are string identifiers used to categorize log entries by their sour
 ## Core Contexts
 
 ### Console Interception
+
 - **`Console`** - Default context for intercepted console.log/console.warn/console.error output
 
 ### CLI Commands
+
 - **`TradeStart`** - Trading system startup and initialization
 - **`Server`** - API server startup, shutdown, and operations
 
 ### Core Components
+
 - **`Workflow`** - Trading workflow operations (default)
 - **`CycleLogger`** - Cycle event logging
 - **`TradingCycle`** - Trading cycle operations (mapped from `trading_cycle`)
@@ -25,6 +28,7 @@ Log contexts are string identifiers used to categorize log entries by their sour
 - **`MarketData`** - Market data operations (mapped from `market_data`)
 
 ### Arena System
+
 - **`ArenaManager`** - Arena manager operations
 - **`ArenaOrchestrator`** - Arena orchestrator operations (dynamic: `ArenaOrchestrator:${arenaId}`)
 - **`ArenaStorage`** - Arena storage operations
@@ -32,6 +36,7 @@ Log contexts are string identifiers used to categorize log entries by their sour
 - **`DroneAIAgent`** - Drone AI agent operations (dynamic: `DroneAIAgent:${droneId}`)
 
 ### Web Server Components
+
 - **`Server`** - API server main operations
 - **`TradingService`** - Trading service operations
 - **`TradingManager`** - Trading manager operations
@@ -44,11 +49,13 @@ Log contexts are string identifiers used to categorize log entries by their sour
 - **`HealthCheck`** - Health check operations
 
 ### Exchange Adapters
+
 - **`OKX`** - OKX exchange adapter
 - **`CCXT`** - CCXT helper operations
 - **`Exchange`** - Generic exchange adapter (dynamic based on exchange name)
 
 ### Other Components
+
 - **`CircuitBreaker`** - Circuit breaker operations (dynamic: `CircuitBreaker:${name}`)
 - **`MarketData`** - Market data provider
 - **`PromptLoader`** - Prompt loading operations
@@ -130,4 +137,3 @@ quanta log stats
 ```
 
 This will show a breakdown of log entries by context, helping you identify which contexts are present in your logs.
-
