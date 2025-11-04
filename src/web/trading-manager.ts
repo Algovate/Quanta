@@ -11,6 +11,7 @@ import type { OrderEvent, RiskSnapshot, SignalEvent, TradeEvent } from './types.
 import { EventBus } from '../core/event-bus.js';
 import { createLogger } from './utils/logger.js';
 import { RiskSnapshotAggregator } from './risk-snapshot-aggregator.js';
+import { ExecutionSessionManager } from './execution-session-manager.js';
 
 export interface TradingState {
   isRunning: boolean;
@@ -146,87 +147,132 @@ export class TradingManager extends EventEmitter {
 
     this.logger.info('Starting trading workflow...');
 
-    // Store references for health checks
-    this.exchange = exchange;
-    this.marketDataProvider = marketDataProvider;
-    this.aiAgent = aiAgent;
+    const sessionManager = ExecutionSessionManager.getInstance();
+    let sessionAcquired = false;
 
-    // Create workflow - both CLI and API server modes use structured logs only
-    this.workflow = new TradingWorkflow(exchange, marketDataProvider, aiAgent, config);
-
-    // Set up custom exit plans getter
-    this.workflow.setCustomExitPlansGetter((symbol, side) => this.getCustomExitPlan(symbol, side));
-
-    // Wrap the workflow methods to emit events
-    this.setupEventEmitters();
-
-    // Optionally enable bar-driven scheduling if marketTimeframes are provided
     try {
-      const tfs = (config as any).marketTimeframes as string[] | undefined;
-      if (Array.isArray(tfs) && tfs.length > 0) {
-        const symbols = (config.coins || []).map(c => `${c}/USDT`);
-        const timeframes = tfs.filter(isTimeframe) as Timeframe[];
-        this.workflow.enableBarDrivenScheduling({
-          symbols,
-          timeframes: timeframes as BarTimeframe[],
-          pollIntervalMs: 5_000,
-        });
+      // Acquire exclusive execution session (mode: 'strategy')
+      const session = sessionManager.createWorkflowSession();
+      sessionManager.acquire(session);
+      sessionAcquired = true;
 
-        // Start streaming ingestion for gap detection and future WS migration (non-intrusive)
-        const sCfg: StreamingConfig = { symbols, timeframes };
-        this.streaming = new StreamingIngestion(exchange, sCfg);
-        this.streaming.on('gap:detected', async gap => {
-          this.logger.warn(
-            'Market data gap detected',
-            { gap } as Record<string, unknown>,
-            this.context
-          );
-          // Attempt a lightweight targeted backfill to warm caches (best-effort)
-          try {
-            const tf = gap.timeframe as Timeframe;
-            const tfMs = timeframeToMs(tf);
-            const estBars = Math.min(
-              500,
-              Math.max(1, Math.floor((gap.missingTo - gap.missingFrom) / tfMs))
-            );
-            await exchange.getCandlesticks(gap.symbol, tf, estBars);
-          } catch (e) {
+      // Store references for health checks
+      this.exchange = exchange;
+      this.marketDataProvider = marketDataProvider;
+      this.aiAgent = aiAgent;
+
+      // Create workflow - both CLI and API server modes use structured logs only
+      this.workflow = new TradingWorkflow(exchange, marketDataProvider, aiAgent, config);
+
+      // Set up custom exit plans getter
+      this.workflow.setCustomExitPlansGetter((symbol, side) =>
+        this.getCustomExitPlan(symbol, side)
+      );
+
+      // Wrap the workflow methods to emit events
+      this.setupEventEmitters();
+
+      // Optionally enable bar-driven scheduling if marketTimeframes are provided
+      try {
+        const tfs = (config as any).marketTimeframes as string[] | undefined;
+        if (Array.isArray(tfs) && tfs.length > 0) {
+          const symbols = (config.coins || []).map(c => `${c}/USDT`);
+          const timeframes = tfs.filter(isTimeframe) as Timeframe[];
+          this.workflow.enableBarDrivenScheduling({
+            symbols,
+            timeframes: timeframes as BarTimeframe[],
+            pollIntervalMs: 5_000,
+          });
+
+          // Start streaming ingestion for gap detection and future WS migration (non-intrusive)
+          const sCfg: StreamingConfig = { symbols, timeframes };
+          this.streaming = new StreamingIngestion(exchange, sCfg);
+          this.streaming.on('gap:detected', async gap => {
             this.logger.warn(
-              'Backfill attempt failed',
-              { error: (e as Error)?.message },
+              'Market data gap detected',
+              { gap } as Record<string, unknown>,
+              this.context
+            );
+            // Attempt a lightweight targeted backfill to warm caches (best-effort)
+            try {
+              const tf = gap.timeframe as Timeframe;
+              const tfMs = timeframeToMs(tf);
+              const estBars = Math.min(
+                500,
+                Math.max(1, Math.floor((gap.missingTo - gap.missingFrom) / tfMs))
+              );
+              await exchange.getCandlesticks(gap.symbol, tf, estBars);
+            } catch (e) {
+              this.logger.warn(
+                'Backfill attempt failed',
+                { error: (e as Error)?.message },
+                this.context
+              );
+            }
+          });
+          this.streaming.on('stream:error', e =>
+            this.logger.warn(
+              'Streaming error',
+              e instanceof Error ? { error: e.message } : { error: String(e) },
+              this.context
+            )
+          );
+          this.streaming.start(5_000);
+        }
+      } catch (e) {
+        this.logger.warn(
+          'Failed to enable bar-driven scheduling; falling back to timer',
+          e instanceof Error ? { error: e.message } : { error: String(e) },
+          this.context
+        );
+      }
+
+      this.workflow.start().catch(error => {
+        this.logger.error(
+          'Trading workflow error',
+          error instanceof Error ? error : new Error(String(error)),
+          this.context
+        );
+        this.emit('error', error);
+        // Release session on workflow error
+        if (sessionAcquired) {
+          try {
+            sessionManager.release('workflow');
+          } catch (releaseError) {
+            this.logger.warn(
+              'Failed to release session on workflow error',
+              releaseError instanceof Error ? releaseError : new Error(String(releaseError)),
               this.context
             );
           }
-        });
-        this.streaming.on('stream:error', e =>
-          this.logger.warn(
-            'Streaming error',
-            e instanceof Error ? { error: e.message } : { error: String(e) },
-            this.context
-          )
-        );
-        this.streaming.start(5_000);
-      }
-    } catch (e) {
-      this.logger.warn(
-        'Failed to enable bar-driven scheduling; falling back to timer',
-        e instanceof Error ? { error: e.message } : { error: String(e) },
-        this.context
-      );
-    }
+          sessionAcquired = false;
+        }
+      });
 
-    this.workflow.start().catch(error => {
+      this.state.isRunning = true;
+      this.state.startTime = Date.now();
+      this.emit('system:state', { ...this.state });
+    } catch (error) {
+      // Release session if we failed after acquiring
+      if (sessionAcquired) {
+        try {
+          sessionManager.release('workflow');
+        } catch (releaseError) {
+          this.logger.warn(
+            'Failed to release session on start error',
+            releaseError instanceof Error ? releaseError : new Error(String(releaseError)),
+            this.context
+          );
+        }
+      }
+
       this.logger.error(
-        'Trading workflow error',
+        'Failed to start trading workflow',
         error instanceof Error ? error : new Error(String(error)),
         this.context
       );
-      this.emit('error', error);
-    });
-
-    this.state.isRunning = true;
-    this.state.startTime = Date.now();
-    this.emit('system:state', { ...this.state });
+      throw error;
+    }
   }
 
   // timeframeToMs from utils/timeframe is used
@@ -244,12 +290,20 @@ export class TradingManager extends EventEmitter {
     try {
       if (this.streaming) this.streaming.stop();
       this.streaming = undefined;
-    } catch {
-      // ignore
+    } catch (error) {
+      // Log but don't fail on streaming stop errors
+      this.logger.warn(
+        'Error stopping streaming ingestion',
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
     }
 
     this.state.isRunning = false;
     this.emit('system:state', { ...this.state });
+
+    // Release exclusive session
+    ExecutionSessionManager.getInstance().release('workflow');
   }
 
   async pause(): Promise<void> {

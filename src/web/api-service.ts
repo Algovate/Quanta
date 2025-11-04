@@ -46,6 +46,8 @@ export async function startTradingService(
     config,
     coinsArray
   );
+  // Note: TradingManager.start will acquire the exclusive execution session with
+  // mode 'strategy' and env derived from config; opts are logged here for clarity.
   await tradingManager.start(exchange, marketProvider, aiClient, workflowConfig);
 }
 

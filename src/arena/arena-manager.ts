@@ -9,6 +9,7 @@ import type { ArenaConfig } from './types.js';
 import { ArenaOrchestrator } from './arena-orchestrator.js';
 import { ArenaStorage } from './arena-storage.js';
 import { UnifiedLogger } from '../logging/index.js';
+import { ExecutionSessionManager } from '../web/execution-session-manager.js';
 
 export class ArenaManager {
   private static instance: ArenaManager;
@@ -49,7 +50,15 @@ export class ArenaManager {
       this.context
     );
 
+    const sessionManager = ExecutionSessionManager.getInstance();
+    let sessionAcquired = false;
+
     try {
+      // Acquire exclusive execution session (mode: 'arena')
+      const session = sessionManager.createArenaSession(arenaId);
+      sessionManager.acquire(session);
+      sessionAcquired = true;
+
       const orchestrator = new ArenaOrchestrator(arenaId, finalConfig, apiKey);
       this.arenas.set(arenaId, orchestrator);
 
@@ -65,7 +74,21 @@ export class ArenaManager {
 
       return arenaId;
     } catch (error) {
+      // Clean up on failure
       this.arenas.delete(arenaId);
+
+      // Release session if we acquired it
+      if (sessionAcquired) {
+        try {
+          sessionManager.release(arenaId);
+        } catch (releaseError) {
+          this.logger.warn(
+            `Failed to release session for arena ${arenaId}`,
+            releaseError instanceof Error ? releaseError : new Error(String(releaseError)),
+            this.context
+          );
+        }
+      }
 
       this.logger.error(
         `Failed to start arena ${arenaId}`,
@@ -90,6 +113,8 @@ export class ArenaManager {
     try {
       await arena.stop();
       this.arenas.delete(arenaId);
+      // Release exclusive session
+      ExecutionSessionManager.getInstance().release(arenaId);
 
       this.logger.info(`Arena ${arenaId} stopped successfully`, {}, this.context);
     } catch (error) {

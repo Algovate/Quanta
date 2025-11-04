@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { startTradingService } from '../api-service.js';
 import { sendErrorResponse } from '../utils/error-handler.js';
 import type { TradingManager } from '../trading-manager.js';
+import { ExecutionSessionManager } from '../execution-session-manager.js';
 
 /**
  * Register system-related routes (status, start, stop, pause)
@@ -13,8 +14,8 @@ export function registerSystemRoutes(router: Router, tradingManager: TradingMana
       const { getConfig } = await import('../../config/settings.js');
       const cfg = getConfig();
       res.json({
-        mode: (cfg as any).mode,
-        env: (cfg as any).env,
+        mode: cfg.mode,
+        env: cfg.env,
         exchange: cfg.exchange,
         trading: cfg.trading,
       });
@@ -79,6 +80,12 @@ export function registerSystemRoutes(router: Router, tradingManager: TradingMana
     } catch (error) {
       sendErrorResponse(res, error, 'Failed to get status', 500);
     }
+  });
+
+  // Get active execution session (arena or strategy)
+  router.get('/api/system/session', (_req: Request, res: Response) => {
+    const session = ExecutionSessionManager.getInstance().getActive();
+    res.json({ active: !!session, session });
   });
 
   // Start trading

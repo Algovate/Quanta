@@ -1,3 +1,7 @@
+### API Server Execution Exclusivity
+
+When starting trading via API routes, the server enforces a single active execution session at any time. Attempts to start an Arena while a Strategy is running (or vice versa) will be rejected with a clear error. Use the `/api/system/session` endpoint to inspect the current session.
+
 # Command Reference
 
 Complete reference for all Quanta commands.

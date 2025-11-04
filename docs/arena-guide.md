@@ -4,6 +4,10 @@
 
 Quanta Arena enables you to run multiple trading workflow instances ("drones") simultaneously, each with different configurations, prompt packs, and parameters. The Arena system compares their performance, PnL, signals, trades, and AI effectiveness to help you find the optimal trading strategy.
 
+> Note on API exclusivity
+>
+> When the API server is running, only one execution session can be active at a time. This session can be either an Arena run (multiple drones) or a single Trading Workflow (strategy). You cannot run both simultaneously. The server enforces this via a global ExecutionSession with `mode` (`'arena' | 'strategy'`) and `env`.
+
 ## Key Features
 
 - **Parallel Execution**: Run multiple drones simultaneously with isolated state
