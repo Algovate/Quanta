@@ -1,0 +1,54 @@
+{
+  "name": "Multi-Coin Strategy Test",
+  "mode": "backtest",
+  "drones": [
+    {
+      "id": "btc-only",
+      "name": "BTC Specialist",
+      "coins": ["BTC"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.03,
+        "maxTotalRisk": 0.25,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 3,
+        "minLeverage": 2,
+        "maxPositions": 1
+      }
+    },
+    {
+      "id": "top-3",
+      "name": "Top 3 Coins",
+      "coins": ["BTC", "ETH", "SOL"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.03,
+        "maxTotalRisk": 0.25,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 3,
+        "minLeverage": 2,
+        "maxPositions": 3
+      }
+    },
+    {
+      "id": "altcoin-diversified",
+      "name": "Altcoin Diversified",
+      "coins": ["SOL", "AVAX", "DOT", "MATIC", "LINK"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.03,
+        "maxTotalRisk": 0.25,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 3,
+        "minLeverage": 2,
+        "maxPositions": 5
+      }
+    }
+  ],
+  "settings": {
+    "maxConcurrentAICalls": 2
+  }
+}

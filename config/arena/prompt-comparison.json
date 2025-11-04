@@ -1,0 +1,54 @@
+{
+  "name": "Prompt Strategy Battle Royale",
+  "mode": "backtest",
+  "drones": [
+    {
+      "id": "traditional-ta",
+      "name": "Traditional TA Only",
+      "coins": ["BTC", "ETH", "SOL", "AVAX", "DOT"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.03,
+        "maxTotalRisk": 0.25,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 4,
+        "minLeverage": 2,
+        "maxPositions": 4
+      }
+    },
+    {
+      "id": "momentum-focused",
+      "name": "Momentum Hunter",
+      "coins": ["BTC", "ETH", "SOL", "AVAX", "DOT"],
+      "promptPack": "aggressive",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.04,
+        "maxTotalRisk": 0.3,
+        "defaultStopLoss": 0.03,
+        "maxLeverage": 5,
+        "minLeverage": 3,
+        "maxPositions": 5
+      }
+    },
+    {
+      "id": "risk-averse",
+      "name": "Capital Preservation",
+      "coins": ["BTC", "ETH", "SOL", "AVAX", "DOT"],
+      "promptPack": "conservative",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.02,
+        "maxTotalRisk": 0.15,
+        "defaultStopLoss": 0.06,
+        "maxLeverage": 2,
+        "minLeverage": 1,
+        "maxPositions": 3
+      }
+    }
+  ],
+  "settings": {
+    "maxConcurrentAICalls": 3
+  }
+}

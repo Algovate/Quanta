@@ -1,0 +1,67 @@
+{
+  "name": "Prompt Pack Comparison Arena",
+  "mode": "backtest",
+  "drones": [
+    {
+      "id": "drone-aggressive",
+      "name": "Aggressive Trader",
+      "coins": ["BTC", "ETH", "SOL"],
+      "promptPack": "aggressive",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.05,
+        "maxTotalRisk": 0.3,
+        "defaultStopLoss": 0.03,
+        "maxLeverage": 5,
+        "minLeverage": 3,
+        "maxPositions": 5
+      },
+      "aiConfig": {
+        "model": "deepseek/deepseek-chat",
+        "temperature": 0.8
+      }
+    },
+    {
+      "id": "drone-conservative",
+      "name": "Conservative Trader",
+      "coins": ["BTC", "ETH", "SOL"],
+      "promptPack": "conservative",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.02,
+        "maxTotalRisk": 0.15,
+        "defaultStopLoss": 0.05,
+        "maxLeverage": 3,
+        "minLeverage": 2,
+        "maxPositions": 3
+      },
+      "aiConfig": {
+        "model": "deepseek/deepseek-chat",
+        "temperature": 0.5
+      }
+    },
+    {
+      "id": "drone-balanced",
+      "name": "Balanced Trader",
+      "coins": ["BTC", "ETH", "SOL"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.03,
+        "maxTotalRisk": 0.2,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 4,
+        "minLeverage": 2,
+        "maxPositions": 4
+      },
+      "aiConfig": {
+        "model": "deepseek/deepseek-chat",
+        "temperature": 0.7
+      }
+    }
+  ],
+  "settings": {
+    "maxConcurrentAICalls": 2,
+    "cyclePeriod": 60000
+  }
+}

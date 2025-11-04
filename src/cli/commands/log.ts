@@ -10,7 +10,7 @@ export class LogCommands {
 
     // Show console output
     program
-      .command('console')
+      .command('view')
       .description('View console output logs')
       .option('--lines <n>', 'Show last N lines (default: 50)', parseInt, 50)
       .option('-f, --follow', 'Follow mode (real-time updates)', false)
@@ -21,7 +21,7 @@ export class LogCommands {
       .action(async options => {
         await handleAsync(async () => {
           await LogCommands.showConsoleOutput(options);
-        }, 'LogCommands.console');
+        }, 'LogCommands.view');
       });
   }
 

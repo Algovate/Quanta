@@ -5,7 +5,7 @@ import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
-import { EventBus } from './event-bus.js';
+import { EventBus, TypedEventBus, type EventKey, type EventPayloads } from './event-bus.js';
 import { BarScheduler, type BarTimeframe } from './scheduler.js';
 import { aggregatePositionMetrics, PositionAggregates } from '../execution/position-utils.js';
 import { validateAccount } from '../utils/account-validation.js';
@@ -110,7 +110,7 @@ export class TradingWorkflow {
   private nextTimeout?: NodeJS.Timeout;
   private isCycleRunning: boolean = false;
   private isPaused: boolean = false;
-  private readonly loggerContext = 'Workflow';
+  private loggerContext: string = 'Workflow';
   private cycleLogger: CycleLogger;
   private cycleDisplay: CycleDisplay;
   private isBackgroundMode: boolean;
@@ -124,6 +124,9 @@ export class TradingWorkflow {
     warn: typeof console.warn;
     error: typeof console.error;
   };
+  // Arena support: event bus and prefix
+  private eventBus: TypedEventBus;
+  private eventPrefix: string = '';
   // Optional getter to retrieve custom exit plans
   private getCustomExitPlans?: (
     symbol: string,
@@ -134,12 +137,24 @@ export class TradingWorkflow {
     exchange: Exchange,
     marketDataProvider: MarketDataProvider,
     aiAgent: OpenRouterClient,
-    config: WorkflowConfig
+    config: WorkflowConfig,
+    options?: {
+      eventBus?: TypedEventBus;
+      eventPrefix?: string;
+      loggerContext?: string;
+      logger?: UnifiedLogger;
+    }
   ) {
     this.exchange = exchange;
     this.marketDataProvider = marketDataProvider;
     this.aiAgent = aiAgent;
     this.config = config;
+
+    // Initialize Arena support: use provided or default to singleton
+    this.eventBus = options?.eventBus ?? EventBus;
+    this.eventPrefix = options?.eventPrefix ?? '';
+    this.loggerContext = options?.loggerContext ?? 'Workflow';
+    this.unifiedLogger = options?.logger ?? UnifiedLogger.getInstance();
 
     this.riskManager = new RiskManager(config.riskParams);
     // Force market orders when using simulated execution (SimulatorExchange in simulation/paper)
@@ -149,7 +164,6 @@ export class TradingWorkflow {
       forceMarketOrders: forceMarket,
     });
     this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor);
-    this.unifiedLogger = UnifiedLogger.getInstance();
     this.unifiedLogger.initialize();
     this.originalConsole = this.unifiedLogger.getOriginalConsole();
     this.cycleLogger = new CycleLogger();
@@ -182,6 +196,15 @@ export class TradingWorkflow {
 
   public getConfig(): WorkflowConfig {
     return { ...this.config };
+  }
+
+  /**
+   * Centralized event emission with optional prefix for Arena isolation
+   * @private
+   */
+  private emitEvent<K extends EventKey>(event: K, payload: EventPayloads[K]): void {
+    const fullEvent = this.eventPrefix ? (`${this.eventPrefix}${event}` as any) : event;
+    this.eventBus.emit(fullEvent, payload);
   }
 
   /**
@@ -418,7 +441,7 @@ export class TradingWorkflow {
       const action = sig.action;
       const symbol = `${sig.coin}/USDT`;
       const price = await getCachedPrice(symbol);
-      EventBus.emit('signal:buffer', {
+      this.emitEvent('signal:buffer', {
         id: `${sig.coin}-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
         timestamp: Date.now(),
         symbol,
@@ -556,7 +579,7 @@ export class TradingWorkflow {
       }
 
       // Emit cycle start event
-      EventBus.emit('cycle:start', {
+      this.emitEvent('cycle:start', {
         cycleCount: this.state.cycleCount,
         timestamp: Date.now(),
         startTime: this.state.startTime,
@@ -1215,7 +1238,7 @@ export class TradingWorkflow {
       }
 
       // Emit signals generated event
-      EventBus.emit('cycle:signals', {
+      this.emitEvent('cycle:signals', {
         cycleCount: this.state.cycleCount,
         timestamp: Date.now(),
         signalCount: signals.length,
@@ -1360,7 +1383,7 @@ export class TradingWorkflow {
       }
 
       // Emit execution phase event
-      EventBus.emit('cycle:execution', {
+      this.emitEvent('cycle:execution', {
         cycleCount: this.state.cycleCount,
         timestamp: Date.now(),
         executedSignals: signals.filter(s => s.action !== 'HOLD').length,
@@ -1534,7 +1557,7 @@ export class TradingWorkflow {
       }
 
       // Notify cycle completion via event bus (include per-cycle deltas)
-      EventBus.emit('cycle:complete', {
+      this.emitEvent('cycle:complete', {
         cycleCount: this.state.cycleCount,
         timestamp: Date.now(),
         duration: Date.now() - this.state.lastUpdate,
@@ -1572,7 +1595,7 @@ export class TradingWorkflow {
       });
 
       // Emit cycle error event
-      EventBus.emit('cycle:error', {
+      this.emitEvent('cycle:error', {
         cycleCount: this.state.cycleCount,
         error: cycleError.message,
         timestamp: Date.now(),
@@ -1816,21 +1839,28 @@ export class TradingWorkflow {
         });
 
         // Guard: warn if execution price deviates significantly from current ticker (possible symbol mismatch)
+        // Only warn if we got an actual fill price from the exchange (not the fallback)
+        // and the deviation is very significant (>10%) to avoid false positives from normal slippage
         try {
-          const ref = currentPrice;
-          const relDiff = ref ? Math.abs(actualPrice - ref) / ref : 0;
-          if (relDiff > 0.05) {
-            this.unifiedLogger.warn(
-              'Symbol/price mismatch suspected',
-              {
-                coin: signal.coin,
-                symbol,
-                executionPrice: actualPrice,
-                tickerPrice: ref,
-                relativeDiff: relDiff,
-              },
-              this.loggerContext
-            );
+          const hasActualFillPrice = result.order.price && result.order.price > 0;
+          if (hasActualFillPrice) {
+            const ref = currentPrice;
+            const relDiff = ref ? Math.abs(actualPrice - ref) / ref : 0;
+            // Use 10% threshold (increased from 5%) to allow for normal market order slippage
+            // Only warn on very significant deviations that might indicate a symbol mismatch
+            if (relDiff > 0.1) {
+              this.unifiedLogger.warn(
+                'Symbol/price mismatch suspected',
+                {
+                  coin: signal.coin,
+                  symbol,
+                  executionPrice: actualPrice,
+                  tickerPrice: ref,
+                  relativeDiff: relDiff,
+                },
+                this.loggerContext
+              );
+            }
           }
         } catch {
           // Non-critical
@@ -2196,7 +2226,7 @@ export class TradingWorkflow {
     formattedSummary?: string
   ): void {
     // Always log structured summary (removed background mode check)
-    // Include formatted summary in metadata so it can be displayed via "quanta log console"
+    // Include formatted summary in metadata so it can be displayed via "quanta log view"
 
     this.unifiedLogger.info(
       formattedSummary || 'Cycle Summary',
@@ -2230,7 +2260,7 @@ export class TradingWorkflow {
           unrealizedPnl: p.unrealizedPnl,
         })),
         winRate: this.state.winRate,
-        // Store formatted summary so it can be retrieved by "quanta log console"
+        // Store formatted summary so it can be retrieved by "quanta log view"
         _formattedSummary: formattedSummary,
       },
       this.loggerContext
@@ -2354,7 +2384,7 @@ export class TradingWorkflow {
     );
 
     // Log to structured logs (both CLI and API server modes)
-    // Users can view via "quanta log console --follow"
+    // Users can view via "quanta log view --follow"
     this.logStructuredCycleSummary(
       account,
       positions,
@@ -2433,10 +2463,10 @@ export class TradingWorkflow {
 
   // Removed logConsoleCycleSummary and related helper methods
   // All cycle summary information is now logged via logStructuredCycleSummary()
-  // Users can view detailed output using "quanta log console"
+  // Users can view detailed output using "quanta log view"
 
   /**
-   * @deprecated Console output suppressed - use "quanta log console" instead
+   * @deprecated Console output suppressed - use "quanta log view" instead
    */
 
   // @ts-expect-error - Deprecated method, kept for reference
@@ -2461,11 +2491,11 @@ export class TradingWorkflow {
     _runtimeMinutes: number,
     _runtimeSeconds: number
   ): void {
-    // Method body removed - console output suppressed, use "quanta log console" instead
+    // Method body removed - console output suppressed, use "quanta log view" instead
   }
 
   /**
-   * @deprecated Removed - console output suppressed, use "quanta log console" instead
+   * @deprecated Removed - console output suppressed, use "quanta log view" instead
    */
 
   // @ts-expect-error - Deprecated method, kept for reference
@@ -2485,11 +2515,11 @@ export class TradingWorkflow {
       realizedCyclePnl: number;
     }
   ): void {
-    // Method body removed - console output suppressed, use "quanta log console" instead
+    // Method body removed - console output suppressed, use "quanta log view" instead
   }
 
   /**
-   * @deprecated Removed - console output suppressed, use "quanta log console" instead
+   * @deprecated Removed - console output suppressed, use "quanta log view" instead
    */
 
   // @ts-expect-error - Deprecated method, kept for reference
@@ -2498,11 +2528,11 @@ export class TradingWorkflow {
     _positions: Position[],
     _aggregates: PositionAggregates
   ): void {
-    // Method body removed - console output suppressed, use "quanta log console" instead
+    // Method body removed - console output suppressed, use "quanta log view" instead
   }
 
   /**
-   * @deprecated Removed - console output suppressed, use "quanta log console" instead
+   * @deprecated Removed - console output suppressed, use "quanta log view" instead
    */
 
   // @ts-expect-error - Deprecated method, kept for reference
@@ -2511,7 +2541,7 @@ export class TradingWorkflow {
   }
 
   /**
-   * @deprecated Removed - console output suppressed, use "quanta log console" instead
+   * @deprecated Removed - console output suppressed, use "quanta log view" instead
    */
 
   // @ts-expect-error - Deprecated method, kept for reference

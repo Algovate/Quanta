@@ -54,7 +54,7 @@ The command displays minimal startup information:
 🏆 Quanta Trading System
 Mode: paper | Coins: BTC, ETH, SOL
 ✔ Trading system initialized
-🚀 Trading started. Use "quanta log console" to view detailed output.
+🚀 Trading started. Use "quanta log view" to view detailed output.
 ```
 
 Configuration display includes:
@@ -82,17 +82,17 @@ Risk parameter validation:
 - Parameters within the allowed range are shown without warnings
 - Only adjusted parameters show warning messages
 
-**Note:** Detailed cycle summaries (account status, risk status, positions, etc.) are no longer displayed directly in the console. Use `quanta log console` to view detailed output:
+**Note:** Detailed cycle summaries (account status, risk status, positions, etc.) are no longer displayed directly in the console. Use `quanta log view` to view detailed output:
 
 ```bash
 # View detailed console output
-quanta log console
+quanta log view
 
 # Follow in real-time (like tail -f)
-quanta log console --follow
+quanta log view --follow
 
 # View with specific context or level
-quanta log console --context Workflow --level info
+quanta log view --context Workflow --level info
 ```
 
 ---
@@ -530,12 +530,12 @@ quanta config init
 
 ## Log Commands (Lite Mode)
 
-### `log console` - View Console Output
+### `log view` - View Console Output
 
 View console output logs captured during `trade start` and `server start` commands. This is the primary way to view detailed cycle summaries, account status, risk metrics, and other operational details after starting the trading system.
 
 ```bash
-quanta log console [options]
+quanta log view [options]
 
 Options:
   --lines <n>           Show last N lines (default: 50)
@@ -550,25 +550,25 @@ Options:
 
 ```bash
 # View last 50 lines from all contexts
-quanta log console
+quanta log view
 
 # Follow in real-time (like tail -f)
-quanta log console --follow
+quanta log view --follow
 
 # Follow only trade start output
-quanta log console --follow --context TradeStart
+quanta log view --follow --context TradeStart
 
 # View server startup output
-quanta log console --lines 100 --context Server
+quanta log view --lines 100 --context Server
 
 # Filter by level
-quanta log console --level error
+quanta log view --level error
 
 # Search for specific pattern
-quanta log console --grep "Configuration"
+quanta log view --grep "Configuration"
 
 # Raw output (no ANSI color codes)
-quanta log console --format raw
+quanta log view --format raw
 ```
 
 **Output:**
@@ -582,7 +582,7 @@ Use `--follow` or `-f` to watch logs in real-time (similar to `tail -f`). The co
 Notes:
 
 - Lite logging writes to daily-rotated JSONL files under `logs/text/` (override via `LOG_DIR`).
-- Only `log console` is available; advanced log subcommands are hidden in Lite mode.
+- Only `log view` is available; advanced log subcommands are hidden in Lite mode.
 
 ---
 
@@ -760,7 +760,7 @@ quanta simulate cycle --coins BTC,ETH,SOL --verbose
 quanta trade start --mode simulation --coins BTC,ETH,SOL
 
 # View detailed output (cycle summaries, account status, positions, etc.)
-quanta log console --follow
+quanta log view --follow
 
 # Monitor status
 quanta trade status

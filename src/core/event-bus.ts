@@ -197,4 +197,5 @@ class TypedEventBus {
 }
 
 export const EventBus = TypedEventBus.getInstance();
+export { TypedEventBus };
 export type { EventPayloads, EventKey, SignalInfo };

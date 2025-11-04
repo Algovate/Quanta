@@ -378,7 +378,7 @@ export class TradeCommands {
 
     // Console: Minimal status (use originalConsole to avoid interception)
     originalConsole.log(
-      chalk.green('🚀 Trading started. Use "quanta log console" to view detailed output.\n')
+      chalk.green('🚀 Trading started. Use "quanta log view" to view detailed output.\n')
     );
 
     // UnifiedLogger: Full startup message
@@ -519,7 +519,7 @@ export class TradeCommands {
       });
 
       // Note: UnifiedLogger doesn't use configurable log levels
-      // Log level filtering can be done via query filters in log console command
+      // Log level filtering can be done via query filters in log view command
 
       const engine = new BacktestEngine(backtestConfig, {
         onPhase: phase => renderer.startPhase(phase),

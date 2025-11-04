@@ -272,6 +272,7 @@ export function createCompletedTrade(
     pnlPercent: (realizedPnl / (position.size * position.entryPrice)) * 100,
     holdingPeriod: (exitTime - position.timestamp) / 1000, // Convert milliseconds to seconds
     reason,
+    leverage: position.leverage, // Save leverage from position
   };
 }
 

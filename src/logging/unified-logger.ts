@@ -124,7 +124,7 @@ export class UnifiedLogger {
   /**
    * Set up console interception to capture all console output
    * NOTE: We capture console output to logs, but do NOT output to console.
-   * This keeps the console clean - users can view captured logs via "quanta log console"
+   * This keeps the console clean - users can view captured logs via "quanta log view"
    */
   private setupConsoleInterception(): void {
     if (this.consoleInterceptionEnabled) {
@@ -834,7 +834,7 @@ export class UnifiedLogger {
 
     // NOTE: We do NOT output to console here - all console output should go through
     // originalConsole.log() directly for minimal output, or through unifiedLogger
-    // which stores logs that can be viewed via "quanta log console"
+    // which stores logs that can be viewed via "quanta log view"
     // This prevents duplicate output and keeps console clean
   }
 

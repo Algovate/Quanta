@@ -141,7 +141,9 @@ export function registerActivityRoutes(router: Router, tradingManager: TradingMa
             unrealizedPnl: pos.unrealizedPnl,
           };
         }
-      } catch {}
+      } catch {
+        // Ignore errors when fetching position details
+      }
       pushActivity(evt);
     });
 
@@ -246,7 +248,9 @@ export function registerActivityRoutes(router: Router, tradingManager: TradingMa
             unrealizedPnl: pos.unrealizedPnl,
           };
         }
-      } catch {}
+      } catch {
+        // Ignore errors when fetching position details
+      }
       send(evt);
     };
 

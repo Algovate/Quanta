@@ -264,6 +264,7 @@ export interface CompletedTrade {
   pnlPercent: number;
   holdingPeriod: number; // in seconds
   reason: 'take_profit' | 'stop_loss' | 'signal' | 'end_of_backtest';
+  leverage?: number; // Leverage used for this trade
 }
 
 export interface PerformanceMetrics {

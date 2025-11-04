@@ -609,7 +609,10 @@ export class SimulatorExchange implements Exchange {
       const leverageCheck = verifyLeverageConsistency(position);
       // Only log when there is a meaningful mismatch on the notional-based check;
       // margin-based derived figure can legitimately differ due to definition.
-      if (!leverageCheck.isValid) {
+      const tolerance = 0.0005; // 5 bps
+      const isNotionalMatch =
+        Math.abs(leverageCheck.stored - leverageCheck.fromNotional) <= tolerance;
+      if (!isNotionalMatch) {
         this.logger.debug(
           `Position leverage mismatch for ${position.symbol}:`,
           {

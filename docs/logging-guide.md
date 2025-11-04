@@ -5,7 +5,7 @@ Quanta uses a simplified, non-tiered logging system focused on reliability, clea
 - Text logs are captured to daily-rotated JSONL files in `logs/text/`.
 - Set `LOG_DIR` to override the directory. Defaults to `./logs/text`.
 - Tiered storage (L0/L1/L2/L3), snapshots, aggregated errors, and metrics persistence are removed.
-- View logs with `quanta log console` (supports `--follow`, `--context`, `--level`, `--grep`, `--format`).
+- View logs with `quanta log view` (supports `--follow`, `--context`, `--level`, `--grep`, `--format`).
 
 ---
 
@@ -53,22 +53,22 @@ Notes:
 
 ```bash
 # Show last 50 lines (default)
-quanta log console
+quanta log view
 
 # Tail N lines
-quanta log console --lines 200
+quanta log view --lines 200
 
 # Follow (like tail -f)
-quanta log console --follow
+quanta log view --follow
 
 # Filter by logger context or level
-quanta log console --context TradeStart --level warn
+quanta log view --context TradeStart --level warn
 
 # Grep-like filtering on message/context
-quanta log console --grep "order|signal"
+quanta log view --grep "order|signal"
 
 # Raw output (no ANSI), useful for piping
-quanta log console --format raw
+quanta log view --format raw
 ```
 
 ### Common recipes
@@ -76,13 +76,13 @@ quanta log console --format raw
 - Only errors, live:
 
 ```bash
-quanta log console --level error --follow --format raw
+quanta log view --level error --follow --format raw
 ```
 
 - Search for entries related to a component:
 
 ```bash
-quanta log console --grep "Execution|Position" --lines 500
+quanta log view --grep "Execution|Position" --lines 500
 ```
 
 ---
@@ -132,7 +132,7 @@ Removed features in Lite mode:
 
 Alternatives now:
 
-- Use `quanta log console` with filters for operational visibility.
+- Use `quanta log view` with filters for operational visibility.
 - Emit structured fields in `metadata` for richer context when needed.
 - Persist domain data you need elsewhere (e.g., your own stores) rather than relying on logger tiers.
 

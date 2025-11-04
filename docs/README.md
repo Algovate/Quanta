@@ -47,7 +47,7 @@ Complete documentation index for the Quanta AI trading system.
 - **[Logging Guide](logging-guide.md)** (Lite)
   - JSONL text logging (daily-rotated)
   - Console interception and original console usage
-  - `quanta log console` usage (filters, follow)
+  - `quanta log view` usage (filters, follow)
   - Configuration (`LOG_DIR`, `logging.textLogDir`, `retentionDays`)
 - **[Error Handling & Resilience](error-handling.md)** (20KB)
   - Circuit breaker patterns

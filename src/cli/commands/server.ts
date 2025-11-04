@@ -55,7 +55,7 @@ export class ServerCommands {
     // Console: Minimal essential info only (use originalConsole to avoid interception)
     originalConsole.log(chalk.cyan('🚀 Quanta API Server'));
     originalConsole.log(chalk.green(`✅ Running on http://localhost:${port}\n`));
-    originalConsole.log(chalk.gray('Use "quanta log console" to view detailed output.\n'));
+    originalConsole.log(chalk.gray('Use "quanta log view" to view detailed output.\n'));
 
     // UnifiedLogger: Full detailed output
     unifiedLogger.info(chalk.cyan('🚀 Quanta API Server'), {}, 'Server');

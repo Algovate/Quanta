@@ -1,0 +1,54 @@
+{
+  "name": "Risk Parameter Sweep",
+  "mode": "backtest",
+  "drones": [
+    {
+      "id": "risk-10pct",
+      "name": "10% Risk",
+      "coins": ["BTC", "ETH"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.01,
+        "maxTotalRisk": 0.1,
+        "defaultStopLoss": 0.05,
+        "maxLeverage": 2,
+        "minLeverage": 1,
+        "maxPositions": 2
+      }
+    },
+    {
+      "id": "risk-25pct",
+      "name": "25% Risk",
+      "coins": ["BTC", "ETH"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.025,
+        "maxTotalRisk": 0.25,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 3,
+        "minLeverage": 2,
+        "maxPositions": 3
+      }
+    },
+    {
+      "id": "risk-40pct",
+      "name": "40% Risk",
+      "coins": ["BTC", "ETH"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.04,
+        "maxTotalRisk": 0.4,
+        "defaultStopLoss": 0.03,
+        "maxLeverage": 5,
+        "minLeverage": 3,
+        "maxPositions": 4
+      }
+    }
+  ],
+  "settings": {
+    "maxConcurrentAICalls": 2
+  }
+}

@@ -12,9 +12,11 @@ import {
   registerMarketRoutes,
   registerBacktestRoutes,
   registerActivityRoutes,
+  registerArenaRoutes,
 } from './routes/index.js';
 import { createPriceCache, createKlineCache } from './utils/cache.js';
 import { createLogger } from './utils/logger.js';
+import { EventBus } from '../core/event-bus.js';
 
 const { logger, context: loggerContext } = createLogger('Server');
 
@@ -119,6 +121,7 @@ export class APIServer {
     registerMarketRoutes(this.app, this.tradingManager);
     registerBacktestRoutes(this.app);
     registerActivityRoutes(this.app, this.tradingManager);
+    registerArenaRoutes(this.app);
   }
 
   private setupWebSocket(): void {
@@ -254,6 +257,18 @@ export class APIServer {
     this.tradingManager.on('order:update', data => {
       this.broadcast({ type: 'order:update', data });
     });
+
+    // Arena event broadcasting - subscribe to EventBus for arena events
+    EventBus.on('arena:started' as any, (payload: any) => {
+      this.broadcast({ type: 'arena:started', data: payload });
+    });
+
+    EventBus.on('arena:stopped' as any, (payload: any) => {
+      this.broadcast({ type: 'arena:stopped', data: payload });
+    });
+
+    // Note: arena:update events are emitted by ArenaOrchestrator via EventEmitter,
+    // not EventBus, so those will be handled through ArenaManager if needed
   }
 
   private broadcast(message: OutboundMessage): void {

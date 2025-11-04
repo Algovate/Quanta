@@ -1,9 +1,6 @@
 import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
-import {
-  loadPromptGroup,
-  extractGroupVariables,
-} from '../src/ai/prompt-loader.js';
+import { loadPromptGroup, extractGroupVariables } from '../src/ai/prompt-loader.js';
 
 describe('Prompt Group - nofx', () => {
   it('should load the nofx-decision prompt group and expose expected fields', () => {
@@ -37,5 +34,3 @@ describe('Prompt Group - nofx', () => {
     }
   });
 });
-
-

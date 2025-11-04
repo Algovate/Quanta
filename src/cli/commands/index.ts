@@ -6,3 +6,4 @@ export { SimulateCommands } from './simulate.js';
 export { ServerCommands } from './server.js';
 export { LogCommands } from './log.js';
 export { PromptCommands } from './prompts.js';
+export { ArenaCommands } from './arena.js';

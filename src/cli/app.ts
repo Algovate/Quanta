@@ -11,6 +11,7 @@ import {
   ServerCommands,
   LogCommands,
   PromptCommands,
+  ArenaCommands,
 } from './commands/index.js';
 
 // Get version from package.json
@@ -69,6 +70,9 @@ export class CLIApplication {
     // Prompt commands
     const prompts = this.program.command('prompts').description('Prompt group management');
     PromptCommands.register(prompts);
+
+    // Arena commands
+    ArenaCommands.register(this.program);
 
     // Help command
     HelpCommand.register(this.program);

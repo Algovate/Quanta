@@ -64,4 +64,7 @@ export type OutboundMessage =
   | { type: 'cycle:complete'; data: unknown }
   | { type: 'kline:update'; data: unknown }
   | { type: 'risk:update'; data: RiskSnapshot }
-  | { type: 'order:update'; data: OrderEvent };
+  | { type: 'order:update'; data: OrderEvent }
+  | { type: 'arena:started'; data: unknown }
+  | { type: 'arena:stopped'; data: unknown }
+  | { type: 'arena:update'; data: unknown };

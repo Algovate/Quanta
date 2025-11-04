@@ -1,0 +1,69 @@
+{
+  "name": "Prompt Pack Comparison Arena",
+  "mode": "paper",
+  "drones": [
+    {
+      "id": "default",
+      "name": "default",
+      "coins": ["BTC", "ETH", "SOL"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.03,
+        "maxTotalRisk": 0.25,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 4,
+        "minLeverage": 2,
+        "maxPositions": 4
+      }
+    },
+    {
+      "id": "default-2",
+      "name": "default-2",
+      "coins": ["BTC", "ETH", "SOL"],
+      "promptPack": "default",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.03,
+        "maxTotalRisk": 0.25,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 4,
+        "minLeverage": 2,
+        "maxPositions": 4
+      }
+    },
+    {
+      "id": "nofx",
+      "name": "nofx",
+      "coins": ["BTC", "ETH", "SOL"],
+      "promptPack": "nofx",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.03,
+        "maxTotalRisk": 0.25,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 4,
+        "minLeverage": 2,
+        "maxPositions": 4
+      }
+    },
+    {
+      "id": "enhanced",
+      "name": "enhanced",
+      "coins": ["BTC", "ETH", "SOL"],
+      "promptPack": "enhanced",
+      "initialBalance": 10000,
+      "riskParams": {
+        "maxRiskPerTrade": 0.03,
+        "maxTotalRisk": 0.25,
+        "defaultStopLoss": 0.04,
+        "maxLeverage": 4,
+        "minLeverage": 2,
+        "maxPositions": 4
+      }
+    }
+  ],
+  "settings": {
+    "maxConcurrentAICalls": 3
+  }
+}

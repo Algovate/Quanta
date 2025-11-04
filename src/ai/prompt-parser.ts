@@ -70,10 +70,9 @@ export function parseAiResponse(response: string): TradingSignal[] {
     validateParsedResponse(parsed);
 
     return parsed.signals.map(convertToTradingSignal);
-  } catch (error) {
+  } catch {
     // Return empty array on any parsing error
     // Error logging should be done by caller with context
     return [];
   }
 }
-
