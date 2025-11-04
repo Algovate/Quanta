@@ -1,5 +1,6 @@
 import { Exchange } from '../exchange/types.js';
 import { UnifiedLogger } from '../logging/index.js';
+import { RequestDeduplicator } from '../web/utils/request-deduplication.js';
 
 export interface Candlestick {
   timestamp: number;
@@ -72,95 +73,71 @@ interface CachedMarketData {
 export class MarketDataProvider {
   private cache: Map<string, CachedMarketData> = new Map();
   private readonly MAX_CACHE_AGE = 5 * 60 * 1000; // 5 minutes - still useful for fallback
+  private readonly CACHE_FRESH_THRESHOLD = 1 * 60 * 1000; // 1 minute - consider cache fresh if within this
   private readonly logger = UnifiedLogger.getInstance();
   private readonly context = 'MarketDataProvider';
+  // Request deduplication for candlestick fetches to prevent duplicate API calls
+  private readonly candlestickDeduplicator = new RequestDeduplicator<Candlestick[]>();
 
   constructor(private exchange: Exchange) {}
 
   async getMarketData(coin: string, timeframes: string[] = ['3m', '4h']): Promise<MarketData[]> {
-    const marketData: MarketData[] = [];
+    // Separate cached and uncached timeframes
+    const cachedResults: MarketData[] = [];
+    const uncachedTimeframes: string[] = [];
 
+    // First pass: check cache for all timeframes
     for (const timeframe of timeframes) {
       const cacheKey = `${coin}:${timeframe}`;
+      const cached = this.getCachedData(cacheKey);
+      if (cached) {
+        cachedResults.push(cached);
+      } else {
+        uncachedTimeframes.push(timeframe);
+      }
+    }
 
-      try {
-        // Fetch candlestick data
-        const candlesticks = (await this.exchange.getCandlesticks(
-          coin,
-          timeframe,
-          100
-        )) as Candlestick[];
+    // If all timeframes are cached, return early
+    if (uncachedTimeframes.length === 0) {
+      return cachedResults;
+    }
 
-        if (candlesticks.length < 50) {
-          // Try to use cached data if available
-          const cached = this.getCachedData(cacheKey);
-          if (cached) {
-            this.logger.warn(
-              'Insufficient fresh candles, using cached data',
-              {
-                coin,
-                timeframe,
-                candlesReceived: candlesticks.length,
-                cacheAge: cached.cacheAge,
-              },
-              this.context
-            );
-            marketData.push(cached);
-            continue;
-          }
-          // Silent skip during backtesting when no cache available
-          continue;
-        }
+    // Parallelize fetching for uncached timeframes
+    const fetchPromises = uncachedTimeframes.map(async timeframe => {
+      const cacheKey = `${coin}:${timeframe}`;
+      return this.fetchMarketDataForTimeframe(coin, timeframe, cacheKey);
+    });
 
-        // Calculate technical indicators
-        const indicators = this.calculateIndicators(candlesticks);
+    const results = await Promise.allSettled(fetchPromises);
 
-        // Determine trend and volatility
-        const trend = this.determineTrend(candlesticks, indicators);
-        const volatility = this.calculateVolatility(candlesticks);
-
-        // Update simulator's internal market data map if supported
-        // This ensures getTicker() uses the same prices as signal generation
-        this.syncMarketDataToExchange(coin, timeframe, candlesticks);
-
-        const data: MarketData = {
-          coin,
-          timeframe,
-          candlesticks,
-          indicators,
-          currentPrice: candlesticks[candlesticks.length - 1].close,
-          trend,
-          volatility,
-        };
-
-        // Cache the successful fetch
-        this.cache.set(cacheKey, {
-          data,
-          timestamp: Date.now(),
-        });
-
-        marketData.push(data);
-      } catch (error) {
-        this.logger.error(
-          `Error fetching market data for ${coin} ${timeframe}`,
-          error instanceof Error ? error : new Error(String(error)),
-          this.context
-        );
-
-        // Try to use cached data as fallback
-        const cached = this.getCachedData(cacheKey);
-        if (cached) {
+    // Process results and combine with cached data
+    const fetchedResults: MarketData[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const timeframe = uncachedTimeframes[i];
+      if (result.status === 'fulfilled' && result.value) {
+        fetchedResults.push(result.value);
+      } else {
+        // Try fallback cache for failed fetch
+        const cacheKey = `${coin}:${timeframe}`;
+        const fallbackCached = this.getCachedData(cacheKey, true);
+        if (fallbackCached) {
           this.logger.warn(
             'Using stale cached data due to fetch failure',
             {
               coin,
               timeframe,
-              cacheAge: cached.cacheAge,
-              error: error instanceof Error ? error.message : String(error),
+              cacheAge: fallbackCached.cacheAge,
+              error:
+                result.status === 'rejected'
+                  ? result.reason instanceof Error
+                    ? result.reason.message
+                    : String(result.reason)
+                  : 'Unknown error',
             },
             this.context
           );
-          marketData.push(cached);
+          fetchedResults.push(fallbackCached);
         } else {
           this.logger.warn(
             'No cached data available for failed fetch',
@@ -174,7 +151,87 @@ export class MarketDataProvider {
       }
     }
 
-    return marketData;
+    // Combine cached and fetched results, maintaining timeframe order
+    const allResults = [...cachedResults, ...fetchedResults];
+    return allResults.sort((a, b) => {
+      const aIndex = timeframes.indexOf(a.timeframe);
+      const bIndex = timeframes.indexOf(b.timeframe);
+      return aIndex - bIndex;
+    });
+  }
+
+  /**
+   * Fetch market data for a single timeframe with deduplication
+   */
+  private async fetchMarketDataForTimeframe(
+    coin: string,
+    timeframe: string,
+    cacheKey: string
+  ): Promise<MarketData | null> {
+    try {
+      // Use deduplication to prevent concurrent duplicate requests for same symbol/timeframe
+      const candlesticks = await this.candlestickDeduplicator.execute(
+        cacheKey,
+        () => this.exchange.getCandlesticks(coin, timeframe, 100) as Promise<Candlestick[]>
+      );
+
+      if (candlesticks.length < 50) {
+        // Try to use cached data if available (even if expired, as fallback)
+        const fallbackCached = this.getCachedData(cacheKey, true);
+        if (fallbackCached) {
+          this.logger.warn(
+            'Insufficient fresh candles, using cached data',
+            {
+              coin,
+              timeframe,
+              candlesReceived: candlesticks.length,
+              cacheAge: fallbackCached.cacheAge,
+            },
+            this.context
+          );
+          return fallbackCached;
+        }
+        // Silent skip during backtesting when no cache available
+        return null;
+      }
+
+      // Calculate technical indicators
+      const indicators = this.calculateIndicators(candlesticks);
+
+      // Determine trend and volatility
+      const trend = this.determineTrend(candlesticks, indicators);
+      const volatility = this.calculateVolatility(candlesticks);
+
+      // Update simulator's internal market data map if supported
+      // This ensures getTicker() uses the same prices as signal generation
+      this.syncMarketDataToExchange(coin, timeframe, candlesticks);
+
+      const data: MarketData = {
+        coin,
+        timeframe,
+        candlesticks,
+        indicators,
+        currentPrice: candlesticks[candlesticks.length - 1].close,
+        trend,
+        volatility,
+      };
+
+      // Cache the successful fetch
+      this.cache.set(cacheKey, {
+        data,
+        timestamp: Date.now(),
+      });
+
+      return data;
+    } catch (error) {
+      this.logger.error(
+        `Error fetching market data for ${coin} ${timeframe}`,
+        error instanceof Error ? error : new Error(String(error)),
+        this.context
+      );
+      // Return null to let caller handle fallback
+      return null;
+    }
   }
 
   /**
@@ -196,8 +253,9 @@ export class MarketDataProvider {
 
   /**
    * Get cached data if available and not too old
+   * @param allowExpired - If true, return expired cache (within MAX_CACHE_AGE) as fallback
    */
-  private getCachedData(cacheKey: string): MarketData | null {
+  private getCachedData(cacheKey: string, allowExpired: boolean = false): MarketData | null {
     const cached = this.cache.get(cacheKey);
     if (!cached) {
       return null;
@@ -211,10 +269,17 @@ export class MarketDataProvider {
       return null;
     }
 
+    // If allowExpired is false, only return fresh cache (within FRESH_THRESHOLD)
+    // If allowExpired is true, return cache even if expired (for fallback scenarios)
+    const isExpired = age > this.CACHE_FRESH_THRESHOLD;
+    if (!allowExpired && isExpired) {
+      return null;
+    }
+
     // Return cached data with staleness indicators
     return {
       ...cached.data,
-      isStale: true,
+      isStale: isExpired,
       cacheAge: age,
     };
   }

@@ -242,7 +242,7 @@ export class OrderExecutor {
           return await this.executeShortOrder(signal, sizing, currentPrice);
 
         case 'CLOSE':
-          return await this.executeCloseOrder(signal, currentPositions);
+          return await this.executeCloseOrder(signal, currentPositions, currentPrice);
 
         case 'HOLD':
           return { success: true, order: undefined };
@@ -350,7 +350,8 @@ export class OrderExecutor {
 
   private async executeCloseOrder(
     signal: TradingSignal,
-    currentPositions: Position[]
+    currentPositions: Position[],
+    currentPrice: number
   ): Promise<OrderResult> {
     try {
       const position = this.findPosition(signal.coin, currentPositions);
@@ -368,20 +369,8 @@ export class OrderExecutor {
       // new position creation in updatePosition()
       const exactAmount = position.size;
 
-      // Fetch current price to compute realized P&L for display
-      let priceForPnl: number | undefined;
-      try {
-        const ticker = await this.exchange.getTicker(symbol);
-        priceForPnl = (ticker as { price: number }).price;
-      } catch (error) {
-        // If ticker fails, proceed without realized pnl
-        // This is non-critical for position closing
-        this.logger.debug(
-          `Failed to fetch ticker for P&L calculation on ${symbol}`,
-          error instanceof Error ? { error: error.message } : { error: String(error) },
-          this.context
-        );
-      }
+      // Use currentPrice from cache to compute realized P&L (avoid duplicate ticker call)
+      const priceForPnl = currentPrice > 0 && isFinite(currentPrice) ? currentPrice : undefined;
 
       const order = await this.exchange.placeOrder(symbol, side, exactAmount);
       // Set metadata for simulator exchange if applicable

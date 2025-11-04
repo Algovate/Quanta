@@ -4,12 +4,20 @@ import { UnifiedLogger } from '../logging/index.js';
 import { withRetry, createRetryConfig } from '../utils/retry.js';
 import { ensureMarketsLoaded, mapOHLCV, type MarketsState } from './ccxt-helpers.js';
 
+interface CachedMarkAndBestPrices {
+  data: { symbol: string; mark: number; bid: number; ask: number; mid: number; ts: number };
+  timestamp: number;
+}
+
 export class OKXExchange implements Exchange {
   private exchange: ccxt.okx;
   private isTestnet: boolean;
   private marketsState: MarketsState = { promise: null };
   private logger = UnifiedLogger.getInstance();
   private readonly context = 'OKXExchange';
+  // Short-term cache for getMarkAndBestPrices to prevent rapid duplicate calls
+  private markAndBestPricesCache = new Map<string, CachedMarkAndBestPrices>();
+  private readonly MARK_PRICE_CACHE_TTL_MS = 300; // 300ms cache to prevent rapid duplicate calls
 
   constructor(
     apiKey?: string,
@@ -94,6 +102,17 @@ export class OKXExchange implements Exchange {
   ): Promise<{ symbol: string; mark: number; bid: number; ask: number; mid: number; ts: number }> {
     await this.ensureMarkets();
     const symbol = this.resolveInstrument(input, marketType);
+    // Use resolved symbol only for cache key (marketType already applied in symbol resolution)
+    const cacheKey = symbol;
+
+    // Check short-term cache to prevent rapid duplicate calls
+    const cached = this.markAndBestPricesCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && now - cached.timestamp < this.MARK_PRICE_CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    // Fetch fresh data
     const ticker = await this.exchange.fetchTicker(symbol);
     // Extract mark price when exposed by OKX via ccxt .info.markPx
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -115,11 +134,36 @@ export class OKXExchange implements Exchange {
     const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : mark > 0 ? mark : lastLike;
 
     const ts = ticker.timestamp || Date.now();
-    return { symbol, mark, bid: bid || 0, ask: ask || 0, mid, ts };
+    const result = { symbol, mark, bid: bid || 0, ask: ask || 0, mid, ts };
+
+    // Cache the result
+    this.markAndBestPricesCache.set(cacheKey, { data: result, timestamp: now });
+
+    // Clean up old cache entries periodically (prevent memory leak)
+    this.cleanupCache();
+
+    return result;
   }
 
   private async ensureMarkets(): Promise<void> {
     return ensureMarketsLoaded(this.exchange, this.logger, this.marketsState);
+  }
+
+  /**
+   * Clean up old cache entries to prevent memory leaks
+   */
+  private cleanupCache(): void {
+    if (this.markAndBestPricesCache.size <= 100) {
+      return; // No cleanup needed
+    }
+
+    const now = Date.now();
+    const cutoff = now - this.MARK_PRICE_CACHE_TTL_MS * 10; // Keep entries up to 10x TTL
+    for (const [key, value] of this.markAndBestPricesCache.entries()) {
+      if (value.timestamp < cutoff) {
+        this.markAndBestPricesCache.delete(key);
+      }
+    }
   }
 
   async getAccount(): Promise<Account> {

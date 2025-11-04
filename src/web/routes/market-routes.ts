@@ -6,8 +6,15 @@ import { isPriceCacheValid, isKlineCacheValid, type KlineCacheEntry } from '../u
 import { resolveExchange } from '../utils/exchange-utils.js';
 import type { TradingManager } from '../trading-manager.js';
 import { createLogger } from '../utils/logger.js';
+import { RequestDeduplicator } from '../utils/request-deduplication.js';
 
 const { logger, context: loggerContext } = createLogger('MarketRoutes');
+
+// In-flight request tracking for deduplication (prevents duplicate API calls for same symbol)
+const tickerDeduplicator = new RequestDeduplicator<{ price: number; timestamp: number }>();
+const klineDeduplicator = new RequestDeduplicator<
+  { timestamp: number; open: number; high: number; low: number; close: number; volume: number }[]
+>();
 
 /**
  * Register market data routes
@@ -60,9 +67,9 @@ export function registerMarketRoutes(router: Router, tradingManager: TradingMana
                 tradingManager._priceCache!.delete(sym);
               }
 
-              // Fetch fresh price
+              // Use deduplication to prevent concurrent duplicate requests
               try {
-                const ticker = await exchange.getTicker(sym);
+                const ticker = await tickerDeduplicator.execute(sym, () => exchange.getTicker(sym));
                 if (ticker.price > 0 && isFinite(ticker.price)) {
                   price = ticker.price;
                   tradingManager._priceCache!.set(sym, { price, ts: now });
@@ -88,9 +95,11 @@ export function registerMarketRoutes(router: Router, tradingManager: TradingMana
             if (isKlineCacheValid(klineEntry, KLINE_TTL_MS, now)) {
               candle = klineEntry!.candle;
             } else {
-              // Fetch fresh kline
+              // Use deduplication to prevent concurrent duplicate requests
               try {
-                const candles = await exchange.getCandlesticks(sym, interval, 1);
+                const candles = await klineDeduplicator.execute(kKey, () =>
+                  exchange.getCandlesticks(sym, interval, 1)
+                );
                 const last = candles && candles.length ? candles[candles.length - 1] : null;
                 if (last) {
                   candle = last;

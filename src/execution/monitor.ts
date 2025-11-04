@@ -75,7 +75,8 @@ export class PositionMonitorService implements PositionMonitor {
 
   async monitorPositions(
     positions: Position[],
-    exchange: Exchange
+    exchange: Exchange,
+    getTickerPrice?: (symbol: string) => Promise<number | undefined>
   ): Promise<
     Array<{
       symbol: string;
@@ -97,7 +98,7 @@ export class PositionMonitorService implements PositionMonitor {
   > {
     // Process positions in parallel with error isolation
     const monitorPromises = positions.map(position =>
-      this.monitorSinglePosition(position, exchange).catch(error => {
+      this.monitorSinglePosition(position, exchange, getTickerPrice).catch(error => {
         this.logger.error(
           `Critical: Failed to monitor ${position.symbol}`,
           error instanceof Error ? error : new Error(String(error)),
@@ -132,7 +133,8 @@ export class PositionMonitorService implements PositionMonitor {
    */
   private async monitorSinglePosition(
     position: Position,
-    exchange: Exchange
+    exchange: Exchange,
+    getTickerPrice?: (symbol: string) => Promise<number | undefined>
   ): Promise<{
     symbol: string;
     side: string;
@@ -165,15 +167,30 @@ export class PositionMonitorService implements PositionMonitor {
     }> = [];
     for (let attempt = 1; attempt <= RETRIES.POSITION_MONITORING_MAX; attempt++) {
       try {
-        // Fetch current price with timeout
-        const ticker = await Promise.race([
-          exchange.getTicker(position.symbol),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Ticker fetch timeout')), TIMEOUTS.TICKER_FETCH_MS)
-          ),
-        ]);
-
-        const currentPrice = (ticker as { price: number }).price;
+        // Fetch current price with timeout (use cache helper if available)
+        let currentPrice: number;
+        if (getTickerPrice) {
+          // Use ticker cache helper to avoid duplicate API calls
+          const price = await Promise.race([
+            getTickerPrice(position.symbol),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Ticker fetch timeout')), TIMEOUTS.TICKER_FETCH_MS)
+            ),
+          ]);
+          if (price === undefined) {
+            throw new Error('Ticker price unavailable');
+          }
+          currentPrice = price;
+        } else {
+          // Fallback to direct exchange call if helper not provided
+          const ticker = await Promise.race([
+            exchange.getTicker(position.symbol),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Ticker fetch timeout')), TIMEOUTS.TICKER_FETCH_MS)
+            ),
+          ]);
+          currentPrice = (ticker as { price: number }).price;
+        }
 
         // Validate price - use strict validation utility
         const validatedPrice = getValidPriceOrThrow(currentPrice, 'monitorPositions');

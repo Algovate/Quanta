@@ -15,6 +15,7 @@ import { ExchangeSnapshotService } from './exchange-snapshot.js';
 // import { getConfig } from '../config/settings.js'; // Removed - no longer used
 import { UnifiedLogger } from '../logging/index.js';
 import { formatUTCTimeCompact, formatUTCLogTime } from '../utils/time.js';
+import { createTickerPriceGetter } from '../utils/ticker-cache.js';
 
 // Decision information types for signal execution
 interface SignalDecisionInfo {
@@ -394,18 +395,12 @@ export class TradingWorkflow {
   ): Promise<void> {
     if (signals.length === 0) return;
 
-    const getCachedPrice = async (symbol: string): Promise<number | undefined> => {
-      const cached = tickerCache.get(symbol);
-      if (cached) return cached.price;
-      try {
-        const t = await this.snapshotService.getTicker(symbol);
-        const price = t.price ?? undefined;
-        if (price !== undefined) tickerCache.set(symbol, { price, timestamp: Date.now() });
-        return price;
-      } catch {
-        return undefined;
-      }
-    };
+    const getCachedPrice = createTickerPriceGetter(
+      tickerCache,
+      this.snapshotService,
+      this.unifiedLogger,
+      this.loggerContext
+    );
 
     const signalSummary = `🤖 Generated ${signals.length} signal${signals.length > 1 ? 's' : ''}:`;
     if (this.isBackgroundMode) {
@@ -629,6 +624,18 @@ export class TradingWorkflow {
         `💰 Account: $${account.equity.toFixed(2)} | Positions: ${positions.length}`
       );
 
+      // Per-cycle ticker cache to avoid redundant fetches (created early for position monitoring)
+      const tickerCache = new Map<string, { price: number; timestamp: number }>();
+
+      // Helper to get ticker price with caching
+      // Returns undefined if price is invalid or unavailable (caller must handle)
+      const getTickerPrice = createTickerPriceGetter(
+        tickerCache,
+        this.snapshotService,
+        this.unifiedLogger,
+        this.loggerContext
+      );
+
       // 2. Monitor existing positions
       this.unifiedLogger.startStage(cycleOperationId, 'monitor_positions', {
         positionsCount: positions.length,
@@ -651,7 +658,8 @@ export class TradingWorkflow {
         const monitorStartTime = Date.now();
         positionDecisionInfos = await this.positionMonitor.monitorPositions(
           enrichedPositions,
-          this.exchange
+          this.exchange,
+          getTickerPrice
         );
         const monitorDuration = Date.now() - monitorStartTime;
 
@@ -815,45 +823,6 @@ export class TradingWorkflow {
       });
       const fetchStart = Date.now();
       const timeframes = this.config.marketTimeframes ?? ['3m', '4h'];
-
-      // Per-cycle ticker cache to avoid redundant fetches
-      const tickerCache = new Map<string, { price: number; timestamp: number }>();
-
-      // Helper to get ticker price with caching
-      // Returns undefined if price is invalid or unavailable (caller must handle)
-      const getTickerPrice = async (symbol: string): Promise<number | undefined> => {
-        const cached = tickerCache.get(symbol);
-        if (cached) {
-          // Validate cached price before returning
-          if (cached.price > 0 && isFinite(cached.price)) {
-            return cached.price;
-          }
-          // Invalid cached price - remove it and fetch fresh
-          tickerCache.delete(symbol);
-        }
-        try {
-          const ticker = await this.snapshotService.getTicker(symbol);
-          const price = ticker.price;
-          // Only cache valid prices
-          if (price !== undefined && price !== null && isFinite(price) && price > 0) {
-            tickerCache.set(symbol, { price, timestamp: Date.now() });
-            return price;
-          }
-          this.unifiedLogger.warn(
-            `Invalid price from ticker for ${symbol}: ${price}`,
-            {},
-            this.loggerContext
-          );
-          return undefined;
-        } catch (error) {
-          this.unifiedLogger.debug(
-            `Failed to fetch ticker for ${symbol}`,
-            error instanceof Error ? { error: error.message } : { error: String(error) },
-            this.loggerContext
-          );
-          return undefined; // Return undefined instead of 0 - caller must handle
-        }
-      };
 
       // Fetch market data based on configuration
       const marketDataResult =
@@ -1249,34 +1218,12 @@ export class TradingWorkflow {
       await this.processSignals(signals, tickerCache);
 
       // 6. Execute all signals
-      const getCachedPrice = async (symbol: string): Promise<number | undefined> => {
-        const cached = tickerCache.get(symbol);
-        if (cached) {
-          // Validate cached price before returning
-          if (cached.price > 0 && isFinite(cached.price)) {
-            return cached.price;
-          }
-          // Invalid cached price - remove it and fetch fresh
-          tickerCache.delete(symbol);
-        }
-        try {
-          const t = await this.snapshotService.getTicker(symbol);
-          const price = t.price;
-          // Only cache valid prices
-          if (price !== undefined && price !== null && isFinite(price) && price > 0) {
-            tickerCache.set(symbol, { price, timestamp: Date.now() });
-            return price;
-          }
-          this.unifiedLogger.warn(
-            `Invalid price from ticker for ${symbol}: ${price}`,
-            {},
-            this.loggerContext
-          );
-          return undefined;
-        } catch {
-          return undefined;
-        }
-      };
+      const getCachedPrice = createTickerPriceGetter(
+        tickerCache,
+        this.snapshotService,
+        this.unifiedLogger,
+        this.loggerContext
+      );
 
       // Track trades before execution to compute per-cycle tradeCount delta
       const tradesBefore = this.state.totalTrades;
