@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import type * as ccxt from 'ccxt';
-import { getConfig } from '../../config/settings.js';
+import { getConfig, saveConfig } from '../../config/settings.js';
 import { TradingManager } from '../trading-manager.js';
 import type { Exchange } from '../../exchange/types.js';
 import { resolveExchange, isNonCCXTExchange } from '../utils/exchange-utils.js';
@@ -63,9 +63,20 @@ export function registerDataRoutes(router: Router, tradingManager: TradingManage
     }
   });
 
-  // Update config (simplified for now)
-  router.put('/api/config', (_req: Request, res: Response) => {
-    res.status(501).json({ error: 'Config update not yet implemented' });
+  // Update config
+  router.put('/api/config', (req: Request, res: Response) => {
+    try {
+      const configUpdate = req.body;
+      saveConfig(configUpdate);
+      res.json({ success: true, message: 'Configuration saved successfully' });
+    } catch (error) {
+      logger.error(
+        'Error saving config',
+        error instanceof Error ? error : new Error(String(error)),
+        loggerContext
+      );
+      res.status(500).json({ error: 'Failed to save config' });
+    }
   });
 
   // Signals (recent)
