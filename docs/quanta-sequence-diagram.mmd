@@ -1,0 +1,45 @@
+sequenceDiagram
+    participant CLI as CLIApplication
+    participant TM as TradingManager
+    participant TW as TradingWorkflow
+    participant EX as Exchange
+    participant MDP as MarketDataProvider
+    participant AI as OpenRouterClient
+    participant RM as RiskManager
+    participant OE as OrderExecutor
+    participant PM as PositionMonitorService
+    participant EB as EventBus
+
+    CLI->>TM: trade start
+    TM->>TW: create & start
+    TW->>EB: emit cycle:start
+
+    loop Trading Cycle
+        TW->>EX: getAccount()
+        TW->>EX: getPositions()
+        TW->>PM: monitorPositions()
+        PM->>EX: check positions
+        PM->>OE: execute exit orders
+
+        TW->>MDP: fetchMarketData()
+        MDP->>EX: getCandlesticks()
+
+        TW->>AI: generateTradingSignal()
+        AI-->>TW: TradingSignal[]
+
+        TW->>EB: emit cycle:signals
+
+        loop For each signal
+            TW->>RM: validateSignal()
+            TW->>RM: calculatePositionSizing()
+            TW->>OE: executeSignal()
+            OE->>EX: placeOrder()
+            EX-->>OE: Order result
+        end
+
+        TW->>EB: emit cycle:execution
+        TW->>EB: emit cycle:complete
+    end
+
+    CLI->>TM: trade stop
+    TM->>TW: stop()

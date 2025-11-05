@@ -1,0 +1,48 @@
+graph LR
+  %% Participants
+  CLI[CLIApplication]
+  TM[TradingManager]
+  TW[TradingWorkflow]
+  EX[Exchange]
+  MDP[MarketDataProvider]
+  AI[OpenRouterClient]
+  RM[RiskManager]
+  OE[OrderExecutor]
+  PM[PositionMonitorService]
+  EB[EventBus]
+
+  %% Start/stop
+  CLI -- 1. trade start --> TM
+  TM  -- 2. create & start --> TW
+  TW  -- 3. emit cycle:start --> EB
+
+  %% Trading cycle (collaboration view)
+  subgraph TC[Trading Cycle]
+    TW -- 4. getAccount --> EX
+    TW -- 5. getPositions --> EX
+    TW -- 6. monitorPositions --> PM
+    PM -- 7. check positions --> EX
+    PM -- 8. execute exit orders --> OE
+
+    TW -- 9. fetchMarketData --> MDP
+    MDP -- 10. getCandlesticks --> EX
+
+    TW -- 11. generateTradingSignal --> AI
+    AI -- 12. TradingSignal[] --> TW
+
+    TW -- 13. emit cycle:signals --> EB
+
+    subgraph PS[Per signal]
+      TW -- 14. validateSignal --> RM
+      TW -- 15. calculatePositionSizing --> RM
+      TW -- 16. executeSignal --> OE
+      OE -- 17. placeOrder --> EX
+      EX -- 18. Order result --> OE
+    end
+
+    TW -- 19. emit cycle:execution --> EB
+    TW -- 20. emit cycle:complete --> EB
+  end
+
+  CLI -- 21. trade stop --> TM
+  TM  -- 22. stop --> TW
