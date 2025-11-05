@@ -17,7 +17,7 @@ export class ConfigCommands {
     program
       .command('show')
       .description('Show current configuration')
-      .option('-f, --format <format>', 'Output format: json, yaml, table', 'table')
+      .option('-f, --format <format>', 'Output format: json, table', 'table')
       .action(async options => {
         await handleAsync(async () => {
           await ConfigCommands.showConfig(options);
@@ -90,8 +90,6 @@ export class ConfigCommands {
 
     if (options.format === 'json') {
       originalConsole.log(JSON.stringify(config, null, 2));
-    } else if (options.format === 'yaml') {
-      originalConsole.log(chalk.yellow('⚠️  YAML format not yet implemented'));
     } else {
       originalConsole.log(chalk.cyan('⚙️  Quanta Configuration'));
       originalConsole.log(chalk.gray('Current system settings\n'));

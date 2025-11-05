@@ -84,7 +84,7 @@ quanta trade start --env live --coins BTC
 - Monitor positions actively
 - Understand exchange fee structures
 - Be aware of slippage and execution quality
-- Know how to stop trading immediately if needed (`Ctrl+C` or `quanta trade stop --force`)
+- Know how to stop trading immediately if needed (`Ctrl+C`)
 
 ### Mode Comparison
 
@@ -112,12 +112,9 @@ quanta trade start --env paper --coins BTC,ETH,SOL
 quanta trade start --env live --coins BTC
 ```
 
-### 2. Monitor Status
+### 2. Monitor Output
 
 ```bash
-# Check current status
-quanta trade status
-
 # View detailed output in real-time
 quanta log view --follow
 
@@ -127,16 +124,7 @@ quanta log view --follow --context Workflow --level info
 
 ### 3. Control Trading
 
-```bash
-# Pause trading system
-quanta trade pause --reason "Maintenance"
-
-# Stop gracefully (finish current trades)
-quanta trade stop --graceful
-
-# Force immediate stop
-quanta trade stop --force
-```
+Use `Ctrl+C` to stop the running trading process.
 
 ### 4. Review Results
 
@@ -307,8 +295,8 @@ quanta config show
 # Validate settings
 quanta config validate
 
-# Check status
-quanta trade status
+# Check status (via logs)
+quanta log view --context TradeStart --lines 100
 ```
 
 ### API Errors

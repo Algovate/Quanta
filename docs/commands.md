@@ -10,7 +10,7 @@ Complete reference for all Quanta commands.
 
 ```
 quanta
-├── trade      Trading operations (5 sub-commands)
+├── trade      Trading operations (2 sub-commands)
 ├── arena      Multi-drone trading arena (6 sub-commands)
 ├── test       Testing and validation (2 sub-commands)
 ├── config     Configuration management (6 sub-commands)
@@ -123,80 +123,8 @@ quanta log view --context Workflow --level info
 
 ---
 
-### `trade pause` - Pause Trading System
-
-Temporarily pause the trading system.
-
-```bash
-quanta trade pause [options]
-
-Options:
-  --reason <reason>  Reason for pausing (default: "Manual pause")
-```
-
-**Examples:**
-
-```bash
-# Pause with reason
-quanta trade pause --reason "Maintenance window"
-
-# Standard pause
-quanta trade pause
-```
-
----
-
-### `trade stop` - Stop Trading System
-
-Stop the running trading system.
-
-```bash
-quanta trade stop [options]
-
-Options:
-  --graceful  Graceful shutdown (finish current trades) (default: false)
-  --force     Force immediate stop (default: false)
-```
-
-**Examples:**
-
-```bash
-# Graceful stop (recommended)
-quanta trade stop --graceful
-
-# Force stop (emergency)
-quanta trade stop --force
-```
-
----
-
-### `trade status` - Show Status
-
-Show current trading status.
-
-```bash
-quanta trade status
-```
-
-**Output:**
-
-```
-📊 Quanta Status
-==========================================
-⚙️  Configuration:
-   Mode: strategy
-   Env: simulate
-   Coins: BTC, ETH, SOL
-   Max Positions: 6
-   Cycle Period: 180s
-   Stop Loss: 5.0%
-
-🤖 AI Configuration:
-   Model: deepseek/deepseek-chat-v3-0324
-   Temperature: 0.7
-```
-
----
+ 
+ 
 
 ### `trade backtest` - Run Backtest
 
@@ -964,11 +892,8 @@ quanta trade start --env simulate --coins BTC,ETH,SOL
 # View detailed output (cycle summaries, account status, positions, etc.)
 quanta log view --follow
 
-# Monitor status
-quanta trade status
-
-# Stop trading
-quanta trade stop --graceful
+# Monitor output
+quanta log view --follow
 ```
 
 ---

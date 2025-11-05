@@ -21,9 +21,7 @@ export class HelpCommand {
     console.log(chalk.yellow('🏦 Trading'));
     console.log('  quanta trade start        Start AI trading system');
     console.log('  quanta trade backtest     Run backtest with historical data');
-    console.log('  quanta trade status       Show current trading status');
-    console.log('  quanta trade pause        Pause trading (experimental)');
-    console.log('  quanta trade stop         Stop trading');
+    
     console.log('');
 
     console.log(chalk.yellow('🏟️  Arena'));

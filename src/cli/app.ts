@@ -82,7 +82,7 @@ export class CLIApplication {
       .action(async () => {
         // Note: Server status check removed - server is now optional/separate
         // Recommend sub-status commands for details
-        console.log('ℹ️  For details: quanta trade status | quanta arena status');
+        console.log('ℹ️  For details: quanta log view --follow | quanta arena status');
         console.log('ℹ️  For API server status: Use @quanta/server package if installed');
       });
   }

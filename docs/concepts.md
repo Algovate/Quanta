@@ -233,7 +233,7 @@ quanta trade start --env live --coins BTC
 - Monitor positions actively
 - Understand exchange fee structures
 - Be aware of slippage and execution quality
-- Know how to stop trading immediately if needed (`Ctrl+C` or `quanta trade stop --force`)
+- Know how to stop trading immediately if needed (`Ctrl+C`)
 
 **Technical Details:**
 

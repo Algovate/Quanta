@@ -144,35 +144,7 @@ export class TradeCommands {
         }, 'TradeCommands.backtest');
       });
 
-    program
-      .command('status')
-      .description('Show current trading status')
-      .action(async () => {
-        await handleAsync(async () => {
-          await TradeCommands.showStatus();
-        }, 'TradeCommands.status');
-      });
-
-    program
-      .command('pause')
-      .description('Temporarily pause the trading system')
-      .option('--reason <reason>', 'Reason for pausing', 'Manual pause')
-      .action(async options => {
-        await handleAsync(async () => {
-          await TradeCommands.pauseTrading(options);
-        }, 'TradeCommands.pause');
-      });
-
-    program
-      .command('stop')
-      .description('Stop the running trading system')
-      .option('--graceful', 'Graceful shutdown (finish current trades)', false)
-      .option('--force', 'Force immediate stop', false)
-      .action(async options => {
-        await handleAsync(async () => {
-          await TradeCommands.stopTrading(options);
-        }, 'TradeCommands.stop');
-      });
+    
   }
 
   private static async startTrading(options: { env?: string; coins?: string }): Promise<void> {
@@ -480,100 +452,7 @@ export class TradeCommands {
     }
   }
 
-  private static async showStatus(): Promise<void> {
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-    originalConsole.log(chalk.cyan('📊 Quanta Status'));
-    originalConsole.log(chalk.gray('Current system state\n'));
-
-    const config = getConfig();
-
-    originalConsole.log(chalk.blue('⚙️  Configuration:'));
-    originalConsole.log(`   Mode: ${config.mode}`);
-    originalConsole.log(`   Coins: ${config.trading.coins.join(', ')}`);
-    originalConsole.log(`   Max Positions: ${config.trading.maxPositions}`);
-    originalConsole.log(`   Cycle Period: ${config.trading.cyclePeriod / 1000}s`);
-    originalConsole.log(`   Stop Loss: ${(config.trading.stopLoss * 100).toFixed(1)}%`);
-    originalConsole.log('');
-
-    originalConsole.log(chalk.blue('🤖 AI Configuration:'));
-    originalConsole.log(`   Model: ${config.ai.model}`);
-    originalConsole.log(`   Temperature: ${config.ai.temperature}`);
-    originalConsole.log('');
-
-    originalConsole.log(chalk.yellow('⚠️  Live status monitoring not yet implemented'));
-  }
-
-  private static async pauseTrading(options: { reason: string }): Promise<void> {
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-    originalConsole.log(chalk.cyan('⏸️  Pausing Trading System'));
-    originalConsole.log(chalk.gray('='.repeat(60)));
-    originalConsole.log(`Reason: ${options.reason}\n`);
-
-    try {
-      // Check if trading system is running
-      originalConsole.log(chalk.blue('📊 Checking system status...'));
-
-      // In a real implementation, this would:
-      // 1. Check for running workflow
-      // 2. Set pause flag
-      // 3. Save current state
-      // 4. Notify monitoring systems
-
-      originalConsole.log(chalk.yellow('⚠️  Pause functionality not yet implemented'));
-      originalConsole.log(chalk.gray('   This will:'));
-      originalConsole.log(chalk.gray('   - Pause trading cycles'));
-      originalConsole.log(chalk.gray('   - Keep positions open'));
-      originalConsole.log(chalk.gray('   - Save state for resumption'));
-    } catch (error) {
-      originalConsole.error(chalk.red('❌ Error pausing trading system'));
-      throw error;
-    }
-  }
-
-  private static async stopTrading(options: {
-    graceful?: boolean;
-    force?: boolean;
-  }): Promise<void> {
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-    const graceful = options.graceful || false;
-    const force = options.force || false;
-
-    originalConsole.log(chalk.cyan('🛑 Stopping Trading System'));
-    originalConsole.log(chalk.gray('='.repeat(60)));
-    originalConsole.log(`Mode: ${graceful ? 'Graceful' : force ? 'Force' : 'Standard'}\n`);
-
-    try {
-      originalConsole.log(chalk.blue('📊 Checking active positions...'));
-
-      if (graceful) {
-        originalConsole.log(chalk.yellow('⏳ Graceful shutdown: Finishing current trades...'));
-        originalConsole.log(chalk.gray('   - Waiting for open orders to complete'));
-        originalConsole.log(chalk.gray('   - Closing positions safely'));
-        originalConsole.log(chalk.gray('   - Saving final state'));
-      } else if (force) {
-        originalConsole.log(chalk.red('⚠️  Force stop: Immediate termination'));
-        originalConsole.log(chalk.gray('   - Stopping all trading activity immediately'));
-        originalConsole.log(chalk.gray('   - Positions may remain open'));
-      } else {
-        originalConsole.log(chalk.yellow('⏹️  Standard stop: Safe shutdown'));
-        originalConsole.log(chalk.gray('   - Stopping new trade cycles'));
-        originalConsole.log(chalk.gray('   - Completing current operations'));
-      }
-
-      originalConsole.log('');
-      originalConsole.log(chalk.yellow('⚠️  Stop functionality not yet implemented'));
-      originalConsole.log(chalk.gray('   This will:'));
-      originalConsole.log(chalk.gray('   - Stop trading workflow'));
-      originalConsole.log(chalk.gray('   - Close or keep positions (based on mode)'));
-      originalConsole.log(chalk.gray('   - Save session summary'));
-
-      originalConsole.log('');
-      originalConsole.log(chalk.green('💡 Tip: Use Ctrl+C to interrupt running trade commands'));
-    } catch (error) {
-      originalConsole.error(chalk.red('❌ Error stopping trading system'));
-      throw error;
-    }
-  }
+  
 
   /**
    * Validate AI configuration

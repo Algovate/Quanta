@@ -70,10 +70,8 @@ quanta trade start --mode live --coins BTC,ETH,SOL
 # Run historical backtest with enhanced reporting
 quanta trade backtest --start 2024-01-01 --end 2024-04-01 --coins BTC,ETH --initial-balance 10000
 
-# Other trading commands
-quanta trade pause --reason "Maintenance"
-quanta trade stop --graceful
-quanta trade status
+# Monitor output
+quanta log view --follow
 ```
 
 ### Simulation
