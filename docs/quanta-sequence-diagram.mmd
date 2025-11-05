@@ -17,28 +17,47 @@ sequenceDiagram
     loop Trading Cycle
         TW->>EX: getAccount()
         TW->>EX: getPositions()
+        
+        rect lightgray
+        Note over TW: Stage 1 – MonitorPositions
         TW->>PM: monitorPositions()
         PM->>EX: check positions
         PM->>OE: execute exit orders
+        end
 
+        rect lightgray
+        Note over TW: Stage 2 – FetchMarketData
         TW->>MDP: fetchMarketData()
         MDP->>EX: getCandlesticks()
+        end
 
+        rect lightgray
+        Note over TW: Stage 3 – GenerateSignals
         TW->>AI: generateTradingSignal()
         AI-->>TW: TradingSignal[]
-
         TW->>EB: emit cycle:signals
+        end
 
         loop For each signal
+            rect lightgray
+            Note over TW: Stage 4 – ProcessSignals
             TW->>RM: validateSignal()
             TW->>RM: calculatePositionSizing()
+            end
+
+            rect lightgray
+            Note over TW: Stage 5 – ExecuteSignals
             TW->>OE: executeSignal()
             OE->>EX: placeOrder()
             EX-->>OE: Order result
+            end
         end
 
+        rect lightgray
+        Note over TW: Stage 6 – FinalizeCycle
         TW->>EB: emit cycle:execution
         TW->>EB: emit cycle:complete
+        end
     end
 
     %% CLI stop command removed; use Ctrl+C
