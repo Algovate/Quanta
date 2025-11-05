@@ -175,15 +175,26 @@ export class TradeCommands {
     // Get original console to bypass interception for minimal output
     const originalConsole = unifiedLogger.getOriginalConsole();
 
-    // Console: Minimal essential info only (use originalConsole to avoid interception)
-    originalConsole.log(chalk.cyan('🏆 Quanta Trading System\n'));
-    originalConsole.log(chalk.gray(`Env: ${env} | Coins: ${coins.join(', ')}\n`));
-
+    // Extract exchange configuration for display
     const exchangeName = updatedConfig.exchange?.name || 'simulator';
     const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
     const exchangeApiKey = updatedConfig.exchange?.apiKey;
     const exchangeApiSecret = updatedConfig.exchange?.apiSecret;
     const marketType = updatedConfig.exchange?.marketType;
+
+    // Format exchange display name
+    let exchangeDisplay = exchangeName;
+    if (env === 'paper' && exchangeName !== 'simulator') {
+      exchangeDisplay = `Paper (${exchangeName.toUpperCase()}${exchangeTestnet ? ', testnet' : ''})`;
+    } else if (exchangeName === 'simulator') {
+      exchangeDisplay = 'Simulator';
+    } else {
+      exchangeDisplay = `${exchangeName}${exchangeTestnet ? ' (testnet)' : ''}`;
+    }
+
+    // Console: Minimal essential info only (use originalConsole to avoid interception)
+    originalConsole.log(chalk.cyan('🏆 Quanta Trading System\n'));
+    originalConsole.log(chalk.gray(`Env: ${env} | Exchange: ${exchangeDisplay} | Coins: ${coins.join(', ')}\n`));
 
     // UnifiedLogger: Full detailed output
     unifiedLogger.info(chalk.cyan('🏆 Quanta Trading System'), {}, 'TradeStart');
