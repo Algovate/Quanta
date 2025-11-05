@@ -146,6 +146,13 @@ export class TradingManager extends EventEmitter {
       sessionManager.acquire(session);
       sessionAcquired = true;
 
+      // Write session info only to structured logs (no console output)
+      this.logger.info(
+        `📋 Execution Session: ${session.mode} (${session.env}) — ID: ${session.id}`,
+        {},
+        this.context
+      );
+
       this.logger.info(
         'Trading workflow execution session started',
         {

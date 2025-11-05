@@ -124,16 +124,20 @@ export async function withRetry<T>(fn: () => Promise<T>, config: RetryConfig): P
       const shouldRetryError = shouldRetry(error);
 
       // Log retry attempt
-      logger.debug(
-        'Function failed, checking retry eligibility',
-        {
-          attempt: attempt + 1,
-          maxRetries,
-          shouldRetry: shouldRetryError,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        loggerContext
-      );
+      const isAIClientError =
+        error && ((error as any).isClientError || (error as any).name === 'AIClientError');
+      if (!isAIClientError) {
+        logger.debug(
+          'Function failed, checking retry eligibility',
+          {
+            attempt: attempt + 1,
+            maxRetries,
+            shouldRetry: shouldRetryError,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          loggerContext
+        );
+      }
 
       // If this was the last attempt or we shouldn't retry, throw
       if (attempt >= maxRetries || !shouldRetryError) {

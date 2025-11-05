@@ -60,7 +60,8 @@ export class ExecutionSessionManager {
       );
     }
     this.active = { ...session, running: true };
-    this.logger.info(
+    // Log at debug level here to avoid duplicate "acquired" lines; CLI prints a user-facing line
+    this.logger.debug(
       'Execution session acquired',
       {
         mode: session.mode,

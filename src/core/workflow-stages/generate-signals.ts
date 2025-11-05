@@ -69,22 +69,11 @@ export class GenerateSignalsStage implements WorkflowStage {
 
       // If this is an AIClientError, propagate it to stop the workflow
       if (error instanceof AIClientError) {
-        // Log detailed error information
-        unifiedLogger.error(
-          `AI client error - stopping workflow: ${err.message}`,
-          err,
-          ctx.loggerContext || 'GenerateSignalsStage'
-        );
         unifiedLogger.recordError(err, {
           cycleId: (ctx as any)?.getState?.()?.cycleCount ?? 0,
           operationId,
         });
         unifiedLogger.completeStage(operationId, this.name, undefined, err);
-
-        // Emit error via emitLog if available
-        if (ctx.emitLog) {
-          ctx.emitLog('error', `AI client error: ${err.message}`);
-        }
 
         // Return abort with special flag to indicate workflow should stop
         return { abort: { reason: 'ai_client_error', error: err, stopWorkflow: true } };

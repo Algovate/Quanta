@@ -30,8 +30,8 @@ export function acquireWorkflowSession(
     sessionManager.acquire(executionSession);
     sessionAcquired = true;
 
-    // Log session info
-    logger.info(
+    // Log session info (debug to avoid duplicate visible lines; console line below is user-facing)
+    logger.debug(
       'Execution session acquired',
       {
         mode: executionSession.mode,
@@ -42,9 +42,11 @@ export function acquireWorkflowSession(
       loggerContext
     );
 
-    // Show session info to user
+    // Show session info to user (include session id)
     originalConsole.log(
-      chalk.blue(`📋 Execution Session: ${executionSession.mode} (${executionSession.env})`)
+      chalk.blue(
+        `📋 Execution Session: ${executionSession.mode} (${executionSession.env}) — ID: ${executionSession.id}`
+      )
     );
 
     return { session: executionSession, acquired: sessionAcquired };

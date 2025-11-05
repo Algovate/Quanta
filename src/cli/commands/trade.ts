@@ -4,7 +4,7 @@ import ora from 'ora';
 import { getConfig } from '../../config/settings.js';
 import { MarketDataProvider } from '../../data/index.js';
 import { OpenRouterClient } from '../../ai/index.js';
-import { TradingWorkflow } from '../../core/index.js';
+import { TradingManager } from '../../core/index.js';
 import { handleAsync } from '../../utils/index.js';
 import { formatExchangeFriendlyName } from '../utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
@@ -12,7 +12,6 @@ import { checkSessionConflict } from '../shared/session-guard.js';
 import { validateEnv, validateCoins } from '../shared/validation.js';
 import { createExchangeForMode, validateModeConfiguration } from '../shared/exchange-factory.js';
 import { setupGracefulShutdown } from '../shared/shutdown-handler.js';
-import { acquireWorkflowSession } from '../shared/session-manager.js';
 import type { Config } from '../../config/settings.js';
 import type { WorkflowConfig } from '../../types/index.js';
 
@@ -259,17 +258,9 @@ export class TradeCommands {
       updatedConfig.ai.baseUrl
     );
     const workflowConfig = this.buildWorkflowConfig(config, coins);
-    const workflow = new TradingWorkflow(exchange, marketProvider, aiClient, workflowConfig);
+    const manager = TradingManager.getInstance();
 
     spinner.succeed('Trading system initialized');
-
-    // Create and acquire execution session
-    const sessionResult = acquireWorkflowSession(
-      env as 'simulation' | 'paper' | 'live',
-      unifiedLogger,
-      'TradeStart'
-    );
-    const { session: executionSession, acquired: sessionAcquired } = sessionResult;
 
     // Console: Minimal status (use originalConsole to avoid interception)
     originalConsole.log(
@@ -280,22 +271,20 @@ export class TradeCommands {
     unifiedLogger.info(chalk.green('🚀 Starting trading workflow...'), {}, 'TradeStart');
     unifiedLogger.info(chalk.gray('Press Ctrl+C to stop\n'), {}, 'TradeStart');
 
-    // Set up signal handlers for graceful shutdown
+    // Set up signal handlers for graceful shutdown (core manages session)
     setupGracefulShutdown({
       logger: unifiedLogger,
       loggerContext: 'TradeStart',
-      session: sessionAcquired
-        ? {
-            session: executionSession,
-            acquired: sessionAcquired,
-          }
-        : undefined,
       onShutdown: async () => {
-        await workflow.stop();
+        try {
+          await manager.stop();
+        } catch {
+          // ignore if not running
+        }
       },
     });
 
-    await workflow.start();
+    await manager.start(exchange, marketProvider, aiClient, workflowConfig);
   }
 
   private static async runBacktest(options: {

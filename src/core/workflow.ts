@@ -542,8 +542,7 @@ export class TradingWorkflow {
           this.loggerContext
         );
 
-        // Emit to console logger
-        this.emitLog('error', `Stopping workflow: ${errorMessage}`);
+        // EmitLog omitted to avoid duplicating the unified error message
 
         // Also output directly to console for immediate visibility
         this.originalConsole.error('\n❌ AI Client Error - Stopping Workflow');
