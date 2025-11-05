@@ -2,8 +2,6 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import { getConfig } from '../../config/settings.js';
-import { SimulatorExchange } from '../../exchange/index.js';
-import { PaperExchange } from '../../exchange/paper.js';
 import { MarketDataProvider } from '../../data/index.js';
 import { OpenRouterClient } from '../../ai/index.js';
 import { TradingWorkflow } from '../../core/index.js';
@@ -12,57 +10,13 @@ import { formatExchangeFriendlyName } from '../utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
 import { checkSessionConflict } from '../shared/session-guard.js';
 import { validateEnv, validateCoins } from '../shared/validation.js';
-import { ExecutionSessionManager } from '../../web/execution-session-manager.js';
+import { createExchangeForMode, validateModeConfiguration } from '../shared/exchange-factory.js';
+import { setupGracefulShutdown } from '../shared/shutdown-handler.js';
+import { acquireWorkflowSession } from '../shared/session-manager.js';
 import type { Config } from '../../config/settings.js';
 import type { WorkflowConfig } from '../../types/index.js';
-import type { Exchange } from '../../exchange/types.js';
 
 export class TradeCommands {
-  /**
-   * Exchange type mapping
-   */
-  private static readonly EXCHANGE_MAP: Record<string, string> = {
-    okx: 'okx',
-    binance: 'binance',
-    bin: 'binance',
-    coinbase: 'coinbase',
-    cb: 'coinbase',
-    hyperliquid: 'hyperliquid',
-    hliq: 'hyperliquid',
-    simulator: 'simulator',
-  };
-
-  /**
-   * Create an exchange instance based on configuration
-   */
-  private static async createExchange(
-    exchangeName: string,
-    apiKey?: string,
-    apiSecret?: string,
-    testnet: boolean = true,
-    _mode: 'simulation' | 'live' = 'simulation'
-  ) {
-    const normalizedName = this.EXCHANGE_MAP[exchangeName.toLowerCase()];
-
-    if (!normalizedName) {
-      throw new Error(`Unsupported exchange: ${exchangeName}`);
-    }
-
-    // Handle simulator
-    if (normalizedName === 'simulator') {
-      return new SimulatorExchange(10000);
-    }
-
-    // Dynamically import and create real exchange
-    const module = await import(`../../exchange/${normalizedName}.js`);
-    const ExchangeClass = Object.values(module)[0] as new (
-      apiKey?: string,
-      apiSecret?: string,
-      testnet?: boolean
-    ) => unknown;
-    return new ExchangeClass(apiKey, apiSecret, testnet) as unknown;
-  }
-
   /**
    * Build a workflow configuration from loaded settings and selected coins.
    * Keeps the startTrading path concise and improves readability.
@@ -99,20 +53,6 @@ export class TradeCommands {
     } catch {
       // best-effort display only
     }
-  }
-
-  /**
-   * Helper to format error messages with consistent styling
-   */
-  private static formatError(title: string, issue: string, solution: string, tip?: string): string {
-    let message = chalk.red(`❌ ${title}`) + chalk.white('\n\n');
-    message += chalk.yellow('📝 Issue:') + chalk.gray(` ${issue}\n`);
-    message += chalk.white('\n');
-    message += chalk.yellow('🔧 Solution:') + chalk.white(` ${solution}`);
-    if (tip) {
-      message += chalk.white('\n\n') + chalk.yellow('💡 Tip:') + chalk.gray(` ${tip}`);
-    }
-    return message;
   }
 
   /**
@@ -156,50 +96,6 @@ export class TradeCommands {
     }
     if (marketType) {
       logger.info(`   Market Type: ${marketType}`, {}, 'TradeStart');
-    }
-  }
-
-  /**
-   * Validate and get final exchange instance for the trading mode
-   */
-  private static async getExchangeForMode(
-    mode: 'simulation' | 'paper' | 'live',
-    exchangeName: string,
-    apiKey?: string,
-    apiSecret?: string,
-    testnet: boolean = true
-  ): Promise<Exchange> {
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-    if (mode === 'simulation') {
-      // Pure mock data simulator
-      originalConsole.log('📊 Simulation mode: Using pure mock data (no real exchange data)');
-      return new SimulatorExchange(10000);
-    } else if (mode === 'paper') {
-      // Paper trading: real data with simulated execution
-      if (exchangeName === 'simulator') {
-        throw new Error(
-          'Paper trading mode requires a real exchange data source (okx, binance, coinbase, etc.). ' +
-            'Update config.json exchange.name to use a real exchange.'
-        );
-      }
-      // Remove duplicate message - configuration already displayed above
-      const dataExchange = await this.createExchange(exchangeName, apiKey, apiSecret, testnet);
-      // Wrap the real exchange with PaperExchange to simulate execution while using real market data
-      return new PaperExchange(dataExchange as any, 10000);
-    } else {
-      // Live mode - real exchanges
-      if (exchangeName === 'simulator') {
-        throw new Error(
-          'Cannot use simulator exchange in live mode. Please use a real exchange (okx, binance, coinbase, etc.)'
-        );
-      }
-      return (await this.createExchange(
-        exchangeName,
-        apiKey,
-        apiSecret,
-        testnet,
-        'live'
-      )) as Exchange;
     }
   }
 
@@ -292,7 +188,7 @@ export class TradeCommands {
     const coins = options.coins ? validateCoins(options.coins) : config.trading.coins;
 
     // Session guard: check for active execution sessions
-    await checkSessionConflict();
+    checkSessionConflict();
 
     const configUpdates = {
       mode: runtimeMode,
@@ -339,19 +235,22 @@ export class TradeCommands {
     );
 
     // Validate prerequisites based on mode
-    this.validateModeConfiguration(env, exchangeName, exchangeApiKey, exchangeApiSecret);
+    validateModeConfiguration(env, exchangeName, exchangeApiKey, exchangeApiSecret);
     this.validateAIConfiguration(updatedConfig.ai?.apiKey);
 
     // Initialize components and construct exchange only once
     const spinner = ora('Initializing trading system...').start();
     unifiedLogger.info('Initializing trading system...', {}, 'TradeStart');
-    const exchange = await this.getExchangeForMode(
-      env as 'simulation' | 'paper' | 'live',
-      exchangeName,
-      exchangeApiKey,
-      exchangeApiSecret,
-      updatedConfig.exchange?.testnet ?? true
-    );
+    const exchange = await createExchangeForMode({
+      mode: env as 'simulation' | 'paper' | 'live',
+      config: {
+        exchangeName,
+        apiKey: exchangeApiKey,
+        apiSecret: exchangeApiSecret,
+        testnet: updatedConfig.exchange?.testnet ?? true,
+      },
+      logToConsole: true,
+    });
 
     // UnifiedLogger: Display effective exchange implementation
     this.printEffectiveExchangeWithLogger(unifiedLogger, exchange, exchangeTestnet);
@@ -376,45 +275,12 @@ export class TradeCommands {
     spinner.succeed('Trading system initialized');
 
     // Create and acquire execution session
-    const sessionManager = ExecutionSessionManager.getInstance();
-    let sessionAcquired = false;
-    let executionSession;
-
-    try {
-      executionSession = sessionManager.createWorkflowSession(
-        env as 'simulation' | 'paper' | 'live'
-      );
-      sessionManager.acquire(executionSession);
-      sessionAcquired = true;
-
-      // Log session info
-      unifiedLogger.info(
-        'Execution session acquired',
-        {
-          mode: executionSession.mode,
-          env: executionSession.env,
-          id: executionSession.id,
-          startTime: executionSession.startTime,
-        },
-        'TradeStart'
-      );
-
-      // Show session info to user
-      originalConsole.log(
-        chalk.blue(`📋 Execution Session: ${executionSession.mode} (${executionSession.env})`)
-      );
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('Another execution session')) {
-        originalConsole.error(chalk.red(`❌ ${error.message}`));
-        throw error;
-      }
-      // Log warning but continue if session creation fails
-      unifiedLogger.warn(
-        'Failed to create execution session',
-        error instanceof Error ? error : new Error(String(error)),
-        'TradeStart'
-      );
-    }
+    const sessionResult = acquireWorkflowSession(
+      env as 'simulation' | 'paper' | 'live',
+      unifiedLogger,
+      'TradeStart'
+    );
+    const { session: executionSession, acquired: sessionAcquired } = sessionResult;
 
     // Console: Minimal status (use originalConsole to avoid interception)
     originalConsole.log(
@@ -426,70 +292,19 @@ export class TradeCommands {
     unifiedLogger.info(chalk.gray('Press Ctrl+C to stop\n'), {}, 'TradeStart');
 
     // Set up signal handlers for graceful shutdown
-    let isShuttingDown = false;
-    const shutdownHandler = async (signal: string) => {
-      if (isShuttingDown) {
-        // Force exit if already shutting down
-        process.exit(1);
-        return;
-      }
-      isShuttingDown = true;
-
-      originalConsole.log(chalk.yellow(`\n⏹  Shutting down trading system (${signal})...`));
-      unifiedLogger.info(
-        chalk.yellow(`Shutting down trading system (${signal})...`),
-        {},
-        'TradeStart'
-      );
-
-      try {
-        await workflow.stop();
-
-        // Release execution session
-        if (sessionAcquired && executionSession) {
-          sessionManager.release(executionSession.id);
-          const duration = Date.now() - executionSession.startTime;
-          originalConsole.log(
-            chalk.gray(
-              `   Session: ${executionSession.mode} (${executionSession.env}) - Runtime: ${Math.floor(duration / 1000)}s`
-            )
-          );
-          unifiedLogger.info(
-            'Execution session released',
-            {
-              id: executionSession.id,
-              mode: executionSession.mode,
-              env: executionSession.env,
-              duration,
-              durationFormatted: `${Math.floor(duration / 1000)}s`,
-            },
-            'TradeStart'
-          );
-        }
-
-        unifiedLogger.shutdown();
-        originalConsole.log(chalk.green('✅ Trading system stopped gracefully'));
-        process.exit(0);
-      } catch (error) {
-        // Still release session even on error
-        if (sessionAcquired && executionSession) {
-          try {
-            sessionManager.release(executionSession.id);
-          } catch {
-            // Ignore release errors
+    setupGracefulShutdown({
+      logger: unifiedLogger,
+      loggerContext: 'TradeStart',
+      session: sessionAcquired
+        ? {
+            session: executionSession,
+            acquired: sessionAcquired,
           }
-        }
-
-        originalConsole.error(chalk.red('❌ Error during shutdown'));
-        if (error instanceof Error) {
-          unifiedLogger.error('Error during shutdown', error, 'TradeStart');
-        }
-        process.exit(1);
-      }
-    };
-
-    process.on('SIGINT', () => shutdownHandler('SIGINT'));
-    process.on('SIGTERM', () => shutdownHandler('SIGTERM'));
+        : undefined,
+      onShutdown: async () => {
+        await workflow.stop();
+      },
+    });
 
     await workflow.start();
   }
@@ -761,67 +576,27 @@ export class TradeCommands {
   }
 
   /**
-   * Validate mode configuration
-   */
-  private static validateModeConfiguration(
-    mode: string,
-    exchangeName: string,
-    exchangeApiKey?: string,
-    exchangeApiSecret?: string
-  ): void {
-    if (mode === 'live') {
-      if (exchangeName === 'simulator') {
-        throw new Error(
-          this.formatError(
-            'Configuration Error: Live mode cannot use simulator',
-            'You have configured live mode but are using the simulator exchange.',
-            `Update ${chalk.cyan('config.json')} to use a real exchange like okx, binance, or coinbase with API credentials`
-          )
-        );
-      }
-
-      if (!exchangeApiKey || !exchangeApiSecret) {
-        throw new Error(
-          this.formatError(
-            `Missing API credentials for ${exchangeName.toUpperCase()}`,
-            'Live trading requires API key and secret for authentication.',
-            `Add your ${exchangeName.toUpperCase()} credentials to ${chalk.cyan('config.json')}`
-          )
-        );
-      }
-    } else if (mode === 'paper') {
-      if (exchangeName === 'simulator') {
-        throw new Error(
-          this.formatError(
-            'Configuration Error: Paper trading mode requires real exchange',
-            'Paper trading mode needs a real exchange for data (okx, binance, coinbase, etc.).',
-            `Update ${chalk.cyan('config.json')} exchange.name to a real exchange`
-          )
-        );
-      }
-
-      // API keys optional but show warning
-      if (!exchangeApiKey || !exchangeApiSecret) {
-        const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-        originalConsole.log(chalk.yellow('⚠️  Warning: Running paper trading without API keys'));
-        originalConsole.log(
-          chalk.gray(
-            '   Some features may be limited. Consider adding API keys to config.json for full access.'
-          )
-        );
-        originalConsole.log('');
-      }
-    }
-    // simulation mode - no validation needed
-  }
-
-  /**
    * Validate AI configuration
    */
   private static validateAIConfiguration(apiKey?: string): void {
     if (!apiKey) {
+      const formatError = (
+        title: string,
+        issue: string,
+        solution: string,
+        tip?: string
+      ): string => {
+        let message = chalk.red(`❌ ${title}`) + chalk.white('\n\n');
+        message += chalk.yellow('📝 Issue:') + chalk.gray(` ${issue}\n`);
+        message += chalk.white('\n');
+        message += chalk.yellow('🔧 Solution:') + chalk.white(` ${solution}`);
+        if (tip) {
+          message += chalk.white('\n\n') + chalk.yellow('💡 Tip:') + chalk.gray(` ${tip}`);
+        }
+        return message;
+      };
       throw new Error(
-        this.formatError(
+        formatError(
           'Missing AI API key',
           'AI signal generation requires an API key from OpenRouter.',
           `Add your OpenRouter API key to ${chalk.cyan('config.json')}`,

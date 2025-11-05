@@ -23,9 +23,13 @@ quanta test ai --type mock --coin BTC
 
 ### API Server (for QuantaWeb UI)
 
+The API server has been moved to a separate package `@quanta/server`. To use the API server:
+
 ```bash
-# Start REST/WebSocket API on port 3001
-npm run api:dev
+# Install and run the API server package
+cd QuantaServer
+npm install && npm run build
+npm start
 ```
 
 The QuantaWeb UI expects the API at `http://localhost:3001`. Configure the UI via:
@@ -34,6 +38,8 @@ The QuantaWeb UI expects the API at `http://localhost:3001`. Configure the UI vi
 NEXT_PUBLIC_QUANTA_API_URL=http://localhost:3001
 NEXT_PUBLIC_QUANTA_WS_URL=ws://localhost:3001
 ```
+
+See [QuantaServer/README.md](../QuantaServer/README.md) for more details.
 
 ## Core Features
 
@@ -123,6 +129,51 @@ Perception → Decision → Execution
     ↓           ↓          ↓
 Market Data → AI Analysis → Risk Mgmt + Orders
 ```
+
+### Package Structure
+
+Quanta is now split into two packages:
+
+- **`quanta`**: Core trading library with CLI - contains all trading logic, exchanges, AI agents, and CLI commands
+- **`@quanta/server`**: API server package - provides REST and WebSocket API for web UIs (QuantaWeb)
+
+The core library (`quanta`) is lightweight and has no HTTP dependencies. The API server (`@quanta/server`) depends on `quanta` and provides the web interface.
+
+### Library API
+
+The `quanta` package provides a clean library API through subpath exports:
+
+```typescript
+// Core trading components
+import { TradingWorkflow, TradingManager, ExecutionSessionManager } from 'quanta/core';
+import { BacktestEngine } from 'quanta/core';
+import { EventBus } from 'quanta/core';
+
+// Exchange adapters
+import { SimulatorExchange, PaperExchange, BacktestExchange } from 'quanta/exchange';
+import type { Exchange, Account, Position, Order } from 'quanta/exchange';
+
+// Configuration
+import { getConfig, saveConfig, validateConfig } from 'quanta/config';
+import type { Config } from 'quanta/config';
+
+// Types
+import type { TradingSignal, MarketData, BacktestConfig } from 'quanta/types';
+
+// Arena system
+import { ArenaManager, ArenaOrchestrator } from 'quanta/arena';
+
+// Logging
+import { UnifiedLogger, OperationLogger } from 'quanta/logging';
+
+// AI agents
+import { OpenRouterClient } from 'quanta/ai';
+
+// Utilities
+import { requestDeduplication } from 'quanta/utils';
+```
+
+See [QuantaServer/README.md](../QuantaServer/README.md) for API server usage.
 
 ## Documentation
 

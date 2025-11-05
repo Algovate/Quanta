@@ -4,6 +4,21 @@
   "description": "Quanta - AI-powered quantitative trading system with real-time decision making",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./core": "./dist/core/index.js",
+    "./core/factories": "./dist/core/factories.js",
+    "./arena": "./dist/arena/index.js",
+    "./arena/analysis": "./dist/arena/analysis/index.js",
+    "./config": "./dist/config/index.js",
+    "./exchange": "./dist/exchange/index.js",
+    "./exchange/*": "./dist/exchange/*.js",
+    "./logging": "./dist/logging/index.js",
+    "./types": "./dist/types/index.js",
+    "./utils": "./dist/utils/index.js",
+    "./data": "./dist/data/index.js",
+    "./ai": "./dist/ai/index.js"
+  },
   "bin": {
     "quanta": "dist/index.js"
   },
@@ -25,8 +40,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "type-check": "tsc --noEmit",
-    "type-check:strict": "tsc -p tsconfig.strict.json --noEmit",
-    "api:dev": "tsx src/web/start-server.ts"
+    "type-check:strict": "tsc -p tsconfig.strict.json --noEmit"
   },
   "keywords": [
     "quanta",
@@ -49,24 +63,19 @@
     "chalk": "^5.3.0",
     "cli-progress": "^3.12.0",
     "commander": "^11.1.0",
-    "cors": "^2.8.5",
     "date-fns": "^2.30.0",
     "decimal.js": "^10.6.0",
     "dotenv": "^16.3.1",
-    "express": "^5.1.0",
     "langsmith": "^0.3.10",
     "ora": "^7.0.1",
     "technicalindicators": "^3.1.0",
-    "ws": "^8.18.3",
     "zod": "^3.22.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cli-progress": "^3.11.6",
-    "@types/cors": "^2.8.19",
     "@types/node": "^20.10.0",
-    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.46.2",
     "@typescript-eslint/parser": "^8.46.2",
     "eslint": "^9.38.0",

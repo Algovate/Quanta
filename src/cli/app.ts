@@ -8,7 +8,6 @@ import {
   ConfigCommands,
   HelpCommand,
   SimulateCommands,
-  ServerCommands,
   LogCommands,
   PromptCommands,
   ArenaCommands,
@@ -60,8 +59,7 @@ export class CLIApplication {
     const simulate = this.program.command('simulate').description('Simulation and demonstration');
     SimulateCommands.register(simulate);
 
-    // Server commands
-    ServerCommands.register(this.program);
+    // Note: Server commands removed - API server will be in separate @quanta/server package
 
     // Log commands
     const log = this.program.command('log').description('Log query and analysis');
@@ -80,22 +78,12 @@ export class CLIApplication {
     // Top-level status (aggregated)
     this.program
       .command('status')
-      .description('Show aggregated system status (trade/arena/server)')
+      .description('Show aggregated system status (trade/arena)')
       .action(async () => {
-        try {
-          const res = await fetch('http://localhost:3001/health');
-          if (res.ok) {
-            console.log('✅ Server: running on http://localhost:3001');
-          } else {
-            console.log('❌ Server: not responding');
-          }
-        } catch {
-          console.log('❌ Server: not running');
-        }
+        // Note: Server status check removed - server is now optional/separate
         // Recommend sub-status commands for details
-        console.log(
-          'ℹ️  For details: quanta trade status | quanta arena status | quanta server status'
-        );
+        console.log('ℹ️  For details: quanta trade status | quanta arena status');
+        console.log('ℹ️  For API server status: Use @quanta/server package if installed');
       });
   }
 

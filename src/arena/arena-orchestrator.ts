@@ -15,7 +15,7 @@ import { AICallQueue } from './ai-call-queue.js';
 import { ArenaStorage } from './arena-storage.js';
 import { EventBus } from '../core/event-bus.js';
 import { UnifiedLogger } from '../logging/index.js';
-import { ExecutionSessionManager } from '../web/execution-session-manager.js';
+import { ExecutionSessionManager } from '../core/execution-session-manager.js';
 
 export class ArenaOrchestrator extends EventEmitter {
   private drones: Map<string, DroneInstance> = new Map();

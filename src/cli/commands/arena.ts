@@ -136,7 +136,7 @@ export class ArenaCommands {
     const originalConsole = logger.getOriginalConsole();
 
     // Session guard: check for active execution sessions
-    await checkSessionConflict();
+    checkSessionConflict();
 
     originalConsole.log(chalk.cyan('🏟️  Quanta Arena - Multi-Drone Trading System'));
     originalConsole.log(chalk.gray('='.repeat(70)));

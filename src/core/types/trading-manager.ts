@@ -1,5 +1,3 @@
-import type { Account, Position } from '../types/index.js';
-
 export interface SignalEvent {
   id: string;
   timestamp: number;
@@ -55,16 +53,19 @@ export interface RiskSnapshot {
   flags: string[];
 }
 
-export type OutboundMessage =
-  | { type: 'system:state'; data: unknown }
-  | { type: 'account:update'; data: Account }
-  | { type: 'position:update'; data: Position[] }
-  | { type: 'signal:generated'; data: SignalEvent }
-  | { type: 'trade:executed'; data: TradeEvent }
-  | { type: 'cycle:complete'; data: unknown }
-  | { type: 'kline:update'; data: unknown }
-  | { type: 'risk:update'; data: RiskSnapshot }
-  | { type: 'order:update'; data: OrderEvent }
-  | { type: 'arena:started'; data: unknown }
-  | { type: 'arena:stopped'; data: unknown }
-  | { type: 'arena:update'; data: unknown };
+export interface TradingState {
+  isRunning: boolean;
+  cycleCount: number;
+  startTime: number;
+  lastUpdate: number;
+  totalSignals: number;
+  totalTrades: number;
+  totalPnl: number;
+  winRate: number;
+  actionTotals?: {
+    LONG: number;
+    SHORT: number;
+    CLOSE: number;
+    HOLD: number;
+  };
+}

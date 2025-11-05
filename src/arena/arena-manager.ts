@@ -9,7 +9,7 @@ import type { ArenaConfig } from './types.js';
 import { ArenaOrchestrator } from './arena-orchestrator.js';
 import { ArenaStorage } from './arena-storage.js';
 import { UnifiedLogger } from '../logging/index.js';
-import { ExecutionSessionManager } from '../web/execution-session-manager.js';
+import { ExecutionSessionManager } from '../core/execution-session-manager.js';
 
 export class ArenaManager {
   private static instance: ArenaManager;

@@ -26,7 +26,7 @@ import type { WorkflowConfig } from '../types/index.js';
 import type { Exchange } from '../exchange/types.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { getConfig, getExchangeConfig } from '../config/settings.js';
-import { ExecutionSessionManager } from '../web/execution-session-manager.js';
+import { ExecutionSessionManager } from '../core/execution-session-manager.js';
 
 export class DroneInstance extends EventEmitter {
   private workflow: TradingWorkflow;

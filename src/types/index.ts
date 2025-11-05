@@ -6,14 +6,12 @@ export type RuntimeEnvironment = 'live' | 'paper' | 'simulate';
 
 /**
  * Normalize user-provided mode values to canonical RuntimeMode.
- * Accepts legacy aliases and coerces unknowns to 'strategy'.
+ * Accepts common aliases and coerces unknowns to 'strategy'.
  */
 export function normalizeMode(value: string | null | undefined): RuntimeMode {
   const v = (value || '').toLowerCase();
   if (v === 'arena') return 'arena';
-  if (v === 'strategy' || v === 'single' || v === 'solo') return 'strategy';
-  // Legacy alias: 'dashboard' used to mean single-strategy
-  if (v === 'dashboard') return 'strategy';
+  if (v === 'strategy' || v === 'single' || v === 'solo' || v === 'dashboard') return 'strategy';
   return 'strategy';
 }
 
@@ -25,9 +23,7 @@ export function normalizeEnvironment(value: string | null | undefined): RuntimeE
   const v = (value || '').toLowerCase();
   if (v === 'live' || v === 'prod' || v === 'production') return 'live';
   if (v === 'paper' || v === 'paper-trade' || v === 'papertrade') return 'paper';
-  if (v === 'simulate' || v === 'sim' || v === 'dev') return 'simulate';
-  // Legacy alias used previously: 'simulation'
-  if (v === 'simulation') return 'simulate';
+  if (v === 'simulate' || v === 'sim' || v === 'dev' || v === 'simulation') return 'simulate';
   return 'simulate';
 }
 

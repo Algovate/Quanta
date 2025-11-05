@@ -1,34 +1,23 @@
 import { EventEmitter } from 'events';
-import { TradingWorkflow } from '../core/workflow.js';
-import type { BarTimeframe } from '../core/scheduler.js';
+import { TradingWorkflow } from './workflow.js';
+import type { BarTimeframe } from './scheduler.js';
 import { isTimeframe, timeframeToMs, type Timeframe } from '../utils/timeframe.js';
 import { StreamingIngestion, type StreamingConfig } from '../data/index.js';
 import type { Exchange } from '../exchange/types.js';
 import type { MarketDataProvider } from '../data/market.js';
 import type { OpenRouterClient } from '../ai/agent.js';
 import type { UnifiedLogger } from '../logging/index.js';
-import type { OrderEvent, RiskSnapshot, SignalEvent, TradeEvent } from './types.js';
-import { EventBus } from '../core/event-bus.js';
-import { createLogger } from './utils/logger.js';
+import type {
+  OrderEvent,
+  RiskSnapshot,
+  SignalEvent,
+  TradeEvent,
+  TradingState,
+} from './types/trading-manager.js';
+import { EventBus } from './event-bus.js';
+import { UnifiedLogger as UnifiedLoggerClass } from '../logging/index.js';
 import { RiskSnapshotAggregator } from './risk-snapshot-aggregator.js';
 import { ExecutionSessionManager } from './execution-session-manager.js';
-
-export interface TradingState {
-  isRunning: boolean;
-  cycleCount: number;
-  startTime: number;
-  lastUpdate: number;
-  totalSignals: number;
-  totalTrades: number;
-  totalPnl: number;
-  winRate: number;
-  actionTotals?: {
-    LONG: number;
-    SHORT: number;
-    CLOSE: number;
-    HOLD: number;
-  };
-}
 
 export class TradingManager extends EventEmitter {
   private static instance: TradingManager;
@@ -56,10 +45,11 @@ export class TradingManager extends EventEmitter {
 
   private constructor() {
     super();
-    const { logger, context } = createLogger('TradingManager');
+    const logger = UnifiedLoggerClass.getInstance();
+    logger.initialize();
     this.logger = logger;
-    this.context = context;
-    this.riskAggregator = new RiskSnapshotAggregator(logger, context);
+    this.context = 'TradingManager';
+    this.riskAggregator = new RiskSnapshotAggregator(logger, this.context);
     this.state = {
       isRunning: false,
       cycleCount: 0,
@@ -571,3 +561,11 @@ export class TradingManager extends EventEmitter {
     }
   }
 }
+
+export type {
+  TradingState,
+  SignalEvent,
+  OrderEvent,
+  TradeEvent,
+  RiskSnapshot,
+} from './types/trading-manager.js';

@@ -143,13 +143,3 @@ export function parseAiResponseWithDetails(response: string): ParseResult {
     };
   }
 }
-
-/**
- * Parse AI response into array of TradingSignals
- * Handles enhanced format with <output> tags and legacy format
- * @deprecated Use parseAiResponseWithDetails for better error handling
- */
-export function parseAiResponse(response: string): TradingSignal[] {
-  const result = parseAiResponseWithDetails(response);
-  return result.signals;
-}

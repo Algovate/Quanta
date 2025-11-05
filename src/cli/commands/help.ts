@@ -42,9 +42,6 @@ export class HelpCommand {
     console.log('');
 
     console.log(chalk.yellow('⚙️  System'));
-    console.log('  quanta server start       Start API server');
-    console.log('  quanta server status      Check server status');
-    console.log('  quanta server stop        Stop API server');
     console.log('  quanta config show        Show current configuration');
     console.log('  quanta config set         Set configuration values');
     console.log('  quanta config validate    Validate configuration');

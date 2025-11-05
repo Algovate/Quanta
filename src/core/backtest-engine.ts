@@ -204,7 +204,7 @@ export class BacktestEngine {
           startDate,
           endDate
         );
-        this.exchange.loadHistoricalData(`${symbol}_${timeframe}`, candlesticks);
+        this.exchange.loadHistoricalData(symbol, timeframe, candlesticks);
         return candlesticks.length;
       });
 

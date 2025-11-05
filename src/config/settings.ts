@@ -424,7 +424,7 @@ function loadConfigFromFile(): Partial<Config> {
 
 function parseEnvConfig(): Partial<Config> {
   return {
-    // New vars preferred; fall back to legacy EXCHANGE_MODE for environment
+    // New vars preferred; fall back to EXCHANGE_MODE for environment
     mode: normalizeMode(process.env.QUANTA_MODE || process.env.MODE),
     env: normalizeEnvironment(process.env.QUANTA_ENV || process.env.EXCHANGE_MODE || 'simulate'),
     exchange: {
@@ -585,7 +585,7 @@ export function getConfig(): Config {
       fileConfig as Record<string, unknown>
     ) as Partial<Config>;
 
-    // Normalize any legacy values present in file or env
+    // Normalize mode and environment values
     mergedConfig.mode = normalizeMode((mergedConfig as any).mode);
     mergedConfig.env = normalizeEnvironment((mergedConfig as any).env as string);
 

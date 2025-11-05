@@ -101,39 +101,20 @@ export class BacktestExchange implements Exchange {
   }
 
   /**
-   * Load historical data for a symbol and timeframe.
+   * Load historical candlestick data for backtesting
    *
-   * Preferred signature:
-   *   loadHistoricalData(symbol, timeframe, candlesticks)
-   *
-   * Backward compatibility:
-   *   loadHistoricalData(symbol, candlesticks)
-   *     - Stored under `symbol` key; readers include a fallback to symbol-only keys
+   * @param symbol - Trading symbol (e.g., 'BTC/USDT')
+   * @param timeframe - Timeframe identifier (e.g., '3m', '4h')
+   * @param candlesticks - Array of historical candlestick data
    */
-  loadHistoricalData(
-    symbol: string,
-    timeframeOrCandles: string | Candlestick[],
-    maybeCandles?: Candlestick[]
-  ): void {
-    let key: string;
-    let candles: Candlestick[];
-
-    if (Array.isArray(timeframeOrCandles)) {
-      // Backward compatibility path: key by symbol only
-      key = symbol;
-      candles = timeframeOrCandles;
-    } else {
-      const timeframe = timeframeOrCandles;
-      candles = maybeCandles || [];
-      key = `${symbol}_${timeframe}`;
-    }
-
-    this.historicalData.set(key, candles);
+  loadHistoricalData(symbol: string, timeframe: string, candlesticks: Candlestick[]): void {
+    const key = `${symbol}_${timeframe}`;
+    this.historicalData.set(key, candlesticks);
 
     // Initialize index for this series up to current time
     let idx = -1;
-    const len = candles.length;
-    while (idx + 1 < len && candles[idx + 1].timestamp <= this.currentTime) {
+    const len = candlesticks.length;
+    while (idx + 1 < len && candlesticks[idx + 1].timestamp <= this.currentTime) {
       idx++;
     }
     this.candleIndex.set(key, idx);
@@ -215,11 +196,7 @@ export class BacktestExchange implements Exchange {
     limit: number = 100
   ): Promise<Candlestick[]> {
     const key = `${symbol}_${timeframe}`;
-    let candles = this.historicalData.get(key);
-    // Fallback to symbol-only legacy storage
-    if (!candles) {
-      candles = this.historicalData.get(symbol);
-    }
+    const candles = this.historicalData.get(key);
 
     if (!candles) {
       return [];
@@ -350,13 +327,6 @@ export class BacktestExchange implements Exchange {
         const idx = this.candleIndex.get(anyKey) ?? -1;
         if (idx >= 0) return candles[idx].close;
       }
-    }
-
-    // 2b) Legacy fallback: symbol-only key
-    const legacyCandles = this.historicalData.get(symbol);
-    if (legacyCandles && legacyCandles.length > 0) {
-      const idx = this.candleIndex.get(symbol) ?? legacyCandles.length - 1;
-      return legacyCandles[Math.max(0, idx)].close;
     }
 
     // 3) Ultimate fallback: static base price

@@ -1,5 +1,5 @@
 import { Exchange } from '../exchange/types.js';
-import { MarketDataProvider, MarketData } from '../data/market.js';
+import { MarketDataProvider } from '../data/market.js';
 import { OpenRouterClient, AIContext, EnrichedPositionInfo } from '../ai/agent.js';
 import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
@@ -12,33 +12,16 @@ import { validateAccount } from '../utils/account-validation.js';
 import { CycleLogger, CycleDisplay } from './display/index.js';
 import chalk from 'chalk';
 import { ExchangeSnapshotService } from './exchange-snapshot.js';
-// import { getConfig } from '../config/settings.js'; // Removed - no longer used
 import { UnifiedLogger } from '../logging/index.js';
-import { formatUTCTimeCompact, formatUTCLogTime } from '../utils/time.js';
 import { createTickerPriceGetter } from '../utils/ticker-cache.js';
-import { ExecutionSessionManager } from '../web/execution-session-manager.js';
+import { ExecutionSessionManager } from './execution-session-manager.js';
+import { MarketDataFetcher } from './market-data-fetcher.js';
+import { PerformanceMetricsCalculator } from './performance-metrics-calculator.js';
+import { CycleSummaryFormatter } from './cycle-summary-formatter.js';
+import { SignalProcessor } from './signal-processor.js';
 
 // Decision information types for signal execution
-interface SignalDecisionInfo {
-  coin: string;
-  action: string;
-  validation: { passed: boolean; reason?: string };
-  sizing: {
-    passed: boolean;
-    leverage?: number;
-    suggestedSize?: number;
-    riskAmount?: number;
-    regime?: string;
-    atrAdjustment?: number;
-  };
-  execution: {
-    expectedPrice: number;
-    actualPrice?: number;
-    slippage?: number;
-    slippageAbs?: number;
-    orderId?: string;
-  };
-}
+import type { SignalDecisionInfo } from './cycle-summary-formatter.js';
 
 // Decision information types for position monitoring
 interface PositionDecisionInfo {
@@ -120,7 +103,7 @@ export class TradingWorkflow {
   private cycleDisplay: CycleDisplay;
   private isBackgroundMode: boolean;
   private snapshotService: ExchangeSnapshotService;
-  private barScheduler?: BarScheduler; // legacy fallback
+  private barScheduler?: BarScheduler;
   private barDrivenEnabled: boolean = false;
   private barUnsubscribe?: () => void;
   private unifiedLogger: UnifiedLogger;
@@ -137,6 +120,10 @@ export class TradingWorkflow {
     symbol: string,
     side: 'long' | 'short'
   ) => { stopLoss?: number; takeProfit?: number };
+  private marketDataFetcher: MarketDataFetcher;
+  private performanceMetricsCalculator: PerformanceMetricsCalculator;
+  private cycleSummaryFormatter: CycleSummaryFormatter;
+  private signalProcessor: SignalProcessor;
 
   constructor(
     exchange: Exchange,
@@ -175,6 +162,17 @@ export class TradingWorkflow {
     this.cycleDisplay = new CycleDisplay();
     this.isBackgroundMode = this.unifiedLogger.isBackgroundMode();
     this.snapshotService = new ExchangeSnapshotService(this.exchange);
+    this.marketDataFetcher = new MarketDataFetcher(this.marketDataProvider, (level, message) =>
+      this.emitLog(level, message)
+    );
+    this.performanceMetricsCalculator = new PerformanceMetricsCalculator(
+      this.riskManager,
+      this.exchange,
+      this.unifiedLogger,
+      this.loggerContext
+    );
+    this.cycleSummaryFormatter = new CycleSummaryFormatter();
+    this.signalProcessor = new SignalProcessor();
 
     this.state = {
       isRunning: false,
@@ -276,270 +274,6 @@ export class TradingWorkflow {
    */
   private logToConsole(...args: unknown[]): void {
     this.originalConsole.log(...args);
-  }
-
-  /**
-   * Format market data logs for a single coin
-   */
-  private formatMarketDataLogs(
-    coin: string,
-    marketData: MarketData[],
-    coinMs: number,
-    tickerPrice?: number,
-    tickerTimestamp?: number,
-    tickerError?: Error | unknown
-  ): string[] {
-    const logs: string[] = [];
-    const tfList = marketData.map(d => d.timeframe).join(', ');
-    const base = marketData[0];
-    const tf3m = marketData.find(d => d.timeframe === '3m');
-    const tf4h = marketData.find(d => d.timeframe === '4h');
-    const last3m = tf3m?.candlesticks?.at(-1);
-    const last4h = tf4h?.candlesticks?.at(-1);
-    const ema20 = base?.indicators?.ema20;
-    const ema50 = base?.indicators?.ema50;
-    const rsi14 = base?.indicators?.rsi14;
-    const macdVal = base?.indicators?.macd?.macd;
-    const macdSig = base?.indicators?.macd?.signal;
-
-    logs.push(
-      chalk.gray(`   • ${coin}: fetched ${marketData.length} frames (${tfList}) in ${coinMs}ms`)
-    );
-
-    if (last3m) {
-      logs.push(
-        chalk.gray(
-          `       [3m] close=$${last3m.close.toFixed(2)} @ ${formatUTCTimeCompact(last3m.timestamp)}`
-        )
-      );
-    }
-    if (last4h) {
-      logs.push(
-        chalk.gray(
-          `       [4h] close=$${last4h.close.toFixed(2)} @ ${formatUTCLogTime(last4h.timestamp)}`
-        )
-      );
-    }
-    if (base?.indicators) {
-      logs.push(
-        chalk.gray(
-          `       ind: EMA20=${ema20?.toFixed?.(2)} EMA50=${ema50?.toFixed?.(2)} RSI14=${rsi14?.toFixed?.(2)} MACD=${macdVal?.toFixed?.(4)}/${macdSig?.toFixed?.(4)}`
-        )
-      );
-    }
-
-    if (tickerError) {
-      logs.push(
-        chalk.gray(
-          `       ticker: unavailable (${(tickerError as Error)?.message || String(tickerError)})`
-        )
-      );
-    } else if (tickerPrice !== undefined) {
-      logs.push(
-        chalk.gray(
-          `       ticker: $${tickerPrice.toFixed(2)} @ ${formatUTCTimeCompact(tickerTimestamp ?? Date.now())}`
-        )
-      );
-    }
-
-    return logs;
-  }
-
-  /**
-   * Fetch market data for all coins (parallel mode)
-   */
-  private async fetchMarketDataParallel(
-    coins: string[],
-    timeframes: string[],
-    tickerCache: Map<string, { price: number; timestamp: number }>,
-    getTickerPrice: (symbol: string) => Promise<number>
-  ): Promise<{ marketData: MarketData[]; successCount: number; failCount: number }> {
-    type CoinResult = {
-      coin: string;
-      ok: boolean;
-      marketData?: MarketData[];
-      logs: string[];
-    };
-
-    const tasks = coins.map(async coin => {
-      const symbol = `${coin}/USDT`;
-      const logs: string[] = [];
-      try {
-        const coinStart = Date.now();
-        const marketData = await this.marketDataProvider.getMarketData(symbol, timeframes);
-        const coinMs = Date.now() - coinStart;
-
-        let tickerPrice: number | undefined;
-        let tickerTimestamp: number | undefined;
-        let tickerError: Error | unknown;
-        try {
-          const price = await getTickerPrice(symbol);
-          tickerPrice = price;
-          const cached = tickerCache.get(symbol);
-          tickerTimestamp = cached?.timestamp;
-        } catch (err) {
-          tickerError = err;
-        }
-
-        const coinLogs = this.formatMarketDataLogs(
-          coin,
-          marketData,
-          coinMs,
-          tickerPrice,
-          tickerTimestamp,
-          tickerError
-        );
-        logs.push(...coinLogs);
-
-        return { coin, ok: true, marketData, logs } as CoinResult;
-      } catch (e) {
-        logs.push(`   • ${coin}: failed to fetch market data (${(e as Error).message || e})`);
-        return { coin, ok: false, logs } as CoinResult;
-      }
-    });
-
-    const settled = await Promise.allSettled(tasks);
-    const results: CoinResult[] = settled.map(s =>
-      s.status === 'fulfilled' ? s.value : { coin: 'unknown', ok: false, logs: [String(s.reason)] }
-    );
-
-    const allMarketData: MarketData[] = [];
-    let successCount = 0;
-    let failCount = 0;
-
-    // Emit logs per coin in configured order for stable output
-    for (const coin of coins) {
-      const r = results.find(x => x.coin === coin);
-      if (!r) continue;
-      if (r.ok && r.marketData) {
-        successCount++;
-        allMarketData.push(...r.marketData);
-      } else {
-        failCount++;
-      }
-      for (const line of r.logs) this.emitLog('info', line);
-    }
-
-    return { marketData: allMarketData, successCount, failCount };
-  }
-
-  /**
-   * Process and display generated signals
-   */
-  private async processSignals(
-    signals: TradingSignal[],
-    tickerCache: Map<string, { price: number; timestamp: number }>
-  ): Promise<void> {
-    if (signals.length === 0) return;
-
-    const getCachedPrice = createTickerPriceGetter(
-      tickerCache,
-      this.snapshotService,
-      this.unifiedLogger,
-      this.loggerContext
-    );
-
-    const signalSummary = `🤖 Generated ${signals.length} signal${signals.length > 1 ? 's' : ''}:`;
-    if (this.isBackgroundMode) {
-      this.emitLog('info', signalSummary);
-    }
-
-    // Log to structured logger for file output (background mode only to avoid buffering delays)
-    if (this.isBackgroundMode) {
-      this.unifiedLogger.info(
-        'AI Signal Generation',
-        {
-          signalCount: signals.length,
-          signals: signals.map(s => ({
-            coin: s.coin,
-            action: s.action,
-            confidence: s.confidence,
-            reasoning: s.reasoning,
-          })),
-        },
-        this.loggerContext
-      );
-    }
-
-    // Console output with formatting (only if not background mode)
-    if (!this.isBackgroundMode) {
-      const signalsFormatted = this.cycleDisplay.formatSignals(signals);
-      this.cycleLogger.logFormatted(signalsFormatted);
-    }
-
-    // Push signals to UI buffer via event bus (decoupled)
-    for (let i = 0; i < signals.length; i++) {
-      const sig = signals[i];
-      const action = sig.action;
-      const symbol = `${sig.coin}/USDT`;
-      const price = await getCachedPrice(symbol);
-      this.emitEvent('signal:buffer', {
-        id: `${sig.coin}-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
-        timestamp: Date.now(),
-        symbol,
-        action,
-        confidence: sig.confidence,
-        reasoning: sig.reasoning,
-        price,
-        strategy: 'AI',
-        status: 'generated',
-      });
-    }
-  }
-
-  /**
-   * Fetch market data for all coins (sequential mode)
-   */
-  private async fetchMarketDataSequential(
-    coins: string[],
-    timeframes: string[],
-    tickerCache: Map<string, { price: number; timestamp: number }>,
-    getTickerPrice: (symbol: string) => Promise<number>
-  ): Promise<{ marketData: MarketData[]; successCount: number; failCount: number }> {
-    const allMarketData: MarketData[] = [];
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const coin of coins) {
-      const symbol = `${coin}/USDT`;
-      try {
-        const coinStart = Date.now();
-        const marketData = await this.marketDataProvider.getMarketData(symbol, timeframes);
-        const coinMs = Date.now() - coinStart;
-        allMarketData.push(...marketData);
-        successCount++;
-
-        let tickerPrice: number | undefined;
-        let tickerTimestamp: number | undefined;
-        let tickerError: Error | unknown;
-        try {
-          const price = await getTickerPrice(symbol);
-          tickerPrice = price;
-          const cached = tickerCache.get(symbol);
-          tickerTimestamp = cached?.timestamp;
-        } catch (err) {
-          tickerError = err;
-        }
-
-        const logs = this.formatMarketDataLogs(
-          coin,
-          marketData,
-          coinMs,
-          tickerPrice,
-          tickerTimestamp,
-          tickerError
-        );
-        for (const line of logs) this.emitLog('info', line);
-      } catch (e) {
-        failCount++;
-        this.emitLog(
-          'warn',
-          `   • ${coin}: failed to fetch market data (${(e as Error).message || e})`
-        );
-      }
-    }
-
-    return { marketData: allMarketData, successCount, failCount };
   }
 
   async start(): Promise<void> {
@@ -928,20 +662,15 @@ export class TradingWorkflow {
       const timeframes = this.config.marketTimeframes ?? ['3m', '1h', '4h'];
 
       // Fetch market data based on configuration
-      const marketDataResult =
-        this.config.marketFetchParallel !== false
-          ? await this.fetchMarketDataParallel(
-              this.config.coins,
-              timeframes,
-              tickerCache,
-              getTickerPrice
-            )
-          : await this.fetchMarketDataSequential(
-              this.config.coins,
-              timeframes,
-              tickerCache,
-              getTickerPrice
-            );
+      const marketDataResult = await this.marketDataFetcher.fetchMarketData({
+        coins: this.config.coins,
+        timeframes,
+        tickerCache,
+        snapshotService: this.snapshotService,
+        unifiedLogger: this.unifiedLogger,
+        loggerContext: this.loggerContext,
+        parallel: this.config.marketFetchParallel !== false,
+      });
 
       const { marketData: allMarketData, successCount, failCount } = marketDataResult;
       const fetchMs = Date.now() - fetchStart;
@@ -1238,9 +967,12 @@ export class TradingWorkflow {
           );
 
           // Build enriched decision path with AI reasoning
-          const decision = this.buildSignalDecisionString(signals);
-          const reason = this.buildSignalDecisionReason(signals, allMarketData.length);
-          const decisionConfidence = this.calculatePrimaryDecisionConfidence(
+          const decision = this.cycleSummaryFormatter.buildSignalDecisionString(signals);
+          const reason = this.cycleSummaryFormatter.buildSignalDecisionReason(
+            signals,
+            allMarketData.length
+          );
+          const decisionConfidence = this.cycleSummaryFormatter.calculatePrimaryDecisionConfidence(
             signals,
             confidenceScores,
             avgConfidence
@@ -1319,7 +1051,15 @@ export class TradingWorkflow {
       });
 
       // 5. Process and display signals
-      await this.processSignals(signals, tickerCache);
+      await this.signalProcessor.processSignals(signals, {
+        isBackgroundMode: this.isBackgroundMode,
+        tickerCache,
+        snapshotService: this.snapshotService,
+        unifiedLogger: this.unifiedLogger,
+        loggerContext: this.loggerContext,
+        eventBus: this.eventBus,
+        emitLog: (level, message) => this.emitLog(level, message),
+      });
 
       // 6. Execute all signals
       const getCachedPrice = createTickerPriceGetter(
@@ -1495,100 +1235,15 @@ export class TradingWorkflow {
       const executeDuration = Date.now() - executeStartTime;
 
       // Build decision path for execute_signals
-      const acceptedSignals = signalDecisionInfos.filter(
-        d => d.validation.passed && d.sizing.passed
-      );
-      const rejectedValidation = signalDecisionInfos.filter(d => !d.validation.passed);
-      const rejectedSizing = signalDecisionInfos.filter(
-        d => d.validation.passed && !d.sizing.passed
-      );
-      const executedSignals = signalDecisionInfos.filter(d => d.execution.orderId);
-
-      // Build decision summary
-      const decisionParts: string[] = [];
-      if (acceptedSignals.length > 0) {
-        const byAction: Record<string, string[]> = {};
-        for (const sig of acceptedSignals) {
-          if (!byAction[sig.action]) byAction[sig.action] = [];
-          byAction[sig.action].push(sig.coin);
-        }
-        const actionSummary = Object.entries(byAction)
-          .map(([action, coins]) => `${action}: ${coins.join(', ')}`)
-          .join('; ');
-        decisionParts.push(`Accepted: ${acceptedSignals.length} (${actionSummary})`);
-      }
-      if (rejectedValidation.length > 0) {
-        const reasons = rejectedValidation
-          .map(s => `${s.coin}(${s.validation.reason || 'unknown'})`)
-          .join(', ');
-        decisionParts.push(`Rejected (validation): ${rejectedValidation.length} (${reasons})`);
-      }
-      if (rejectedSizing.length > 0) {
-        const coins = rejectedSizing.map(s => s.coin).join(', ');
-        decisionParts.push(`Rejected (sizing): ${rejectedSizing.length} (${coins})`);
-      }
-      const decision = decisionParts.length > 0 ? decisionParts.join('; ') : 'No signals processed';
-
-      // Build concise reason for decision path (detailed info in validation checks)
-      const reasonParts: string[] = [];
-      reasonParts.push(
-        `Processed ${signalDecisionInfos.length} signals, executed ${executedSignals.length} orders`
-      );
-      if (acceptedSignals.length > 0) {
-        reasonParts.push(`Accepted: ${acceptedSignals.length}`);
-      }
-      if (rejectedValidation.length > 0) {
-        reasonParts.push(`Rejected (validation): ${rejectedValidation.length}`);
-      }
-      if (rejectedSizing.length > 0) {
-        reasonParts.push(`Rejected (sizing): ${rejectedSizing.length}`);
-      }
-
-      const reason = reasonParts.join('\n');
+      const decisionPath =
+        this.cycleSummaryFormatter.buildExecutionDecisionPath(signalDecisionInfos);
 
       // Record operation-level decision path (append to existing if any)
       this.unifiedLogger.appendDecisionChoice(cycleOperationId, {
         step: 'execute_signals',
-        decision,
-        reason,
-        factors: {
-          signals: signalDecisionInfos,
-          summary: {
-            total: signalDecisionInfos.length,
-            accepted: acceptedSignals.length,
-            rejectedValidation: rejectedValidation.length,
-            rejectedSizing: rejectedSizing.length,
-            executed: executedSignals.length,
-          },
-          validationSummary: {
-            passed: acceptedSignals.length + rejectedSizing.length,
-            failed: rejectedValidation.length,
-            reasons: rejectedValidation.map(s => ({ coin: s.coin, reason: s.validation.reason })),
-          },
-          sizingSummary: {
-            passed: acceptedSignals.length,
-            failed: rejectedSizing.length,
-            details: acceptedSignals.map(s => ({
-              coin: s.coin,
-              leverage: s.sizing.leverage,
-              size: s.sizing.suggestedSize,
-              riskAmount: s.sizing.riskAmount,
-              regime: s.sizing.regime,
-              atrAdjustment: s.sizing.atrAdjustment,
-            })),
-          },
-          executionSummary: {
-            executed: executedSignals.length,
-            details: executedSignals.map(s => ({
-              coin: s.coin,
-              expectedPrice: s.execution.expectedPrice,
-              actualPrice: s.execution.actualPrice,
-              slippage: s.execution.slippage,
-              slippageAbs: s.execution.slippageAbs,
-              orderId: s.execution.orderId,
-            })),
-          },
-        },
+        decision: decisionPath.decision,
+        reason: decisionPath.reason,
+        factors: decisionPath.factors,
       });
 
       // Complete signal execution stage
@@ -1601,7 +1256,12 @@ export class TradingWorkflow {
       const aggregates = aggregatePositionMetrics(finalPositions);
 
       // 6. Update performance metrics with latest data
-      this.updatePerformanceMetrics(finalAccount, aggregates);
+      const metricsUpdate = this.performanceMetricsCalculator.updatePerformanceMetrics(
+        this.state,
+        finalAccount,
+        aggregates
+      );
+      this.state = metricsUpdate.state;
 
       // Record cycle execution time
       const cycleDuration = Date.now() - cycleStartTime;
@@ -2083,262 +1743,6 @@ export class TradingWorkflow {
   }
 
   /**
-   * Build decision string from signals grouped by action
-   */
-  private buildSignalDecisionString(signals: TradingSignal[]): string {
-    const signalsByAction: Record<string, Array<{ coin: string; confidence: number }>> = {};
-
-    for (const signal of signals) {
-      if (!signalsByAction[signal.action]) {
-        signalsByAction[signal.action] = [];
-      }
-      signalsByAction[signal.action].push({
-        coin: signal.coin,
-        confidence: signal.confidence,
-      });
-    }
-
-    const decisionParts: string[] = [];
-    for (const [action, signalList] of Object.entries(signalsByAction)) {
-      const signalSummary = signalList
-        .map(s => `${s.coin}(${(s.confidence * 100).toFixed(0)}%)`)
-        .join(', ');
-      decisionParts.push(`${action}: ${signalSummary}`);
-    }
-
-    return decisionParts.join('; ');
-  }
-
-  /**
-   * Build decision reason with AI reasoning summary
-   */
-  private buildSignalDecisionReason(signals: TradingSignal[], marketDataCount: number): string {
-    const reasonParts: string[] = [
-      `Generated ${signals.length} signals from ${marketDataCount} market data items`,
-    ];
-
-    const reasoningSummary = this.extractAIReasoningSummary(signals);
-    if (reasoningSummary) {
-      reasonParts.push(`Key reasoning: ${reasoningSummary}`);
-    }
-
-    return reasonParts.join('\n');
-  }
-
-  /**
-   * Extract AI reasoning summary from primary signals (non-HOLD signals have priority)
-   */
-  private extractAIReasoningSummary(
-    signals: TradingSignal[],
-    maxLength: number = 150
-  ): string | null {
-    const primarySignals = signals.filter(s => s.action !== 'HOLD');
-    const reasoningSource = primarySignals.length > 0 ? primarySignals : signals;
-
-    // Select the highest confidence signal's reasoning
-    const bestSignal = reasoningSource.sort((a, b) => b.confidence - a.confidence)[0];
-
-    if (!bestSignal?.reasoning) {
-      return null;
-    }
-
-    // Extract key reasoning (first maxLength characters or until sentence end)
-    let reasoningSummary = bestSignal.reasoning.trim();
-    if (reasoningSummary.length > maxLength) {
-      // Try to cut at sentence boundary
-      const sentenceEnd = reasoningSummary.substring(0, maxLength).lastIndexOf('.');
-      if (sentenceEnd > maxLength * 0.67) {
-        // Only cut at sentence if it's reasonably far into the text (2/3 of maxLength)
-        reasoningSummary = reasoningSummary.substring(0, sentenceEnd + 1);
-      } else {
-        reasoningSummary = reasoningSummary.substring(0, maxLength) + '...';
-      }
-    }
-
-    return reasoningSummary;
-  }
-
-  /**
-   * Calculate confidence for primary decisions (non-HOLD signals)
-   * Uses primary signals' confidence if available, otherwise uses average
-   */
-  private calculatePrimaryDecisionConfidence(
-    signals: TradingSignal[],
-    _allConfidenceScores: number[],
-    overallAvgConfidence: number
-  ): number {
-    const primarySignals = signals.filter(s => s.action !== 'HOLD');
-
-    if (primarySignals.length === 0) {
-      // If only HOLD signals, use overall average
-      return overallAvgConfidence;
-    }
-
-    // Calculate average confidence of primary signals
-    const primaryConfidences = primarySignals.map(s => s.confidence);
-    return primaryConfidences.reduce((a, b) => a + b, 0) / primaryConfidences.length;
-  }
-
-  private updatePerformanceMetrics(account: Account, aggregates: PositionAggregates): void {
-    // Update unrealized P&L from open positions using pre-computed aggregates
-    this.state.unrealizedPnl = aggregates.totalPnl;
-
-    // Calculate total P&L: (Current Equity - Initial Balance)
-    // This includes both realized P&L from closed trades and unrealized P&L from open positions
-    // Guard: ensure initialBalance is set before calculating P&L
-    if (this.state.initialBalance > 0) {
-      this.state.totalPnl = account.equity - this.state.initialBalance;
-    } else {
-      // If initialBalance is not set, use 0 as default (prevents incorrect calculations)
-      this.state.totalPnl = 0;
-      this.unifiedLogger.warn(
-        'Cannot calculate total P&L: initial balance not set',
-        {
-          cycleCount: this.state.cycleCount,
-          equity: account.equity,
-        },
-        this.loggerContext
-      );
-    }
-
-    // Update peak equity and calculate drawdown
-    if (account.equity > 0) {
-      // Initialize peak equity if not set
-      if (!this.state.peakEquity || this.state.peakEquity === 0) {
-        this.state.peakEquity = account.equity;
-      }
-
-      // Update peak equity if current equity is higher
-      if (account.equity > this.state.peakEquity) {
-        this.state.peakEquity = account.equity;
-      }
-
-      // Calculate current drawdown
-      const currentDrawdown = (this.state.peakEquity - account.equity) / this.state.peakEquity;
-
-      // Update max drawdown if current drawdown is higher
-      if (!this.state.maxDrawdown || currentDrawdown > this.state.maxDrawdown) {
-        this.state.maxDrawdown = currentDrawdown;
-      }
-
-      // Check drawdown protection thresholds
-      const drawdownCheck = this.riskManager.checkDrawdownProtection(
-        account.equity,
-        this.state.peakEquity,
-        this.state.maxDrawdown,
-        this.state.drawdownState
-      );
-
-      // Update drawdown state
-      this.state.drawdownState = drawdownCheck.state;
-
-      // Log drawdown warnings if needed
-      if (drawdownCheck.shouldReducePositionSize || drawdownCheck.shouldPauseTrading) {
-        this.unifiedLogger.warn(
-          'Drawdown protection activated',
-          {
-            currentDrawdown: (currentDrawdown * 100).toFixed(2) + '%',
-            maxDrawdown: (this.state.maxDrawdown * 100).toFixed(2) + '%',
-            state: drawdownCheck.state,
-            action: drawdownCheck.shouldPauseTrading ? 'pause' : 'reduce',
-          },
-          this.loggerContext
-        );
-      }
-    }
-
-    // Calculate win rate from completed trades
-    this.state.winRate = this.calculateWinRate();
-
-    // Update performance tracker with completed trades for adaptive parameters
-    if (this.exchange.getCompletedTrades) {
-      const completedTrades = this.exchange.getCompletedTrades();
-      if (completedTrades.length > 0) {
-        this.riskManager.updatePerformanceStats(completedTrades);
-      }
-    }
-  }
-
-  /**
-   * Calculate win rate from completed trades
-   * Win rate should only be based on closed positions, not open positions
-   */
-  private calculateWinRate(): number {
-    // Skip if exchange doesn't support completed trades tracking
-    if (!this.exchange.getCompletedTrades) {
-      return this.state.winRate;
-    }
-
-    const completedTrades = this.exchange.getCompletedTrades();
-
-    // No completed trades yet
-    if (completedTrades.length === 0) {
-      return this.state.totalTrades === 0 ? 0 : this.state.winRate;
-    }
-
-    // Calculate win rate from completed trades
-    const winningTrades = completedTrades.filter(trade => trade.pnl > 0).length;
-    return (winningTrades / completedTrades.length) * 100;
-  }
-
-  /**
-   * Calculate and update P&L metrics for the cycle
-   */
-  private calculatePnLMetrics(
-    account: Account,
-    aggregates: PositionAggregates
-  ): {
-    totalPnl: number;
-    totalPnlPercent: number;
-    totalPnlColor: (str: string) => string;
-    unrealizedPnl: number;
-    unrealizedPnlPercent: number;
-    unrealizedPnlColor: (str: string) => string;
-    cyclePnlChange: number;
-    cyclePnlPercent: number;
-    cyclePnlColor: (str: string) => string;
-    realizedCyclePnl: number;
-  } {
-    const unrealizedPnl = aggregates.totalPnl;
-    const totalPnl = this.state.totalPnl;
-    const totalPnlPercent =
-      this.state.initialBalance > 0 ? (totalPnl / this.state.initialBalance) * 100 : 0;
-    const totalPnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
-
-    const unrealizedPnlPercent = account.equity > 0 ? (unrealizedPnl / account.equity) * 100 : 0;
-    const unrealizedPnlColor = unrealizedPnl >= 0 ? chalk.green : chalk.red;
-
-    const cyclePnlChange = this.state.previousEquity
-      ? account.equity - this.state.previousEquity
-      : 0;
-    const cyclePnlPercent = this.state.previousEquity
-      ? (cyclePnlChange / this.state.previousEquity) * 100
-      : 0;
-    const cyclePnlColor = cyclePnlChange >= 0 ? chalk.green : chalk.red;
-
-    this.state.previousEquity = account.equity;
-    this.state.cyclePnl = cyclePnlChange;
-
-    const realizedCyclePnl = this.state.previousBalance
-      ? account.balance - this.state.previousBalance
-      : 0;
-    this.state.previousBalance = account.balance;
-
-    return {
-      totalPnl,
-      totalPnlPercent,
-      totalPnlColor,
-      unrealizedPnl,
-      unrealizedPnlPercent,
-      unrealizedPnlColor,
-      cyclePnlChange,
-      cyclePnlPercent,
-      cyclePnlColor,
-      realizedCyclePnl,
-    };
-  }
-
-  /**
    * Validate and log account consistency issues
    */
   private validateAccountConsistency(
@@ -2433,92 +1837,6 @@ export class TradingWorkflow {
     );
   }
 
-  /**
-   * Calculate runtime metrics from start time
-   */
-  private calculateRuntimeMetrics(): {
-    minutes: number;
-    seconds: number;
-    string: string;
-  } {
-    const runtime = Date.now() - this.state.startTime;
-    const minutes = Math.floor(runtime / (1000 * 60));
-    const seconds = Math.floor((runtime / 1000) % 60);
-    return {
-      minutes,
-      seconds,
-      string: `${minutes}m ${seconds}s`,
-    };
-  }
-
-  /**
-   * Calculate cycle summary metrics (efficiency, margin usage, risk level, etc.)
-   */
-  private calculateCycleMetrics(
-    account: Account,
-    positions: Position[],
-    signals: TradingSignal[],
-    aggregates: PositionAggregates,
-    cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number }
-  ): {
-    signalsCount: number;
-    executedTrades: number;
-    rejectedSignals: number;
-    openPositions: number;
-    maxPositions: number;
-    efficiency: number;
-    marginUsage: number;
-    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-    averageLeverage: number;
-  } {
-    const signalsCount = signals.length;
-    const executedTrades = cycleMetrics.tradeCountCycle;
-    const rejectedSignals = cycleMetrics.rejectedSignalsCycle;
-    const openPositions = positions.length;
-    const maxPositions = this.config.maxPositions;
-
-    const efficiency = signalsCount > 0 ? (executedTrades / signalsCount) * 100 : 0;
-    const totalMarginUsed = aggregates.totalMarginUsed;
-    const marginUsage = account.equity > 0 ? (totalMarginUsed / account.equity) * 100 : 0;
-
-    let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
-    if (marginUsage >= 80) {
-      riskLevel = 'HIGH';
-    } else if (marginUsage >= 50) {
-      riskLevel = 'MEDIUM';
-    }
-
-    const averageLeverage =
-      positions.length > 0
-        ? positions.reduce((sum, p) => sum + (p.leverage || 1), 0) / positions.length
-        : 0;
-
-    return {
-      signalsCount,
-      executedTrades,
-      rejectedSignals,
-      openPositions,
-      maxPositions,
-      efficiency,
-      marginUsage,
-      riskLevel,
-      averageLeverage,
-    };
-  }
-
-  /**
-   * Calculate countdown to next cycle
-   */
-  private calculateNextCycleCountdown(): string {
-    const nextCycleTime = Date.now() + this.config.cyclePeriod;
-    const remainingMs = nextCycleTime - Date.now();
-    const remainingMinutes = Math.floor(remainingMs / (1000 * 60));
-    const remainingSeconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
-    return remainingMinutes > 0
-      ? `${remainingMinutes}m ${remainingSeconds}s`
-      : `${remainingSeconds}s`;
-  }
-
   private logCycleSummary(
     account: Account,
     positions: Position[],
@@ -2526,27 +1844,38 @@ export class TradingWorkflow {
     aggregates: PositionAggregates,
     cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number }
   ): void {
-    const runtime = this.calculateRuntimeMetrics();
-    const pnlMetrics = this.calculatePnLMetrics(account, aggregates);
-    const cycleMetricsData = this.calculateCycleMetrics(
+    const runtime = this.cycleSummaryFormatter.calculateRuntimeMetrics(this.state.startTime);
+    const pnlMetricsResult = this.performanceMetricsCalculator.calculatePnLMetrics(
+      this.state,
+      account,
+      aggregates
+    );
+    this.state = pnlMetricsResult.updatedState;
+    const pnlMetrics = pnlMetricsResult;
+    const cycleMetricsData = this.cycleSummaryFormatter.calculateCycleMetrics(
       account,
       positions,
       signals,
       aggregates,
-      cycleMetrics
+      cycleMetrics,
+      this.config.maxPositions
     );
 
     // Validate account consistency
     this.validateAccountConsistency(account, positions, aggregates.totalMarginUsed);
 
     // Format cycle summary for structured logs
-    const formattedSummary = this.formatCycleSummary(
+    const formattedSummary = this.cycleSummaryFormatter.formatCycleSummary(
       runtime.string,
+      this.state.cycleCount,
       cycleMetricsData,
       account,
       positions,
       aggregates,
-      pnlMetrics
+      pnlMetrics,
+      this.state.winRate,
+      this.cycleSummaryFormatter.calculateNextCycleCountdown(this.config.cyclePeriod),
+      this.state.previousEquity
     );
 
     // Log to structured logs (both CLI and API server modes)
@@ -2566,64 +1895,14 @@ export class TradingWorkflow {
       runtime.seconds,
       formattedSummary
     );
-  }
 
-  /**
-   * Format cycle summary for display
-   */
-  private formatCycleSummary(
-    runtimeString: string,
-    cycleMetrics: {
-      signalsCount: number;
-      executedTrades: number;
-      rejectedSignals: number;
-      openPositions: number;
-      maxPositions: number;
-      efficiency: number;
-      marginUsage: number;
-      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-      averageLeverage: number;
-    },
-    account: Account,
-    positions: Position[],
-    aggregates: PositionAggregates,
-    pnlMetrics: ReturnType<TradingWorkflow['calculatePnLMetrics']>
-  ): string | undefined {
-    try {
-      return this.cycleDisplay.formatCycleSummary({
-        runtime: runtimeString,
-        cycleCount: this.state.cycleCount,
-        signalsCount: cycleMetrics.signalsCount,
-        executedTrades: cycleMetrics.executedTrades,
-        rejectedSignals: cycleMetrics.rejectedSignals,
-        openPositions: cycleMetrics.openPositions,
-        maxPositions: cycleMetrics.maxPositions,
-        efficiency: cycleMetrics.efficiency,
-        account,
-        positions,
-        totalMarginUsed: aggregates.totalMarginUsed,
-        totalUnleveredExposure: aggregates.totalUnleveredExposure,
-        totalPnl: pnlMetrics.totalPnl,
-        totalPnlPercent: pnlMetrics.totalPnlPercent,
-        unrealizedPnl: pnlMetrics.unrealizedPnl,
-        unrealizedPnlPercent: pnlMetrics.unrealizedPnlPercent,
-        cyclePnl: pnlMetrics.cyclePnlChange,
-        cyclePnlPercent: pnlMetrics.cyclePnlPercent,
-        realizedCyclePnl: pnlMetrics.realizedCyclePnl,
-        marginUsage: cycleMetrics.marginUsage,
-        riskLevel: cycleMetrics.riskLevel,
-        averageLeverage: cycleMetrics.averageLeverage,
-        winRate: this.state.winRate,
-        countdown: this.calculateNextCycleCountdown(),
-        previousEquity: this.state.previousEquity,
-      });
-    } catch (error) {
+    // Log error if formatting failed
+    if (!formattedSummary) {
       this.unifiedLogger.error(
         'Failed to format cycle summary',
-        error as Error,
+        new Error('Formatting returned undefined'),
         this.loggerContext
       );
-      return undefined;
     }
   }
 

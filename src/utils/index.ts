@@ -6,3 +6,4 @@ export * from './precision.js';
 export * from './retry.js';
 export * from './circuit-breaker.js';
 export * from './time.js';
+export { RequestDeduplicator } from './request-deduplication.js';

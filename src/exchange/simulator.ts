@@ -1,5 +1,5 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
-import { TradingManager } from '../web/trading-manager.js';
+import { TradingManager } from '../core/trading-manager.js';
 import { normalizeSymbol } from '../utils/symbol-utils.js';
 import { CompletedTrade } from '../types/index.js';
 import {

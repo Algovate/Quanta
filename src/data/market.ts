@@ -1,6 +1,6 @@
 import { Exchange } from '../exchange/types.js';
 import { UnifiedLogger } from '../logging/index.js';
-import { RequestDeduplicator } from '../web/utils/request-deduplication.js';
+import { RequestDeduplicator } from '../utils/request-deduplication.js';
 
 export interface Candlestick {
   timestamp: number;

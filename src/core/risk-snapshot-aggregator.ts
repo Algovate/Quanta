@@ -1,7 +1,7 @@
 import type { Exchange } from '../exchange/types.js';
 import type { Position, Account } from '../exchange/types.js';
 import type { UnifiedLogger } from '../logging/index.js';
-import type { RiskSnapshot } from './types.js';
+import type { RiskSnapshot } from './types/trading-manager.js';
 
 /**
  * Aggregator for generating risk snapshots from exchange data

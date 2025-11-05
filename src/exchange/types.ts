@@ -1,7 +1,6 @@
 // Re-export types from centralized location
 export * from '../types/index.js';
 
-// Keep existing schemas for backward compatibility
 import { z } from 'zod';
 
 // Candlestick data structure
