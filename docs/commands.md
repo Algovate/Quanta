@@ -1001,8 +1001,6 @@ npm run api:dev
 # http://localhost:3001
 ```
 
-For more details, see [Error Handling & Resilience](error-handling.md#health-check-endpoints) documentation.
-
 ## Arena API (for QuantaWeb)
 
 List endpoints to distinguish running vs historical arenas:

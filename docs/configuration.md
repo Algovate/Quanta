@@ -6,20 +6,14 @@ Complete guide to configuring Quanta.
 
 ### Main Config: `config/config.json`
 
-Used for live trading and general settings:
-
 ```json
 {
   "mode": "strategy",
-  "_comment_mode": "Runtime mode: 'arena' (multi strategy) or 'strategy' (single)",
   "env": "simulate",
-  "_comment_env": "Environment: 'simulate' (mock), 'paper' (paper trading), 'live' (real)",
   "exchange": {
     "name": "okx",
-    "_comment_name": "Exchange: 'simulator' (mock data), 'okx', 'binance', 'coinbase' (real data)",
     "testnet": true,
     "marketType": "spot",
-    "_comment_marketType": "Market type: 'spot' or 'swap' (aliases: 'perp', 'perpetual' → 'swap')",
     "apiKey": "your_api_key",
     "apiSecret": "your_api_secret"
   },
@@ -39,71 +33,42 @@ Used for live trading and general settings:
     "leverageRange": [5, 40],
     "stopLoss": 0.05,
     "maxRisk": 0.05,
-    "priceSanity": {
-      "enabled": true,
-      "maxDeviation": 0.05
-    },
+    "priceSanity": { "enabled": true, "maxDeviation": 0.05 },
     "funding": { "warnings": true }
   }
 }
 ```
 
-### Simulation Settings in `config/config.json`
+**Key fields:**
+- `mode`: `strategy` (single) or `arena` (multi-drone)
+- `env`: `simulate` (mock), `paper` (real data, simulated execution), `live` (real trading)
+- `exchange.marketType`: `spot` or `swap` (affects leverage and risk parameters)
 
-Simulation is now configured under the `simulation` section of `config/config.json`:
+### Simulation Settings
+
+Configured under `simulation` in `config/config.json`:
 
 ```json
 {
   "simulation": {
     "simulation": {
-      "enabled": true,
       "defaultInitialBalance": 10000,
       "defaultMaxPositions": 6,
-      "defaultAI": "mock",
-      "autoRun": false,
-      "confirmBeforeExecute": true
-    },
-    "scenarios": {
-      "defaultCoins": ["BTC", "ETH", "SOL"],
-      "testScenarios": ["bullish", "bearish", "sideways", "volatile"]
+      "defaultAI": "mock"
     },
     "risk": {
       "minConfidence": 0.5,
-      "maxRiskPerTrade": 0.05,
-      "maxTotalRisk": 0.3,
       "stopLoss": 0.03,
-      "takeProfit": 0.06
-    },
-    "logging": {
-      "verbose": false,
-      "logTrades": true,
-      "logPositions": true,
-      "logRiskMetrics": true,
-      "saveResults": false,
-      "resultsDir": "./results"
-    },
-    "performance": {
-      "trackPnL": true,
-      "trackDrawdown": true,
-      "calculateSharpeRatio": true,
-      "benchmark": "BTC"
-    },
-    "ai": {
-      "mock": {
-        "signalInterval": 10000,
-        "confidenceRange": { "min": 0.5, "max": 0.95 }
-      },
-      "real": {
-        "apiKey": "",
-        "model": "deepseek/deepseek-chat",
-        "temperature": 0.7,
-        "maxRetries": 3,
-        "timeout": 30000
-      }
+      "maxRiskPerTrade": 0.05,
+      "maxTotalRisk": 0.3
     }
   }
 }
 ```
+
+**Note:** Simulation uses different defaults than trading:
+- **Confidence threshold**: 0.5 (50%) vs trading 0.55 (55%)
+- **Stop loss**: 3% vs trading 5%
 
 ## Prompt Groups
 
@@ -257,18 +222,17 @@ quanta config init
 
 ### AI Settings
 
-- **apiKey**: Your OpenRouter API key
-- **model**: AI model to use (recommended: `deepseek/deepseek-chat-v3-0324`)
-- **temperature**: Creativity level (0.7 = balanced)
+- **apiKey**: OpenRouter API key
+- **model**: AI model (default: `deepseek/deepseek-chat-v3-0324`)
+- **temperature**: Creativity level (default: 0.7)
 
 ### Trading Settings
 
 - **coins**: List of cryptocurrencies to trade
 - **maxPositions**: Maximum concurrent positions
-- **stopLoss**: Default stop-loss percentage (5%)
+- **stopLoss**: Default stop-loss (5% trading, 3% simulation)
 - **maxRisk**: Maximum risk per trade (5%)
-- **priceSanity.enabled**: If true, stale `entry_price` (> maxDeviation from live ticker) is ignored and converted to a market order.
-- **priceSanity.maxDeviation**: Relative deviation threshold (default 0.05 = 5%).
+- **priceSanity**: Stale price guard (converts to market order if deviation > 5%)
 
 ### Backtesting Defaults
 
@@ -333,33 +297,17 @@ At startup, the system:
 
 ## Examples
 
-### Conservative Setup
+### Conservative
+- `coins`: `["BTC"]`
+- `maxPositions`: `2`
+- `stopLoss`: `0.02` (2%)
+- `maxRisk`: `0.02` (2%)
 
-```json
-{
-  "trading": {
-    "coins": ["BTC"],
-    "maxPositions": 2,
-    "stopLoss": 0.02,
-    "maxRisk": 0.02,
-    "priceSanity": { "enabled": true, "maxDeviation": 0.05 }
-  }
-}
-```
-
-### Aggressive Setup
-
-```json
-{
-  "trading": {
-    "coins": ["BTC", "ETH", "SOL", "BNB"],
-    "maxPositions": 10,
-    "stopLoss": 0.05,
-    "maxRisk": 0.1,
-    "priceSanity": { "enabled": true, "maxDeviation": 0.05 }
-  }
-}
-```
+### Aggressive
+- `coins`: `["BTC", "ETH", "SOL", "BNB"]`
+- `maxPositions`: `10`
+- `stopLoss`: `0.05` (5%)
+- `maxRisk`: `0.1` (10%)
 
 ## Metrics Definitions
 

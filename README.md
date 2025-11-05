@@ -184,7 +184,6 @@ See [QuantaServer/README.md](../QuantaServer/README.md) for API server usage.
 - 💡 [Core Concepts](docs/concepts.md)
 - 🏦 [Supported Exchanges](docs/exchanges.md)
 - 📝 [Logging Guide](docs/logging-guide.md)
-- 🛡️ [Error Handling & Resilience](docs/error-handling.md)
 
 ## Important Concepts (Updated)
 

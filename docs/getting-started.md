@@ -26,16 +26,9 @@ npm run build
 # Test with Mock AI (no API key required)
 quanta simulate cycle --coins BTC --verbose
 
-# Test AI integration
+# Test AI and exchanges
 quanta test ai --type mock --coin BTC
-
-# Test market data
 quanta test exchange --exchange simulator --coin BTC
-
-# Test different exchanges
-quanta test exchange --exchange bin --coin BTC
-quanta test exchange --exchange cb --coin ETH
-quanta test exchange --exchange hliq --coin SOL
 ```
 
 ### 2. Configure API Keys
@@ -51,60 +44,34 @@ echo "OPENROUTER_API_KEY=your_key_here" >> .env
 ### 3. Run Your First Simulation
 
 ```bash
-# Basic simulation
+# Basic simulation (Mock AI)
 quanta simulate cycle --coins BTC --verbose
 
-# Multi-coin simulation
-quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
-
-# With real AI
-quanta simulate cycle --coins BTC,ETH --ai real --verbose
+# Multi-coin with real AI
+quanta simulate cycle --coins BTC,ETH,SOL --ai real --verbose
 ```
 
 ### 4. Run Backtest
 
 ```bash
-# Run a historical backtest
+# Historical backtest
 quanta trade backtest --start 2024-01-01 --end 2024-04-01 --coins BTC,ETH --initial-balance 10000
-
-# The output includes:
-# - Signal statistics (generated, accepted, rejected)
-# - Performance metrics (returns, Sharpe ratio, drawdown)
-# - Trade statistics with visual progress bars
-# - Risk metrics and equity curve analysis
 ```
 
 ### 5. Start Trading
 
-Choose your trading mode based on your needs:
-
 ```bash
-# Option 1: Simulation mode (Mock data - best for learning)
+# Simulation (mock data, no risk)
 quanta trade start --env simulate --coins BTC,ETH
-# ✓ Uses mock data only
-# ✓ No risk, no API keys required
-# ✓ Perfect for understanding the system
 
-# Option 2: Paper trading (Real data, simulated trades - recommended for testing)
+# Paper trading (real data, simulated execution)
 quanta trade start --env paper --coins BTC,ETH
-# ✓ Uses real market data from exchanges
-# ✓ Simulated execution (no real money)
-# ✓ Realistic market conditions
-# ✓ API keys optional
 
-# Option 3: Live trading (Real money - use with extreme caution)
+# Live trading (real money - use with caution)
 quanta trade start --env live --coins BTC,ETH
-# ⚠️ Real money at risk
-# ⚠️ Requires API keys
-# ⚠️ Always test in simulation/paper first!
 ```
 
-**The system will:**
-
-- Run trading cycles every 3 minutes
-- Monitor positions and execute trades
-- Display real-time updates
-- Press `Ctrl+C` to stop gracefully
+The system runs trading cycles every 3 minutes. Press `Ctrl+C` to stop.
 
 ## Next Steps
 
