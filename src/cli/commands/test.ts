@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { getConfig } from '../../config/settings.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import { safeAction } from '../shared/command-utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
 
 export class TestCommands {
@@ -15,14 +16,11 @@ export class TestCommands {
       .option('-t, --timeframe <timeframe>', 'Timeframe to test', '3m')
       .option('-l, --limit <limit>', 'Number of candles to fetch', '20')
       .option('-v, --verbose', 'Show detailed output when testing all exchanges', false)
-      .action(async options => {
-        try {
+      .action(
+        safeAction(async options => {
           await TestCommands.testExchange(options);
-        } catch {
-          // Error already displayed in testExchange, just exit
-          process.exit(1);
-        }
-      });
+        }, 'TestCommands.exchange')
+      );
 
     program
       .command('ai')
@@ -610,7 +608,8 @@ export class TestCommands {
       // Always shutdown logger and force exit to ensure process terminates
       // This ensures cleanup happens even if there's an error
       UnifiedLogger.getInstance().shutdown();
-      process.exit(0);
+      process.exitCode = 0;
+      return;
     }
   }
 }

@@ -18,6 +18,16 @@ export interface ShutdownContext {
   onError?: (error: Error) => Promise<void> | void;
 }
 
+// Global registry of on-shutdown callbacks
+const registeredShutdownTasks: Array<() => Promise<void> | void> = [];
+
+/**
+ * Register a task to be executed during graceful shutdown
+ */
+export function registerShutdownTask(task: () => Promise<void> | void): void {
+  registeredShutdownTasks.push(task);
+}
+
 /**
  * Setup graceful shutdown handlers
  */
@@ -27,7 +37,7 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
 
   let isShuttingDown = false;
 
-  const shutdownHandler = async (signal: string) => {
+  const shutdownHandler = async (signal: string, err?: unknown) => {
     if (isShuttingDown) {
       // Force exit if already shutting down
       process.exit(1);
@@ -39,9 +49,26 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
     logger.info(chalk.yellow(`Shutting down (${signal})...`), { signal }, loggerContext);
 
     try {
+      // Report error if provided
+      if (err instanceof Error) {
+        logger.error('Shutdown reason error', err, loggerContext);
+        if (onError) {
+          await Promise.resolve(onError(err));
+        }
+      }
+
       // Execute custom shutdown logic
       if (onShutdown) {
         await onShutdown();
+      }
+
+      // Execute globally registered shutdown tasks
+      for (const task of registeredShutdownTasks) {
+        try {
+          await Promise.resolve(task());
+        } catch {
+          // Ignore individual task failures
+        }
       }
 
       // Release execution session if acquired
@@ -67,7 +94,12 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
         );
       }
 
-      logger.shutdown();
+      // Flush/close logger streams
+      if (typeof (logger as unknown as { flush?: () => Promise<void> }).flush === 'function') {
+        await (logger as unknown as { flush: () => Promise<void> }).flush();
+      } else {
+        logger.shutdown();
+      }
       originalConsole.log(chalk.green('✅ Stopped gracefully'));
       process.exit(0);
     } catch (error) {
@@ -94,7 +126,11 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
         }
       }
 
-      logger.shutdown();
+      if (typeof (logger as unknown as { flush?: () => Promise<void> }).flush === 'function') {
+        await (logger as unknown as { flush: () => Promise<void> }).flush();
+      } else {
+        logger.shutdown();
+      }
       process.exit(1);
     }
   };
@@ -105,7 +141,11 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
       if (error instanceof Error) {
         logger.error('Fatal error during shutdown', error, loggerContext);
       }
-      logger.shutdown();
+      if (typeof (logger as unknown as { flush?: () => Promise<void> }).flush === 'function') {
+        void (logger as unknown as { flush: () => Promise<void> }).flush();
+      } else {
+        logger.shutdown();
+      }
       process.exit(1);
     });
   });
@@ -116,7 +156,42 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
       if (error instanceof Error) {
         logger.error('Fatal error during shutdown', error, loggerContext);
       }
-      logger.shutdown();
+      if (typeof (logger as unknown as { flush?: () => Promise<void> }).flush === 'function') {
+        void (logger as unknown as { flush: () => Promise<void> }).flush();
+      } else {
+        logger.shutdown();
+      }
+      process.exit(1);
+    });
+  });
+
+  // Global error handlers
+  process.on('unhandledRejection', reason => {
+    void shutdownHandler('unhandledRejection', reason).catch(error => {
+      originalConsole.error(chalk.red('❌ Fatal error during shutdown (unhandledRejection)'));
+      if (error instanceof Error) {
+        logger.error('Fatal error during shutdown (unhandledRejection)', error, loggerContext);
+      }
+      if (typeof (logger as unknown as { flush?: () => Promise<void> }).flush === 'function') {
+        void (logger as unknown as { flush: () => Promise<void> }).flush();
+      } else {
+        logger.shutdown();
+      }
+      process.exit(1);
+    });
+  });
+
+  process.on('uncaughtException', error => {
+    void shutdownHandler('uncaughtException', error).catch(err => {
+      originalConsole.error(chalk.red('❌ Fatal error during shutdown (uncaughtException)'));
+      if (err instanceof Error) {
+        logger.error('Fatal error during shutdown (uncaughtException)', err, loggerContext);
+      }
+      if (typeof (logger as unknown as { flush?: () => Promise<void> }).flush === 'function') {
+        void (logger as unknown as { flush: () => Promise<void> }).flush();
+      } else {
+        logger.shutdown();
+      }
       process.exit(1);
     });
   });

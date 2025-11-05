@@ -86,9 +86,10 @@ export const handleAsync = async <T>(operation: () => Promise<T>, context?: stri
         error.message.includes('Invalid mode');
 
       if (isUserFriendlyError) {
-        // Log the error message directly and exit cleanly
+        // Log the error message directly and signal non-zero exit
         console.error('\n' + error.message + '\n');
-        process.exit(1);
+        process.exitCode = 1;
+        throw error;
       }
     }
 

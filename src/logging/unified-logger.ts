@@ -846,4 +846,15 @@ export class UnifiedLogger {
     // Close JSONL writer stream
     void this.jsonlWriter.close();
   }
+
+  /**
+   * Flush logging and wait for underlying streams to close
+   */
+  async flush(): Promise<void> {
+    try {
+      await this.jsonlWriter.close();
+    } catch {
+      // Swallow errors on flush to avoid blocking shutdown
+    }
+  }
 }

@@ -173,6 +173,12 @@ export class TradingManager extends EventEmitter {
 
       // Create workflow - both CLI and API server modes use structured logs only
       this.workflow = new TradingWorkflow(exchange, marketDataProvider, aiAgent, config);
+      try {
+        const { registerShutdownTask } = await import('../cli/shared/shutdown-handler.js');
+        registerShutdownTask(() => this.workflow?.dispose());
+      } catch {
+        // ignore if coordinator not available in this context
+      }
 
       // Set up custom exit plans getter
       this.workflow.setCustomExitPlansGetter((symbol, side) =>
@@ -197,6 +203,13 @@ export class TradingManager extends EventEmitter {
           // Start streaming ingestion for gap detection and future WS migration (non-intrusive)
           const sCfg: StreamingConfig = { symbols, timeframes };
           this.streaming = new StreamingIngestion(exchange, sCfg);
+          // Ensure streaming stops on centralized shutdown
+          try {
+            const { registerShutdownTask } = await import('../cli/shared/shutdown-handler.js');
+            registerShutdownTask(() => this.streaming?.stop());
+          } catch {
+            // If registration is unavailable in this context, ignore
+          }
           this.streaming.on('gap:detected', async gap => {
             this.logger.warn(
               'Market data gap detected',

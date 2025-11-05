@@ -12,6 +12,8 @@ import {
   PromptCommands,
   ArenaCommands,
 } from './commands/index.js';
+import { UnifiedLogger } from '../logging/index.js';
+import { setupGracefulShutdown } from './shared/shutdown-handler.js';
 
 // Get version from package.json
 function getVersion(): string {
@@ -32,6 +34,10 @@ export class CLIApplication {
   constructor() {
     this.program = new Command();
     this.setupProgram();
+    // Initialize logger and global shutdown coordination once
+    const logger = UnifiedLogger.getInstance();
+    logger.initialize();
+    setupGracefulShutdown({ logger, loggerContext: 'CLIApplication' });
     this.registerCommands();
   }
 

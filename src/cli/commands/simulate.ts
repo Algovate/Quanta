@@ -10,6 +10,7 @@ import { RiskManager } from '../../execution/risk.js';
 import { OrderExecutor } from '../../execution/orders.js';
 import { PositionMonitorService } from '../../execution/monitor.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import { safeAction } from '../shared/command-utils.js';
 import {
   validateCoins,
   validateAIType,
@@ -97,21 +98,21 @@ export class SimulateCommands {
       .option('--cycles <number>', 'Number of cycles to run', '1')
       .option('--interval <ms>', 'Delay between cycles in ms', '3000')
       .option('-a, --ai <type>', 'AI type: mock or real (requires API key in config.json)', 'mock')
-      .action(async options => {
-        if (SimulateCommands.isRunning) {
-          return;
-        }
-
-        SimulateCommands.isRunning = true;
-
-        try {
-          await handleAsync(async () => {
-            await SimulateCommands.simulateCycle(options);
-          }, 'SimulateCommands.cycle');
-        } finally {
-          SimulateCommands.isRunning = false;
-        }
-      });
+      .action(
+        safeAction(async options => {
+          if (SimulateCommands.isRunning) {
+            return;
+          }
+          SimulateCommands.isRunning = true;
+          try {
+            await handleAsync(async () => {
+              await SimulateCommands.simulateCycle(options);
+            }, 'SimulateCommands.cycle');
+          } finally {
+            SimulateCommands.isRunning = false;
+          }
+        }, 'SimulateCommands.cycle')
+      );
   }
 
   private static async simulateCycle(options: {
@@ -187,7 +188,8 @@ export class SimulateCommands {
           console.log(chalk.gray('     or edit config.json: simulation.ai.real.apiKey'));
           console.log(chalk.yellow('  3. Or use Mock AI (default):'));
           console.log(chalk.gray('     quanta simulate cycle --coins BTC --ai mock'));
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
         aiAgent = new OpenRouterClient(apiKey, model, temperature, undefined, baseUrl);
         console.log(chalk.green('✓ Real AI initialized'));

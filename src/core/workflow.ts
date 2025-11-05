@@ -1299,4 +1299,19 @@ export class TradingWorkflow {
     this.barDrivenEnabled = true;
     this.emitLog('info', '🟢 Bar-driven scheduling enabled (EventBus)');
   }
+
+  /**
+   * Dispose resources and unsubscribe listeners to allow clean shutdown
+   */
+  dispose(): void {
+    try {
+      if (this.barUnsubscribe) {
+        this.barUnsubscribe();
+        this.barUnsubscribe = undefined;
+      }
+      this.barDrivenEnabled = false;
+    } catch {
+      // ignore
+    }
+  }
 }

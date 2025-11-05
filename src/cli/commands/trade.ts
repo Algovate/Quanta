@@ -6,6 +6,7 @@ import { MarketDataProvider } from '../../data/index.js';
 import { OpenRouterClient } from '../../ai/index.js';
 import { TradingManager } from '../../core/index.js';
 import { handleAsync } from '../../utils/index.js';
+import { safeAction } from '../shared/command-utils.js';
 import { formatExchangeFriendlyName } from '../utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
 import { checkSessionConflict } from '../shared/session-guard.js';
@@ -104,11 +105,13 @@ export class TradeCommands {
       .description('Start AI trading system')
       .option('-e, --env <env>', 'Environment: live, paper, simulate')
       .option('-c, --coins <coins>', 'Comma-separated list of coins (overrides config)')
-      .action(async options => {
-        await handleAsync(async () => {
-          await TradeCommands.startTrading(options);
-        }, 'TradeCommands.start');
-      });
+      .action(
+        safeAction(async options => {
+          await handleAsync(async () => {
+            await TradeCommands.startTrading(options);
+          }, 'TradeCommands.start');
+        }, 'TradeCommands.start')
+      );
 
     program
       .command('backtest')
@@ -137,11 +140,13 @@ export class TradeCommands {
       .option('--exposure-delta-pct <p>', 'Print when exposure changes by >= p', '0.1')
       .option('--leverage-delta <x>', 'Print when leverage changes by >= x', '0.2')
       .option('--dd-steps <list>', 'Drawdown alert steps (comma, e.g., 5,10,15)', '')
-      .action(async options => {
-        await handleAsync(async () => {
-          await TradeCommands.runBacktest(options);
-        }, 'TradeCommands.backtest');
-      });
+      .action(
+        safeAction(async options => {
+          await handleAsync(async () => {
+            await TradeCommands.runBacktest(options);
+          }, 'TradeCommands.backtest');
+        }, 'TradeCommands.backtest')
+      );
   }
 
   private static async startTrading(options: { env?: string; coins?: string }): Promise<void> {

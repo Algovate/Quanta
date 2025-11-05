@@ -10,6 +10,7 @@ import {
   validateConfig,
 } from '../../config/settings.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import { safeAction } from '../shared/command-utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
 
 export class ConfigCommands {
@@ -18,68 +19,82 @@ export class ConfigCommands {
       .command('show')
       .description('Show current configuration')
       .option('-f, --format <format>', 'Output format: json, table', 'table')
-      .action(async options => {
-        await handleAsync(async () => {
-          await ConfigCommands.showConfig(options);
-        }, 'ConfigCommands.show');
-      });
+      .action(
+        safeAction(async options => {
+          await handleAsync(async () => {
+            await ConfigCommands.showConfig(options);
+          }, 'ConfigCommands.show');
+        }, 'ConfigCommands.show')
+      );
 
     program
       .command('set')
       .description('Set configuration values')
       .argument('<key>', 'Configuration key (e.g., ai.model, trading.coins)')
       .argument('<value>', 'Configuration value')
-      .action(async (key, value) => {
-        await handleAsync(async () => {
-          await ConfigCommands.setConfig(key, value);
-        }, 'ConfigCommands.set');
-      });
+      .action(
+        safeAction(async (key, value) => {
+          await handleAsync(async () => {
+            await ConfigCommands.setConfig(key, value);
+          }, 'ConfigCommands.set');
+        }, 'ConfigCommands.set')
+      );
 
     program
       .command('validate')
       .description('Validate current configuration')
-      .action(async () => {
-        await handleAsync(async () => {
-          await ConfigCommands.validateConfig();
-        }, 'ConfigCommands.validate');
-      });
+      .action(
+        safeAction(async () => {
+          await handleAsync(async () => {
+            await ConfigCommands.validateConfig();
+          }, 'ConfigCommands.validate');
+        }, 'ConfigCommands.validate')
+      );
 
     program
       .command('save')
       .description('Save current configuration to file')
-      .action(async () => {
-        await handleAsync(async () => {
-          await ConfigCommands.saveConfig();
-        }, 'ConfigCommands.save');
-      });
+      .action(
+        safeAction(async () => {
+          await handleAsync(async () => {
+            await ConfigCommands.saveConfig();
+          }, 'ConfigCommands.save');
+        }, 'ConfigCommands.save')
+      );
 
     program
       .command('reset')
       .description('Reset configuration to defaults')
-      .action(async () => {
-        await handleAsync(async () => {
-          await ConfigCommands.resetConfig();
-        }, 'ConfigCommands.reset');
-      });
+      .action(
+        safeAction(async () => {
+          await handleAsync(async () => {
+            await ConfigCommands.resetConfig();
+          }, 'ConfigCommands.reset');
+        }, 'ConfigCommands.reset')
+      );
 
     program
       .command('init')
       .description('Initialize configuration file from example')
-      .action(async () => {
-        await handleAsync(async () => {
-          await ConfigCommands.initConfig();
-        }, 'ConfigCommands.init');
-      });
+      .action(
+        safeAction(async () => {
+          await handleAsync(async () => {
+            await ConfigCommands.initConfig();
+          }, 'ConfigCommands.init');
+        }, 'ConfigCommands.init')
+      );
 
     program
       .command('list')
       .description('List configuration keys and current values')
       .option('-p, --prefix <path>', 'Only list keys under this path (e.g., ai, trading)')
-      .action(async (options: { prefix?: string }) => {
-        await handleAsync(async () => {
-          await ConfigCommands.listKeys(options.prefix);
-        }, 'ConfigCommands.list');
-      });
+      .action(
+        safeAction(async (options: { prefix?: string }) => {
+          await handleAsync(async () => {
+            await ConfigCommands.listKeys(options.prefix);
+          }, 'ConfigCommands.list');
+        }, 'ConfigCommands.list')
+      );
   }
 
   private static async showConfig(options: { format: string }): Promise<void> {

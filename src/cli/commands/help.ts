@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { safeAction } from '../shared/command-utils.js';
 import chalk from 'chalk';
 
 export class HelpCommand {
@@ -6,9 +7,11 @@ export class HelpCommand {
     program
       .command('help')
       .description('Show detailed help information')
-      .action(() => {
-        HelpCommand.showHelp();
-      });
+      .action(
+        safeAction(async () => {
+          HelpCommand.showHelp();
+        }, 'HelpCommand.help')
+      );
   }
 
   private static showHelp(): void {

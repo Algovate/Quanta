@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import { getConfig } from '../../config/settings.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import { safeAction } from '../shared/command-utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
 
 interface ViewPromptOptions {
@@ -53,23 +54,27 @@ export class PromptCommands {
       .option('--list', 'List all available prompt groups', false)
       .option('--context <path.json>', 'Render using values from context JSON file')
       .option('--vars', 'Show template variables and presence status', false)
-      .action(async options => {
-        await handleAsync(async () => {
-          await PromptCommands.viewPrompt(options as ViewPromptOptions);
-        }, 'PromptCommands.view');
-      });
+      .action(
+        safeAction(async options => {
+          await handleAsync(async () => {
+            await PromptCommands.viewPrompt(options as ViewPromptOptions);
+          }, 'PromptCommands.view');
+        }, 'PromptCommands.view')
+      );
 
     program
       .command('list')
       .description('List available prompt groups')
-      .action(async () => {
-        await handleAsync(async () => {
-          const logger = UnifiedLogger.getInstance();
-          const originalConsole = logger.getOriginalConsole();
-          PromptCommands.listPromptGroups(originalConsole);
-          logger.shutdown();
-        }, 'PromptCommands.list');
-      });
+      .action(
+        safeAction(async () => {
+          await handleAsync(async () => {
+            const logger = UnifiedLogger.getInstance();
+            const originalConsole = logger.getOriginalConsole();
+            PromptCommands.listPromptGroups(originalConsole);
+            logger.shutdown();
+          }, 'PromptCommands.list');
+        }, 'PromptCommands.list')
+      );
 
     const diffCmd = program
       .command('diff')
@@ -80,11 +85,13 @@ export class PromptCommands {
       .option('-s, --system-only', 'Diff only system prompt', false)
       .option('-u, --user-only', 'Diff only user prompt', false)
       .option('--context <path.json>', 'Render using values from context JSON file')
-      .action(async (options: any) => {
-        await handleAsync(async () => {
-          await PromptCommands.diffGroups(options as DiffPromptOptions);
-        }, 'PromptCommands.diff');
-      });
+      .action(
+        safeAction(async (options: any) => {
+          await handleAsync(async () => {
+            await PromptCommands.diffGroups(options as DiffPromptOptions);
+          }, 'PromptCommands.diff');
+        }, 'PromptCommands.diff')
+      );
     diffCmd.showHelpAfterError();
   }
 

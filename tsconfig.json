@@ -21,8 +21,6 @@
     "noFallthroughCasesInSwitch": false,
     "moduleResolution": "NodeNext",
     "allowSyntheticDefaultImports": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },

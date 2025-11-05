@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import fs from 'fs';
 import { QueryInterface } from '../../logging/index.js';
 import { UnifiedLogger } from '../../logging/index.js';
-import { handleAsync } from '../../utils/error-handler.js';
+import { safeAction } from '../shared/command-utils.js';
 import {
   getLogFiles,
   formatFileSize,
@@ -40,11 +40,11 @@ export class LogCommands {
       .option('--level <level>', 'Filter by log level (info|warn|error|debug)')
       .option('--grep <pattern>', 'Search/filter by pattern in message')
       .option('--format <format>', 'Output format (formatted|raw)', 'formatted')
-      .action(async options => {
-        await handleAsync(async () => {
+      .action(
+        safeAction(async options => {
           await LogCommands.showConsoleOutput(options);
-        }, 'LogCommands.view');
-      });
+        }, 'LogCommands.view')
+      );
 
     // Clean old log files
     program
@@ -54,11 +54,11 @@ export class LogCommands {
       .option('--days <n>', 'Delete files older than N days', parseInt)
       .option('--force', 'Skip confirmation prompt', false)
       .option('--dry-run', 'Show what would be deleted without deleting', false)
-      .action(async options => {
-        await handleAsync(async () => {
+      .action(
+        safeAction(async options => {
           await LogCommands.cleanLogs(options);
-        }, 'LogCommands.clean');
-      });
+        }, 'LogCommands.clean')
+      );
 
     // List log files
     program
@@ -66,11 +66,11 @@ export class LogCommands {
       .description('List available log files with metadata')
       .option('--format <format>', 'Output format: table, json, csv', 'table')
       .option('--sort <field>', 'Sort by: date, size, name', 'date')
-      .action(async options => {
-        await handleAsync(async () => {
+      .action(
+        safeAction(async options => {
           await LogCommands.listLogFiles(options);
-        }, 'LogCommands.list');
-      });
+        }, 'LogCommands.list')
+      );
 
     // Show log statistics
     program
@@ -80,11 +80,11 @@ export class LogCommands {
       .option('--context <context>', 'Filter by context')
       .option('--level <level>', 'Filter by log level (info|warn|error|debug)')
       .option('--format <format>', 'Output format: table, json', 'table')
-      .action(async options => {
-        await handleAsync(async () => {
+      .action(
+        safeAction(async options => {
           await LogCommands.showStats(options);
-        }, 'LogCommands.stats');
-      });
+        }, 'LogCommands.stats')
+      );
 
     // Export logs
     program
@@ -97,11 +97,11 @@ export class LogCommands {
       .option('--level <level>', 'Filter by log level (info|warn|error|debug)')
       .option('--since <date>', 'Start date (YYYY-MM-DD)')
       .option('--until <date>', 'End date (YYYY-MM-DD)')
-      .action(async options => {
-        await handleAsync(async () => {
+      .action(
+        safeAction(async options => {
           await LogCommands.exportLogs(options);
-        }, 'LogCommands.export');
-      });
+        }, 'LogCommands.export')
+      );
   }
 
   private static async showConsoleOutput(options: {
@@ -248,7 +248,8 @@ export class LogCommands {
         }
         this.cleanupResources();
         originalConsole.log(chalk.yellow('\n\nStopped following logs.'));
-        process.exit(0);
+        process.exitCode = 0;
+        return;
       };
       process.on('SIGINT', sigintHandler);
 

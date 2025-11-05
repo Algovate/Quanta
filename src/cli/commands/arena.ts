@@ -15,6 +15,7 @@ import type { ArenaConfig } from '../../arena/types.js';
 import { PerformanceComparator } from '../../arena/analysis/performance-comparator.js';
 import { CostAnalyzer } from '../../arena/analysis/cost-analyzer.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import { safeAction } from '../shared/command-utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
 import { checkSessionConflict } from '../shared/session-guard.js';
 
@@ -38,92 +39,110 @@ export class ArenaCommands {
       .option('-d, --duration <minutes>', 'Maximum runtime in minutes (optional)')
       .option('-v, --verbose', 'Verbose output', false)
       .action(
-        async (options: { config: string; mode?: string; duration?: string; verbose: boolean }) => {
-          if (ArenaCommands.isRunning) {
-            console.log(chalk.yellow('⚠️  Another arena operation is in progress'));
-            return;
-          }
+        safeAction(
+          async (options: {
+            config: string;
+            mode?: string;
+            duration?: string;
+            verbose: boolean;
+          }) => {
+            if (ArenaCommands.isRunning) {
+              console.log(chalk.yellow('⚠️  Another arena operation is in progress'));
+              return;
+            }
 
-          ArenaCommands.isRunning = true;
+            ArenaCommands.isRunning = true;
 
-          try {
-            await handleAsync(async () => {
-              await ArenaCommands.startArena(options);
-            }, 'ArenaCommands.start');
-          } finally {
-            ArenaCommands.isRunning = false;
-          }
-        }
+            try {
+              await handleAsync(async () => {
+                await ArenaCommands.startArena(options);
+              }, 'ArenaCommands.start');
+            } finally {
+              ArenaCommands.isRunning = false;
+            }
+          },
+          'ArenaCommands.start'
+        )
       );
 
     arena
       .command('stop')
       .description('Stop a running arena')
       .argument('<arenaId>', 'Arena ID to stop')
-      .action(async (arenaId: string) => {
-        try {
-          await handleAsync(async () => {
-            await ArenaCommands.stopArena(arenaId);
-          }, 'ArenaCommands.stop');
-        } finally {
-          ArenaCommands.isRunning = false;
-        }
-      });
+      .action(
+        safeAction(async (arenaId: string) => {
+          try {
+            await handleAsync(async () => {
+              await ArenaCommands.stopArena(arenaId);
+            }, 'ArenaCommands.stop');
+          } finally {
+            ArenaCommands.isRunning = false;
+          }
+        }, 'ArenaCommands.stop')
+      );
 
     arena
       .command('status')
       .description('Show status of arena(s)')
       .argument('[arenaId]', 'Specific arena ID (optional)')
-      .action(async (arenaId?: string) => {
-        try {
-          await handleAsync(async () => {
-            await ArenaCommands.showStatus(arenaId);
-          }, 'ArenaCommands.status');
-        } finally {
-          ArenaCommands.isRunning = false;
-        }
-      });
+      .action(
+        safeAction(async (arenaId?: string) => {
+          try {
+            await handleAsync(async () => {
+              await ArenaCommands.showStatus(arenaId);
+            }, 'ArenaCommands.status');
+          } finally {
+            ArenaCommands.isRunning = false;
+          }
+        }, 'ArenaCommands.status')
+      );
 
     arena
       .command('list')
       .description('List all arena runs')
-      .action(async () => {
-        try {
-          await handleAsync(async () => {
-            await ArenaCommands.listArenas();
-          }, 'ArenaCommands.list');
-        } finally {
-          ArenaCommands.isRunning = false;
-        }
-      });
+      .action(
+        safeAction(async () => {
+          try {
+            await handleAsync(async () => {
+              await ArenaCommands.listArenas();
+            }, 'ArenaCommands.list');
+          } finally {
+            ArenaCommands.isRunning = false;
+          }
+        }, 'ArenaCommands.list')
+      );
 
     arena
       .command('compare')
       .description('Compare performance across drones in an arena')
       .argument('<arenaId>', 'Arena ID to compare')
-      .action(async (arenaId: string) => {
-        try {
-          await handleAsync(async () => {
-            await ArenaCommands.compareArena(arenaId);
-          }, 'ArenaCommands.compare');
-        } finally {
-          ArenaCommands.isRunning = false;
-        }
-      });
+      .action(
+        safeAction(async (arenaId: string) => {
+          try {
+            await handleAsync(async () => {
+              await ArenaCommands.compareArena(arenaId);
+            }, 'ArenaCommands.compare');
+          } finally {
+            ArenaCommands.isRunning = false;
+          }
+        }, 'ArenaCommands.compare')
+      );
 
     arena
       .command('configs')
       .alias('config-list')
       .description('List available arena configuration files')
-      .action(async () => {
-        try {
-          await handleAsync(async () => {
-            await ArenaCommands.listConfigs();
-          }, 'ArenaCommands.configs');
-        } finally {
-          ArenaCommands.isRunning = false;
-        }
-      });
+      .action(
+        safeAction(async () => {
+          try {
+            await handleAsync(async () => {
+              await ArenaCommands.listConfigs();
+            }, 'ArenaCommands.configs');
+          } finally {
+            ArenaCommands.isRunning = false;
+          }
+        }, 'ArenaCommands.configs')
+      );
   }
 
   private static async startArena(options: {
@@ -154,14 +173,16 @@ export class ArenaCommands {
             '  Arena only supports "paper" mode. Use standalone backtest command for historical data testing.'
           )
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       if (options.mode !== 'paper') {
         spinner.fail('Invalid mode');
         console.error(
           chalk.red(`  Invalid mode: "${options.mode}". Arena only supports "paper" mode.`)
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       config.mode = 'paper';
     }
@@ -174,14 +195,16 @@ export class ArenaCommands {
           '  Arena only supports "paper" mode. Use standalone backtest command for historical data testing.'
         )
       );
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     // Validate configuration
     if (!config.drones || config.drones.length === 0) {
       spinner.fail('Invalid arena configuration');
       console.error(chalk.red('  Arena must have at least one drone'));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     spinner.succeed(`Loaded arena configuration: ${config.name}`);
@@ -200,7 +223,8 @@ export class ArenaCommands {
       originalConsole.log(
         chalk.yellow('\n💡 Set OPENROUTER_API_KEY environment variable or configure in config.json')
       );
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     // Start arena
@@ -216,59 +240,7 @@ export class ArenaCommands {
       originalConsole.log(chalk.gray(`  Use "quanta arena stop ${arenaId}" to stop`));
       originalConsole.log(chalk.gray('  Press Ctrl-C to stop gracefully'));
 
-      // Set up signal handlers for graceful shutdown
-      let isShuttingDown = false;
-      const shutdownHandler = async (signal: string) => {
-        if (isShuttingDown) {
-          // Force exit if already shutting down
-          process.exit(1);
-          return;
-        }
-        isShuttingDown = true;
-
-        originalConsole.log(chalk.yellow(`\n⏹  Shutting down arena (${signal})...`));
-        logger.info(
-          chalk.yellow(`Shutting down arena (${signal})...`),
-          { arenaId, signal },
-          'ArenaStart'
-        );
-
-        try {
-          await arenaManager.stopArena(arenaId);
-
-          logger.shutdown();
-          originalConsole.log(chalk.green('✅ Arena stopped gracefully'));
-          process.exit(0);
-        } catch (error) {
-          originalConsole.error(chalk.red('❌ Error during shutdown'));
-          if (error instanceof Error) {
-            logger.error('Error during shutdown', error, 'ArenaStart');
-          }
-          logger.shutdown();
-          process.exit(1);
-        }
-      };
-
-      process.on('SIGINT', () => {
-        shutdownHandler('SIGINT').catch(error => {
-          originalConsole.error(chalk.red('❌ Fatal error during shutdown'));
-          if (error instanceof Error) {
-            logger.error('Fatal error during shutdown', error, 'ArenaStart');
-          }
-          logger.shutdown();
-          process.exit(1);
-        });
-      });
-      process.on('SIGTERM', () => {
-        shutdownHandler('SIGTERM').catch(error => {
-          originalConsole.error(chalk.red('❌ Fatal error during shutdown'));
-          if (error instanceof Error) {
-            logger.error('Fatal error during shutdown', error, 'ArenaStart');
-          }
-          logger.shutdown();
-          process.exit(1);
-        });
-      });
+      // Global shutdown is handled centrally; duration timeout triggers SIGTERM
 
       // If duration specified, stop after duration
       if (options.duration) {
@@ -277,15 +249,13 @@ export class ArenaCommands {
           originalConsole.log(chalk.yellow(`\n⏱️  Duration limit reached. Stopping arena...`));
           await arenaManager.stopArena(arenaId);
           originalConsole.log(chalk.green('✅ Arena stopped'));
-          logger.shutdown();
-          process.exit(0);
+          // Delegate final teardown to central shutdown handlers
+          process.kill(process.pid, 'SIGTERM');
         }, durationMs);
       }
 
-      // Keep process alive until interrupted or duration limit reached
-      await new Promise(() => {
-        // Never resolves, keeps process alive until SIGINT, SIGTERM, or duration timeout
-      });
+      // Return; active timers/streams keep process alive until central shutdown
+      return;
     } catch (error) {
       startSpinner.fail('Failed to start arena');
       throw error;
