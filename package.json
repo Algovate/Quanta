@@ -1,6 +1,6 @@
 {
   "name": "quanta",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Quanta - AI-powered quantitative trading system with real-time decision making",
   "type": "module",
   "main": "dist/index.js",
