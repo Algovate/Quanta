@@ -544,14 +544,7 @@ export class TradingWorkflow {
 
         // EmitLog omitted to avoid duplicating the unified error message
 
-        // Also output directly to console for immediate visibility
-        this.originalConsole.error('\n❌ AI Client Error - Stopping Workflow');
-        this.originalConsole.error(`   ${errorMessage}`);
-        if (error instanceof Error && error.stack) {
-          this.originalConsole.error('\n   Error details:');
-          this.originalConsole.error(error.stack.split('\n').slice(0, 3).join('\n'));
-        }
-        this.originalConsole.error('\n');
+        // Console banner removed; rely on structured logging only
 
         // Stop the workflow gracefully
         await this.stop();

@@ -221,6 +221,10 @@ export class CircuitBreaker {
    * Handle failed execution
    */
   private onFailure(error: any): void {
+    // Skip logging in onFailure if this is an AI client error; it should have been propagated.
+    if (error && ((error as any).isClientError || (error as any).name === 'AIClientError')) {
+      return;
+    }
     this.failureCount++;
     this.consecutiveFailures++;
     this.consecutiveSuccesses = 0;

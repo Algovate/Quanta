@@ -161,15 +161,17 @@ export async function withRetry<T>(fn: () => Promise<T>, config: RetryConfig): P
         onRetry(attempt + 1, error);
       }
 
-      logger.info(
-        'Retrying after delay',
-        {
-          attempt: attempt + 1,
-          delay,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        loggerContext
-      );
+      if (shouldRetryError) {
+        logger.info(
+          'Retrying after delay',
+          {
+            attempt: attempt + 1,
+            delay,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          loggerContext
+        );
+      }
 
       // Wait before retrying
       await new Promise(resolve => setTimeout(resolve, delay));
