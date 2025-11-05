@@ -40,6 +40,7 @@ Complete guide to configuring Quanta.
 ```
 
 **Key fields:**
+
 - `mode`: `strategy` (single) or `arena` (multi-drone)
 - `env`: `simulate` (mock), `paper` (real data, simulated execution), `live` (real trading)
 - `exchange.marketType`: `spot` or `swap` (affects leverage and risk parameters)
@@ -67,6 +68,7 @@ Configured under `simulation` in `config/config.json`:
 ```
 
 **Note:** Simulation uses different defaults than trading:
+
 - **Confidence threshold**: 0.5 (50%) vs trading 0.55 (55%)
 - **Stop loss**: 3% vs trading 5%
 
@@ -298,12 +300,14 @@ At startup, the system:
 ## Examples
 
 ### Conservative
+
 - `coins`: `["BTC"]`
 - `maxPositions`: `2`
 - `stopLoss`: `0.02` (2%)
 - `maxRisk`: `0.02` (2%)
 
 ### Aggressive
+
 - `coins`: `["BTC", "ETH", "SOL", "BNB"]`
 - `maxPositions`: `10`
 - `stopLoss`: `0.05` (5%)

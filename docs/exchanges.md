@@ -1,16 +1,16 @@
 # Supported Exchanges
 
-Quanta supports multiple cryptocurrency exchanges with unified API.
+Quanta supports multiple cryptocurrency exchanges with a unified API.
 
 ## Available Exchanges
 
-| Exchange    | Full Name   | Abbreviation | Status       |
-| ----------- | ----------- | ------------ | ------------ |
-| Simulator   | Simulator   | -            | ✅ Built-in  |
-| Binance     | Binance     | `bin`        | ✅ Supported |
-| OKX         | OKX         | -            | ✅ Supported |
-| Coinbase    | Coinbase    | `cb`         | ✅ Supported |
-| Hyperliquid | Hyperliquid | `hliq`       | ✅ Supported |
+| Exchange    | Full Name   | Abbreviation | Status       | API Keys Required |
+| ----------- | ----------- | ------------ | ------------ | ----------------- |
+| Simulator   | Simulator   | -            | ✅ Built-in  | No                |
+| Binance     | Binance     | `bin`        | ✅ Supported | Yes (for trading) |
+| OKX         | OKX         | -            | ✅ Supported | Yes (for trading) |
+| Coinbase    | Coinbase    | `cb`         | ✅ Supported | Yes (for trading) |
+| Hyperliquid | Hyperliquid | `hliq`       | ✅ Supported | Yes (for trading) |
 
 ## Exchange Details
 
@@ -35,6 +35,7 @@ Quanta supports multiple cryptocurrency exchanges with unified API.
 - **API Key Required**: Yes (for trading)
 - **Use Case**: Spot, futures, and options trading
 - **API Keys**: `OKX_API_KEY`, `OKX_API_SECRET`
+- **Note**: For derivatives, uses `BASE/USDT:USDT` format (e.g., `ETH/USDT:USDT`)
 
 ### Coinbase
 
@@ -74,7 +75,11 @@ quanta test exchange --exchange hliq --coin SOL
 ### Test All Exchanges
 
 ```bash
-quanta test exchange --all --coin BTC --timeframe 1h
+# Quick connectivity test
+quanta test exchange --all --coin BTC
+
+# Detailed test with comprehensive analysis
+quanta test exchange --all --verbose --coin BTC
 ```
 
 ## Environment Variables
@@ -99,11 +104,25 @@ export HYPERLIQUID_API_KEY=your_key
 export HYPERLIQUID_API_SECRET=your_secret
 ```
 
+Or configure in `config/config.json`:
+
+```json
+{
+  "exchange": {
+    "name": "okx",
+    "apiKey": "your_api_key",
+    "apiSecret": "your_api_secret",
+    "testnet": true
+  }
+}
+```
+
 ## Symbol Format
 
 Quanta uses standard `/USDT` symbol format for all exchanges. Special handling:
 
 - **Hyperliquid**: Automatically converts `BTC/USDT` → `BTC/USDC:USDC`
+- **OKX**: Uses `BASE/USDT:USDT` format for perpetuals (e.g., `ETH/USDT:USDT`)
 - **Other exchanges**: Use symbols as provided
 
 Example:
@@ -124,33 +143,50 @@ All exchanges support:
 - ✅ Order placement (market orders)
 - ✅ Order cancellation
 
+## Market Types
+
+### Spot Trading
+
+- **Leverage**: 1x only (no leverage)
+- **Funding**: No funding fees
+- **Use Case**: Lower risk, accumulation
+- **Recommended**: For beginners and conservative strategies
+
+### Swap/Perpetual Trading
+
+- **Leverage**: 3x to 10x (configurable)
+- **Funding**: Periodic funding fees apply
+- **Use Case**: Higher risk, shorting capability
+- **Recommended**: For experienced traders with proper risk management
+
+See [Configuration Guide](configuration.md#market-types) for details on market type configuration.
+
 ## Recommendations
 
-1. **For Testing**: Use `simulator` (no API keys needed)
-2. **For Production**: Use reputable exchanges (Binance, OKX, Coinbase)
-3. **For DEX Trading**: Use `hyperliquid` for on-chain perpetuals
-4. **For Risk Management**: Test first with simulator before real trading
+### For Testing
 
-## Trading Features
+- Use `simulator` (no API keys needed)
+- Perfect for learning and development
+- No external dependencies
 
-### Position Sizing
+### For Production
 
-- Maximum position size: 30% of available trading capital per trade
-- Risk-based sizing: Based on stop-loss percentage and account equity
-- Minimum position: 1% of equity or $200 (whichever is greater)
-- Leverage: Configurable (default: 1x for spot, 5-40x for derivatives)
+- Use reputable exchanges (Binance, OKX, Coinbase)
+- Test first with simulator before real trading
+- Use testnet when available
 
-### Risk Management
+### For DEX Trading
 
-- Stop Loss: Automatic calculation based on volatility (default: 3%)
-- Take Profit: Set based on risk-reward ratio
-- Position Limits: Configurable max positions per cycle
+- Use `hyperliquid` for on-chain perpetuals
+- Understand on-chain transaction costs
+- Be aware of network latency
 
-### Order Execution
+### For Risk Management
 
-- Market orders: Immediate execution
-- Order validation: Balance and risk checks before execution
-- Auto retry: On network errors (configurable)
+- Test first with simulator before real trading
+- Start with paper trading mode
+- Use small position sizes initially
+- Monitor positions regularly
 
 ## Troubleshooting
 
@@ -162,12 +198,16 @@ quanta config show
 
 # Test exchange connection
 quanta test exchange --exchange <exchange> --coin BTC
+
+# Test with verbose output
+quanta test exchange --exchange <exchange> --coin BTC --verbose
 ```
 
 ### Symbol Errors
 
 - Ensure coin symbol is valid (BTC, ETH, SOL, etc.)
 - Hyperliquid requires perpetual format, auto-handled
+- OKX uses `BASE/USDT:USDT` format for perpetuals
 - Check exchange-specific symbol requirements
 
 ### Network Errors
@@ -176,3 +216,22 @@ quanta test exchange --exchange <exchange> --coin BTC
 - Verify API endpoint accessibility
 - Review rate limits
 - Check firewall settings if using VPN or proxy
+
+### Connection Issues
+
+```bash
+# Test connectivity
+quanta test exchange --exchange simulator --coin BTC
+
+# Test specific exchange
+quanta test exchange --exchange okx --coin BTC --verbose
+
+# Check configuration
+quanta config show | grep -i exchange
+```
+
+For more help, see:
+
+- [Configuration Guide](configuration.md)
+- [Trading Guide](trading-guide.md)
+- [Command Reference](commands.md)
