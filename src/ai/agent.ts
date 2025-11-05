@@ -609,6 +609,87 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
     return JSON.stringify(positionsJson, null, 2);
   }
 
+  /**
+   * Translate HTTP errors to user-friendly messages
+   * Preserves the original error structure so retry logic can still check status codes
+   */
+  private translateOpenRouterError(error: any): any {
+    // Handle axios errors with response
+    if (error.response?.status) {
+      const status = error.response.status;
+      const statusText = error.response.statusText || '';
+      const errorData = error.response.data;
+
+      let userFriendlyMessage: string;
+
+      switch (status) {
+        case 400:
+          userFriendlyMessage = `OpenRouter API Error (400): Invalid request. ${errorData?.error?.message || statusText || 'Please check your request parameters.'}`;
+          break;
+        case 401:
+          userFriendlyMessage = `OpenRouter API Error (401): Unauthorized. Your API key is invalid or missing. Please verify your OPENROUTER_API_KEY in config.json or environment variables.`;
+          break;
+        case 402:
+          userFriendlyMessage = `OpenRouter API Error (402): Payment Required. Your OpenRouter account has insufficient credits or requires payment. Please check your account balance at https://openrouter.ai/credits and add credits to continue.`;
+          break;
+        case 403:
+          userFriendlyMessage = `OpenRouter API Error (403): Forbidden. Your API key does not have permission to access this resource. ${errorData?.error?.message || statusText || ''}`;
+          break;
+        case 404:
+          userFriendlyMessage = `OpenRouter API Error (404): Not Found. The requested model or endpoint was not found. ${errorData?.error?.message || statusText || ''}`;
+          break;
+        case 429:
+          userFriendlyMessage = `OpenRouter API Error (429): Rate Limit Exceeded. You have exceeded the rate limit for your API key. Please wait before retrying or upgrade your plan at https://openrouter.ai.`;
+          break;
+        default:
+          if (status >= 400 && status < 500) {
+            userFriendlyMessage = `OpenRouter API Error (${status}): ${statusText || 'Client Error'}. ${errorData?.error?.message || ''}`;
+          } else if (status >= 500) {
+            userFriendlyMessage = `OpenRouter API Error (${status}): Server Error. OpenRouter is experiencing issues. Please try again later.`;
+          } else {
+            userFriendlyMessage = error.message || String(error);
+          }
+      }
+
+      // Preserve original error structure but update message
+      const translatedError = error instanceof Error ? error : new Error(userFriendlyMessage);
+      translatedError.message = userFriendlyMessage;
+      // Preserve response property for retry logic
+      if (error.response) {
+        (translatedError as any).response = error.response;
+      }
+      // Preserve code property for network errors
+      if (error.code) {
+        (translatedError as any).code = error.code;
+      }
+      return translatedError;
+    }
+
+    // Handle network/timeout errors
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      const message = `OpenRouter API Error: Request timeout. The request took too long to complete. Please check your network connection and try again.`;
+      const translatedError = error instanceof Error ? error : new Error(message);
+      translatedError.message = message;
+      if (error.code) {
+        (translatedError as any).code = error.code;
+      }
+      return translatedError;
+    }
+
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      const message = `OpenRouter API Error: Network error. Unable to connect to OpenRouter API. Please check your internet connection.`;
+      const translatedError = error instanceof Error ? error : new Error(message);
+      translatedError.message = message;
+      if (error.code) {
+        (translatedError as any).code = error.code;
+      }
+      return translatedError;
+    }
+
+    // Return original error if we can't translate it
+    return error instanceof Error ? error : new Error(`OpenRouter API Error: ${String(error)}`);
+  }
+
   private async callOpenRouterAPI(prompt: string): Promise<string> {
     // Use circuit breaker with fallback to empty response
     return await this.circuitBreaker.execute(
@@ -616,42 +697,47 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
         // Use retry logic for the actual API call
         return await withRetry(
           async () => {
-            // Extract system prompt and user prompt using explicit separator
-            const separator = '\n---USER---\n';
-            const sepIdx = prompt.indexOf(separator);
-            const systemPrompt = sepIdx >= 0 ? prompt.substring(0, sepIdx).trim() : prompt;
-            const userPrompt =
-              sepIdx >= 0 ? prompt.substring(sepIdx + separator.length).trim() : '';
+            try {
+              // Extract system prompt and user prompt using explicit separator
+              const separator = '\n---USER---\n';
+              const sepIdx = prompt.indexOf(separator);
+              const systemPrompt = sepIdx >= 0 ? prompt.substring(0, sepIdx).trim() : prompt;
+              const userPrompt =
+                sepIdx >= 0 ? prompt.substring(sepIdx + separator.length).trim() : '';
 
-            const response = await axios.post(
-              'https://openrouter.ai/api/v1/chat/completions',
-              {
-                model: this.model,
-                messages: [
-                  {
-                    role: 'system',
-                    content: systemPrompt,
-                  },
-                  {
-                    role: 'user',
-                    content: userPrompt,
-                  },
-                ],
-                temperature: this.temperature,
-                max_tokens: 4000,
-              },
-              {
-                headers: {
-                  Authorization: `Bearer ${this.apiKey}`,
-                  'Content-Type': 'application/json',
-                  'HTTP-Referer': 'https://quanta-cli.com',
-                  'X-Title': 'Quanta CLI',
+              const response = await axios.post(
+                'https://openrouter.ai/api/v1/chat/completions',
+                {
+                  model: this.model,
+                  messages: [
+                    {
+                      role: 'system',
+                      content: systemPrompt,
+                    },
+                    {
+                      role: 'user',
+                      content: userPrompt,
+                    },
+                  ],
+                  temperature: this.temperature,
+                  max_tokens: 4000,
                 },
-                timeout: 30000, // 30 second timeout
-              }
-            );
+                {
+                  headers: {
+                    Authorization: `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://quanta-cli.com',
+                    'X-Title': 'Quanta CLI',
+                  },
+                  timeout: 30000, // 30 second timeout
+                }
+              );
 
-            return response.data.choices[0].message.content;
+              return response.data.choices[0].message.content;
+            } catch (error) {
+              // Translate error to user-friendly message before passing to retry logic
+              throw this.translateOpenRouterError(error);
+            }
           },
           createRetryConfig({
             maxRetries: 3,

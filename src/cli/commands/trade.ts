@@ -194,7 +194,9 @@ export class TradeCommands {
 
     // Console: Minimal essential info only (use originalConsole to avoid interception)
     originalConsole.log(chalk.cyan('🏆 Quanta Trading System\n'));
-    originalConsole.log(chalk.gray(`Env: ${env} | Exchange: ${exchangeDisplay} | Coins: ${coins.join(', ')}\n`));
+    originalConsole.log(
+      chalk.gray(`Env: ${env} | Exchange: ${exchangeDisplay} | Coins: ${coins.join(', ')}\n`)
+    );
 
     // UnifiedLogger: Full detailed output
     unifiedLogger.info(chalk.cyan('🏆 Quanta Trading System'), {}, 'TradeStart');

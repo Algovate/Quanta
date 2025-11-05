@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { getConfig } from '../../config/settings.js';
 import { handleAsync } from '../../utils/error-handler.js';
+import { UnifiedLogger } from '../../logging/index.js';
 
 export class TestCommands {
   static register(program: Command): void {
@@ -473,12 +474,13 @@ export class TestCommands {
     coin: string;
     verbose: boolean;
   }): Promise<void> {
-    console.log(chalk.cyan('🤖 Testing AI Integration'));
-    console.log(chalk.gray('='.repeat(60)));
-    console.log(`AI Type: ${options.type} | Coin: ${options.coin}\n`);
+    try {
+      console.log(chalk.cyan('🤖 Testing AI Integration'));
+      console.log(chalk.gray('='.repeat(60)));
+      console.log(`AI Type: ${options.type} | Coin: ${options.coin}\n`);
 
-    const config = getConfig();
-    const symbol = `${options.coin}/USDT`;
+      const config = getConfig();
+      const symbol = `${options.coin}/USDT`;
 
     // Test Mock AI
     if (options.type === 'mock' || options.type === 'both') {
@@ -589,10 +591,16 @@ export class TestCommands {
       }
     }
 
-    console.log(chalk.green('✅ AI Integration Test Complete'));
-    console.log('');
-    console.log(chalk.yellow('💡 Available AI Types:'));
-    console.log('   - mock: Fast testing without API key');
-    console.log('   - real: Actual AI analysis (requires OPENROUTER_API_KEY)');
+      console.log(chalk.green('✅ AI Integration Test Complete'));
+      console.log('');
+      console.log(chalk.yellow('💡 Available AI Types:'));
+      console.log('   - mock: Fast testing without API key');
+      console.log('   - real: Actual AI analysis (requires OPENROUTER_API_KEY)');
+    } finally {
+      // Always shutdown logger and force exit to ensure process terminates
+      // This ensures cleanup happens even if there's an error
+      UnifiedLogger.getInstance().shutdown();
+      process.exit(0);
+    }
   }
 }
