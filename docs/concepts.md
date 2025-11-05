@@ -6,6 +6,8 @@ Complete guide to key terms, concepts, and algorithms in Quanta.
 
 - [Architecture](#architecture)
 - [Trading Concepts](#trading-concepts)
+  - [Terminology](#terminology)
+  - [Trading Environments](#trading-environments)
 - [PnL Calculation](#pnl-calculation)
 - [Technical Indicators](#technical-indicators)
 - [Risk Management](#risk-management)
@@ -68,11 +70,26 @@ Market Data → AI Analysis → Risk Mgmt + Orders
 
 ## Trading Concepts
 
-### Trading Modes
+### Terminology
 
-Quanta supports three distinct trading modes, each serving different purposes in the development and deployment of trading strategies.
+**Important**: Quanta uses two distinct concepts:
 
-#### **1. Simulation Mode (Mock Data)**
+- **Execution Mode** (`mode`): How trading is executed
+  - `strategy`: Single trading workflow (default)
+  - `arena`: Multi-drone trading arena for strategy comparison
+
+- **Environment** (`env`): Trading environment and data source
+  - `simulate`: Mock data, risk-free learning
+  - `paper`: Real market data, simulated execution
+  - `live`: Real trading with actual capital
+
+This section covers **Trading Environments**. For execution modes, see [Arena Guide](arena-guide.md).
+
+### Trading Environments
+
+Quanta supports three distinct trading environments, each serving different purposes in the development and deployment of trading strategies.
+
+#### **1. Simulation Environment (Mock Data)**
 
 **Purpose**: Learning and initial testing with synthetic data
 
@@ -99,7 +116,7 @@ quanta trade start --env simulate --coins BTC,ETH,SOL
 
 # Or in config.json
 {
-  "mode": "simulation",
+  "env": "simulate",
   "exchange": {
     "name": "simulator"
   }
@@ -113,7 +130,7 @@ quanta trade start --env simulate --coins BTC,ETH,SOL
 - No network latency concerns
 - Perfect for reproducible testing scenarios
 
-#### **2. Paper Trading Mode (Real Data, Simulated Execution)**
+#### **2. Paper Trading Environment (Real Data, Simulated Execution)**
 
 **Purpose**: Strategy validation with real market conditions without financial risk
 
@@ -141,7 +158,7 @@ quanta trade start --env paper --coins BTC,ETH,SOL
 
 # Or in config.json
 {
-  "mode": "paper",
+  "env": "paper",
   "exchange": {
     "name": "okx",  # or "binance", "coinbase", etc.
     "testnet": true  # Optional: use testnet for some exchanges
@@ -164,7 +181,7 @@ quanta trade start --env paper --coins BTC,ETH,SOL
 - Validate AI model performance on live markets
 - Build confidence in strategy effectiveness
 
-#### **3. Live Mode (Real Trading)**
+#### **3. Live Environment (Real Trading)**
 
 **Purpose**: Execute real trades with actual capital
 
@@ -190,7 +207,7 @@ quanta trade start --env live --coins BTC
 
 # Required in config.json
 {
-  "mode": "live",
+  "env": "live",
   "exchange": {
     "name": "okx",  # or binance, coinbase, hyperliquid
     "apiKey": "your_real_api_key",
@@ -227,7 +244,7 @@ quanta trade start --env live --coins BTC
 - Network latency affects performance
 - Must handle exchange-specific API quirks
 
-### Mode Comparison
+### Environment Comparison
 
 | Feature               | Simulation | Paper        | Live       |
 | --------------------- | ---------- | ------------ | ---------- |
@@ -245,31 +262,31 @@ quanta trade start --env live --coins BTC
 ### Recommended Workflow
 
 ```
-1. Simulation Mode (Understand the system)
+1. Simulation Environment (Understand the system)
    ↓
-2. Paper Trading Mode (Validate strategy with real data)
+2. Paper Trading Environment (Validate strategy with real data)
    ↓
 3. Small-scale Live Testing (Real trading with minimal risk)
    ↓
 4. Full Production (Scale up after proven)
 ```
 
-### Switching Between Modes
+### Switching Between Environments
 
-Quanta allows easy switching between modes through command-line flags or configuration files:
+Quanta allows easy switching between environments through command-line flags or configuration files:
 
 ```bash
-# Switch to simulation
+# Switch to simulation environment
 quanta trade start --env simulate
 
-# Switch to paper trading
+# Switch to paper trading environment
 quanta trade start --env paper
 
-# Switch to live (requires proper config)
+# Switch to live environment (requires proper config)
 quanta trade start --env live --coins BTC
 ```
 
-All modes share the same risk management and AI logic, ensuring consistency across environments.
+All environments share the same risk management and AI logic, ensuring consistency across different data sources and execution methods.
 
 ### Order Types
 
@@ -610,19 +627,30 @@ Usage:
 
 ### Leverage
 
-**Leverage Range**: 5x to 40x
+**Leverage Range**: Configurable based on market type
+
+- **Spot Market**: Leverage clamped to 1x (no leverage allowed)
+- **Swap/Perpetual Market**: Range 3x to 10x (configurable, defaults 5x-40x but clamped)
 
 **How it Works:**
 
 - 10x leverage: $1 can control $10
 - Amplifies both gains and losses
-- Example: 10% price move = 100% gain/loss
+- Example: 10% price move = 100% gain/loss (with 10x leverage)
+
+**Market Type Restrictions:**
+
+The system automatically validates and adjusts leverage based on `exchange.marketType`:
+
+- **Spot** (`marketType: "spot"`): Leverage clamped to 1x - 1x (no leverage)
+- **Swap/Perp** (`marketType: "swap"`, "perp", or "perpetual"): Leverage clamped to 3x - 10x
 
 **Safety Guidelines:**
 
-- Start low (5x)
+- Start low (5x for perps, 1x for spot)
 - Increase gradually
 - Never max leverage on all positions
+- Understand liquidation risks with leverage
 
 ---
 
@@ -708,7 +736,7 @@ Prompt groups use Mustache-style template variables (e.g., `{{variableName}}`) t
 The user prompt includes optional sections that can be enabled/disabled via `ai.prompt.sections`:
 
 - **Candles & Technical Analysis** (`sections.candlesTA`)
-  - Multi-timeframe candles: 3m (default last 10) and 4h (default last 5)
+  - Multi-timeframe candles: 3m (default last 10), 1h (default last 8), and 4h (default last 5)
   - Indicators: EMA20/50, MACD, RSI14, ATR14, Bollinger (if available), Volume metrics
 
 - **Market Sentiment (Derived)** (`sections.sentiment`)
@@ -725,7 +753,11 @@ The user prompt includes optional sections that can be enabled/disabled via `ai.
   "ai": {
     "prompt": {
       "activeGroup": "default",
-      "candles": { "m3": 10, "h4": 5 },
+      "candles": {
+        "m3": 10,
+        "h1": 8,
+        "h4": 5
+      },
       "sections": {
         "candlesTA": true,
         "sentiment": true,
@@ -741,6 +773,7 @@ The user prompt includes optional sections that can be enabled/disabled via `ai.
 ```bash
 PROMPT_ACTIVE_GROUP=default
 PROMPT_CANDLES_3M=10
+PROMPT_CANDLES_1H=8
 PROMPT_CANDLES_4H=5
 PROMPT_SECTIONS_CANDLES_TA=true
 PROMPT_SECTIONS_SENTIMENT=true
@@ -910,12 +943,14 @@ Timer (3 minutes)
 
 - Secure credentials
 - Required for live trading
+- Optional for paper trading (public market data)
 - Store securely
 
 **ATR**: Average True Range
 
 - Volatility indicator
 - Used for stop-loss placement
+- Calculated from True Range (high-low, high-close, low-close)
 
 ### B
 
@@ -967,23 +1002,38 @@ Timer (3 minutes)
 
 ### E
 
+**Environment** (`env`): Trading environment setting
+
+- `simulate`: Mock data, risk-free learning
+- `paper`: Real market data, simulated execution
+- `live`: Real trading with actual capital
+- See [Trading Environments](#trading-environments) for details
+
 **Entry Price**: Position opening price
 
 - Long: Buy price
 - Short: Sell price
 - Recorded for P&L
+- May be actual fill price or signal entry price
 
 **Exchange**: Trading platform
 
-- E.g., Binance, OKX
+- E.g., Binance, OKX, Coinbase, Hyperliquid, Simulator
 - Order execution
 - Balance management
+- Market data provider
+
+**Execution Mode** (`mode`): How trading is executed
+
+- `strategy`: Single trading workflow (default)
+- `arena`: Multi-drone trading arena for strategy comparison
+- See [Arena Guide](arena-guide.md) for details
 
 **Exit Price**: Position closing price
 
 - Long: Sell price
 - Short: Buy price
-- Realized P&L
+- Realized P&L calculated from entry price
 
 ### F
 

@@ -1,190 +1,71 @@
 # Logging Guide
 
-Quanta uses a simplified logging system focused on reliability, clean CLI behavior, and easy log access.
+Quanta captures all console output and application events to structured JSONL files. Use `quanta log` commands to view and manage logs.
 
-- Text logs are captured to daily-rotated JSONL files in `logs/text/`.
-- Set `LOG_DIR` to override the directory. Defaults to `./logs/text`.
-- Manage logs with `quanta log` commands: `view`, `clean`, `list`, `stats`, and `export`.
+## How It Works
 
----
+- **Console Interception**: All `console.log/warn/error` output is captured to JSONL files (not printed to terminal)
+- **Daily Rotation**: New log file each day: `logs/text/text-logs-YYYY-MM-DD.jsonl`
+- **Structured Format**: Each line is a JSON object with timestamp, level, context, message, and metadata
 
-## How it works
+**For CLI commands**: Use `UnifiedLogger.getInstance().getOriginalConsole()` to display output.
 
-### Console interception
+**For application logging**: Use `unifiedLogger.info/warn/error/debug()` for structured logging.
 
-- `UnifiedLogger` intercepts `console.log`, `console.warn`, and `console.error` and writes the output to JSONL files. Intercepted output does not print to the terminal.
-- For CLI commands that must display output, use the original console provided by the logger: `UnifiedLogger.getInstance().getOriginalConsole()`.
-- For application logging, prefer `unifiedLogger.info/warn/error/debug` which writes directly to JSONL.
+## CLI Commands
 
-### JSONL storage
-
-- Location: `logs/text/text-logs-YYYY-MM-DD.jsonl` (one file per day).
-- Rotation: new file each day.
-- Retention: keep last N days (default 7).
-
-Record schema (one JSON object per line):
-
-```json
-{
-  "logId": "string",
-  "timestamp": 1730582400000,
-  "level": "info|warn|error|debug",
-  "context": "Console|UnifiedLogger|TradeStart|Server|...",
-  "message": "plain text without ANSI",
-  "formattedMessage": "optional text with ANSI styling",
-  "metadata": { "any": "structured fields" },
-  "cycleId": 0,
-  "operationId": "optional",
-  "traceId": "optional"
-}
-```
-
-Notes:
-
-- `message` is ANSI-stripped for easy grepping and machine reads.
-- `formattedMessage` may include ANSI styles for pretty terminal rendering.
-
----
-
-## CLI usage
-
-### View console logs
+### View Logs
 
 ```bash
 # Show last 50 lines (default)
 quanta log view
 
-# Tail N lines
-quanta log view --lines 200
-
-# Follow (like tail -f)
+# Follow in real-time
 quanta log view --follow
 
-# Filter by logger context or level
-quanta log view --context TradeStart --level warn
+# Filter by context
+quanta log view --context Workflow
 
-# Grep-like filtering on message/context
+# Filter by level
+quanta log view --level error
+
+# Search for pattern
 quanta log view --grep "order|signal"
 
-# Raw output (no ANSI), useful for piping
+# Raw output (no ANSI)
 quanta log view --format raw
 ```
 
-### Clean old log files
+### List, Stats, Export, Clean
 
 ```bash
-# Clean files older than retention period (default: 7 days)
-quanta log clean
-
-# Clean files older than 14 days
-quanta log clean --days 14
-
-# Show what would be deleted without deleting
-quanta log clean --days 14 --dry-run
-
-# Delete all log files (with confirmation)
-quanta log clean --all
-
-# Delete all files without confirmation
-quanta log clean --all --force
-```
-
-### List log files
-
-```bash
-# List all log files with metadata
+# List log files
 quanta log list
 
-# List sorted by size (largest first)
-quanta log list --sort size
-
-# Export list as JSON
-quanta log list --format json
-
-# Export list as CSV
-quanta log list --format csv
-```
-
-### Show log statistics
-
-```bash
-# Show statistics for all logs
+# Show statistics
 quanta log stats
 
-# Show statistics for last 7 days
-quanta log stats --days 7
+# Export logs
+quanta log export --output logs.json --format json
 
-# Show statistics for errors only
-quanta log stats --level error
-
-# Show statistics for specific context
-quanta log stats --context TradeStart
-
-# Export statistics as JSON
-quanta log stats --format json
+# Clean old logs
+quanta log clean --days 7
 ```
 
-### Export logs
-
-```bash
-# Export all logs as JSON
-quanta log export --output logs.json
-
-# Export last 7 days as CSV
-quanta log export --output logs.csv --format csv --days 7
-
-# Export errors only as text
-quanta log export --output errors.txt --format txt --level error
-
-# Export logs for specific date range
-quanta log export --output logs.json --since 2024-01-01 --until 2024-01-31
-```
-
-### Common recipes
-
-- Only errors, live:
-
-```bash
-quanta log view --level error --follow --format raw
-```
-
-- Search for entries related to a component:
-
-```bash
-quanta log view --grep "Execution|Position" --lines 500
-```
-
-- Clean up old logs before archiving:
-
-```bash
-quanta log clean --days 30 --dry-run  # Preview
-quanta log clean --days 30             # Clean
-```
-
-- Analyze error rates:
-
-```bash
-quanta log stats --level error --days 7
-```
-
-- Export logs for analysis:
-
-```bash
-quanta log export --output errors.json --level error --days 7
-```
-
----
+See [Command Reference](commands.md#log-commands) for complete options.
 
 ## Configuration
 
-Environment variable:
+### Environment Variable
 
 ```bash
-# Override JSONL log directory
-LOG_DIR=/absolute/path/to/logs/text
+# Override log directory (absolute path)
+export LOG_DIR=/absolute/path/to/logs/text
 ```
 
-Optional defaults in `config/config.json`:
+**Priority**: `LOG_DIR` env → `logging.textLogDir` in config.json → default `./logs/text`
+
+### Config File (Optional)
 
 ```json
 {
@@ -196,49 +77,87 @@ Optional defaults in `config/config.json`:
 }
 ```
 
-- `level`: capture level for text logs.
-- `textLogDir`: directory for JSONL files (overridden by `LOG_DIR`).
-- `retentionDays`: number of days to keep rotated files.
+**Options:**
+- `level`: `error`, `warn`, `info`, `debug` (default: `info`)
+- `textLogDir`: Directory for JSONL files (overridden by `LOG_DIR`)
+- `retentionDays`: Days to keep logs (default: 7)
 
----
+## Log Format
 
-## Best practices
+Each log entry (JSONL format):
 
-- For human-facing CLI output, always use `getOriginalConsole()` to avoid interception.
-- For application events, prefer `unifiedLogger.info/warn/error/debug` with structured metadata.
-- Avoid long-running intervals/timers in logging code; the logger should not prevent process exit.
-- Keep messages concise; attach structure via `metadata` when needed.
+```json
+{
+  "logId": "uuid",
+  "timestamp": 1730582400000,
+  "level": "info|warn|error|debug",
+  "context": "Workflow|TradeStart|Server|...",
+  "message": "plain text",
+  "formattedMessage": "text with ANSI",
+  "metadata": { "cycleId": 42 },
+  "cycleId": 42,
+  "operationId": "op-123"
+}
+```
 
----
+**Common Contexts**: `Workflow`, `TradeStart`, `Server`, `AISignal`, `Execution`, `Account`, `ArenaManager`
+
+See [Log Contexts Reference](log-contexts.md) for complete list.
+
+## Best Practices
+
+### CLI Commands
+
+```typescript
+const console = UnifiedLogger.getInstance().getOriginalConsole();
+console.log('User-visible message'); // ✅ Appears in terminal
+```
+
+### Application Logging
+
+```typescript
+const logger = UnifiedLogger.getInstance();
+logger.info('Cycle started', { cycleId: 42, coins: ['BTC'] });
+logger.warn('Low confidence', { coin: 'BTC', confidence: 0.45 });
+logger.error('Order failed', { symbol: 'BTC/USDT', error: error.message });
+```
+
+## Troubleshooting
+
+**Logs not appearing**: Check `LOG_DIR`, verify directory exists and is writable
+
+**Console output missing**: Use `getOriginalConsole()` for CLI commands, or view logs with `quanta log view`
+
+**Logs too large**: Reduce log level, clean old logs with `quanta log clean --days 7`
+
+**Can't find logs**: Check `echo $LOG_DIR` or `quanta log list` or default location `logs/text/`
+
+## Common Recipes
+
+```bash
+# Monitor trading in real-time
+quanta log view --follow --context Workflow
+
+# Monitor errors only
+quanta log view --follow --level error
+
+# Export errors for analysis
+quanta log export --output errors.json --level error --days 7
+
+# Archive and clean
+quanta log export --output archive.json --days 30 && quanta log clean --days 30
+```
 
 ## FAQ
 
-### Can I still use `console.log`?
+**Can I use `console.log`?** Yes, but it goes to logs, not terminal. Use `getOriginalConsole()` for CLI output.
 
-Yes, but intercepted `console.*` writes go to JSONL instead of the terminal. For CLI output that must be shown, use:
+**Where are logs?** `logs/text/` (or `LOG_DIR`). Files named `text-logs-YYYY-MM-DD.jsonl`.
 
-```ts
-const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-originalConsole.log('User-visible message');
-```
+**How long kept?** Default 7 days. Configure via `retentionDays` or clean manually.
 
-### Why don't commands hang anymore?
+**How to view?** `quanta log view` - see [Command Reference](commands.md#log-commands) for options.
 
-The logger avoids background intervals and ensures file streams are closed on shutdown. Commands call `UnifiedLogger.getInstance().shutdown()` before exiting.
+---
 
-### Where are logs stored and how do I clean them?
-
-JSONL files are in `logs/text/` (or `LOG_DIR`). Automatic retention deletes files older than `retentionDays` (default: 7 days). Use `quanta log clean` to manually clean old files:
-
-```bash
-# Clean files older than retention period
-quanta log clean
-
-# Clean files older than N days
-quanta log clean --days 14
-
-# Preview what would be deleted
-quanta log clean --days 14 --dry-run
-```
-
-Use `quanta log list` to see available log files and their sizes.
+**Related**: [Log Contexts Reference](log-contexts.md) | [Command Reference](commands.md#log-commands)

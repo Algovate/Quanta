@@ -500,6 +500,19 @@ function parseEnvConfig(): Partial<Config> {
       enabled: parseBooleanEnv(process.env.NOTIFICATIONS_ENABLED, false),
       webhook: process.env.NOTIFICATION_WEBHOOK,
     },
+    logging: {
+      level: (process.env.LOG_LEVEL || undefined) as
+        | 'error'
+        | 'warn'
+        | 'info'
+        | 'debug'
+        | undefined,
+      fileOutput: parseBooleanEnv(process.env.LOG_FILE_OUTPUT, true),
+      logDir: process.env.LOG_DIR || undefined,
+      maxFileSize: parseIntegerEnv(process.env.LOG_MAX_FILE_SIZE, 10485760),
+      maxFiles: parseIntegerEnv(process.env.LOG_MAX_FILES, 14),
+      backgroundMode: parseBooleanEnv(process.env.LOG_BACKGROUND_MODE, false),
+    },
   };
 }
 
