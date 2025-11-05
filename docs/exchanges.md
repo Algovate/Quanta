@@ -176,4 +176,3 @@ quanta test exchange --exchange <exchange> --coin BTC
 - Verify API endpoint accessibility
 - Review rate limits
 - Check firewall settings if using VPN or proxy
-

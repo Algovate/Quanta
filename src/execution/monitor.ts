@@ -22,7 +22,13 @@ export class PositionMonitorService implements PositionMonitor {
   private readonly context = 'PositionMonitor';
   private stateBySymbol: Map<
     string,
-    { tp1Done?: boolean; flatCycles?: number; breakevenApplied?: boolean }
+    {
+      tp1Done?: boolean;
+      tp2Done?: boolean;
+      tp3Done?: boolean;
+      flatCycles?: number;
+      breakevenApplied?: boolean;
+    }
   > = new Map();
 
   constructor(riskManager: RiskManager, orderExecutor: OrderExecutor) {
@@ -221,12 +227,13 @@ export class PositionMonitorService implements PositionMonitor {
         const st = this.stateBySymbol.get(key) || {};
         const rMultiple = this.riskManager.computeRMultiple(position, validatedPrice);
 
-        // Partial take-profit at 1R: close 50% and move stop to breakeven (once)
+        // Multi-level take-profit strategy: 50% at 1R, 30% at 2R, 20% at 3R
         try {
+          // TP1: Close 50% at 1R and move stop to breakeven (once)
           if (!st.tp1Done && rMultiple >= 1) {
             // Log partial TP1 event
             this.logger.info(
-              `Partial TP1 for ${position.symbol}: 1R reached, closing 50% and moving stop to breakeven`,
+              `Partial TP1 for ${position.symbol}: 1R reached (${rMultiple.toFixed(2)}), closing 50% and moving stop to breakeven`,
               {},
               this.context
             );
@@ -257,6 +264,72 @@ export class PositionMonitorService implements PositionMonitor {
               type: 'breakeven',
               action: 'move_stop',
               reason: 'Stop moved to breakeven after TP1',
+            });
+          }
+
+          // TP2: Close 30% at 2R (of remaining position, which is 50% after TP1)
+          // This means closing 30% of original = 60% of remaining 50%
+          if (st.tp1Done && !st.tp2Done && rMultiple >= 2) {
+            this.logger.info(
+              `Partial TP2 for ${position.symbol}: 2R reached (${rMultiple.toFixed(2)}), closing 30% of original position`,
+              {},
+              this.context
+            );
+            // Close 60% of remaining position (which is 50% of original) = 30% of original
+            const result = await this.orderExecutor.executePartialClose(position, 0.6);
+            if (!result.success) {
+              this.logger.warn(
+                `Partial close failed for ${position.symbol}: ${result.error}`,
+                {},
+                this.context
+              );
+            }
+            st.tp2Done = true;
+            st.flatCycles = 0; // Reset flat counter on profit
+            this.stateBySymbol.set(key, st);
+            decisions.push({
+              type: 'tp1',
+              action: 'partial_close_30pct',
+              reason: `2R reached (${rMultiple.toFixed(2)}), closed 30% of original position`,
+              details: {
+                rMultiple,
+                closePercent: 0.3,
+                remainingAfterTP1: 0.5,
+                orderSuccess: result.success,
+              },
+            });
+          }
+
+          // TP3: Close 20% at 3R (of remaining position, which is 20% after TP1+TP2)
+          // This means closing 100% of remaining 20% = 20% of original
+          if (st.tp1Done && st.tp2Done && !st.tp3Done && rMultiple >= 3) {
+            this.logger.info(
+              `Partial TP3 for ${position.symbol}: 3R reached (${rMultiple.toFixed(2)}), closing remaining 20% of original position`,
+              {},
+              this.context
+            );
+            // Close 100% of remaining position (which is 20% of original) = 20% of original
+            const result = await this.orderExecutor.executePartialClose(position, 1.0);
+            if (!result.success) {
+              this.logger.warn(
+                `Partial close failed for ${position.symbol}: ${result.error}`,
+                {},
+                this.context
+              );
+            }
+            st.tp3Done = true;
+            st.flatCycles = 0; // Reset flat counter on profit
+            this.stateBySymbol.set(key, st);
+            decisions.push({
+              type: 'tp1',
+              action: 'partial_close_20pct',
+              reason: `3R reached (${rMultiple.toFixed(2)}), closed remaining 20% of original position`,
+              details: {
+                rMultiple,
+                closePercent: 0.2,
+                remainingAfterTP2: 0.2,
+                orderSuccess: result.success,
+              },
             });
           }
         } catch (e) {

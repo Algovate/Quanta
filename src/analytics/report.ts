@@ -11,6 +11,7 @@ import {
 import chalk from 'chalk';
 import fs from 'fs';
 import type { EquitySnapshot } from '../types/index.js';
+import { PerformanceAnalytics } from './performance.js';
 
 export interface ReportOptions {
   summaryOnly?: boolean;
@@ -23,10 +24,12 @@ export class BacktestReport {
   private result: BacktestResult;
   private metrics: PerformanceMetrics;
   private opts: Required<ReportOptions>;
+  private analytics: PerformanceAnalytics;
 
   constructor(result: BacktestResult, opts?: ReportOptions) {
     this.result = result;
     this.metrics = result.metrics;
+    this.analytics = new PerformanceAnalytics();
     this.opts = {
       summaryOnly: false,
       showRisks: true,
@@ -47,6 +50,9 @@ export class BacktestReport {
     if (this.opts.showRisks) this.displayRiskMetrics();
     this.displayTradeStatistics();
     if (this.opts.showSignals) this.displaySignalStatistics();
+    this.displaySymbolPerformance();
+    this.displayTimePeriodPerformance();
+    this.displaySignalQualityAnalysis();
     if (this.opts.showEquity) this.displayEquityCurve();
   }
 
@@ -342,5 +348,133 @@ export class BacktestReport {
     if (hours < 24) return chalk.white(`${hours.toFixed(1)} hours`);
     const days = (hours / 24).toFixed(1);
     return chalk.white(`${days} days`);
+  }
+
+  /**
+   * Display symbol performance analysis
+   */
+  private displaySymbolPerformance(): void {
+    const symbolPerformance = this.analytics.calculateSymbolPerformance(
+      this.result.trades,
+      this.result.equitySnapshots
+    );
+
+    if (symbolPerformance.size === 0) return;
+
+    console.log(chalk.cyan.bold('\n  📊 Performance by Symbol'));
+    console.log(
+      chalk.gray('  ──────────────────────────────────────────────────────────────────────')
+    );
+
+    // Sort by quality score descending
+    const sortedSymbols = Array.from(symbolPerformance.values()).sort(
+      (a, b) => b.qualityScore - a.qualityScore
+    );
+
+    for (const perf of sortedSymbols) {
+      const pnlColor = perf.totalPnL >= 0 ? chalk.green : chalk.red;
+      const qualityColor =
+        perf.qualityScore >= 0.7
+          ? chalk.green
+          : perf.qualityScore >= 0.5
+            ? chalk.yellow
+            : chalk.red;
+
+      console.log(`\n  ${chalk.white.bold(perf.symbol)}`);
+      console.log(
+        `    P&L: ${pnlColor(fmtMoney(perf.totalPnL))} (${pnlColor((perf.totalReturn > 0 ? '+' : '') + perf.totalReturn.toFixed(2) + '%')})`
+      );
+      console.log(
+        `    Trades: ${chalk.white(perf.totalTrades)} | Win Rate: ${chalk.white(perf.winRate.toFixed(1) + '%')} | PF: ${fmtProfitFactor(perf.profitFactor)}`
+      );
+      console.log(
+        `    Avg Win: ${chalk.green(fmtMoney(perf.avgWin))} | Avg Loss: ${chalk.red(fmtMoney(perf.avgLoss))}`
+      );
+      console.log(
+        `    Sharpe: ${fmtSharpeColor(perf.sharpeRatio)} | MDD: ${chalk.red(perf.maxDrawdown.toFixed(2) + '%')}`
+      );
+      console.log(
+        `    Quality Score: ${qualityColor(perf.qualityScore.toFixed(2))} ${qualityColor('█'.repeat(Math.floor(perf.qualityScore * 10)))}`
+      );
+    }
+    console.log('');
+  }
+
+  /**
+   * Display time period performance analysis
+   */
+  private displayTimePeriodPerformance(): void {
+    const periodPerformance = this.analytics.calculateTimePeriodPerformance(
+      this.result.trades,
+      this.result.equitySnapshots,
+      'monthly'
+    );
+
+    if (periodPerformance.size === 0) return;
+
+    console.log(chalk.cyan.bold('\n  📅 Performance by Time Period (Monthly)'));
+    console.log(
+      chalk.gray('  ──────────────────────────────────────────────────────────────────────')
+    );
+
+    // Sort by period
+    const sortedPeriods = Array.from(periodPerformance.values()).sort((a, b) =>
+      a.startDate.localeCompare(b.startDate)
+    );
+
+    for (const perf of sortedPeriods) {
+      const pnlColor = perf.totalPnL >= 0 ? chalk.green : chalk.red;
+      console.log(`\n  ${chalk.white.bold(perf.period)} (${perf.startDate} → ${perf.endDate})`);
+      console.log(
+        `    P&L: ${pnlColor(fmtMoney(perf.totalPnL))} (${pnlColor((perf.totalReturn > 0 ? '+' : '') + perf.totalReturn.toFixed(2) + '%')})`
+      );
+      console.log(
+        `    Trades: ${chalk.white(perf.totalTrades)} | Win Rate: ${chalk.white(perf.winRate.toFixed(1) + '%')} | PF: ${fmtProfitFactor(perf.profitFactor)}`
+      );
+      console.log(
+        `    Sharpe: ${fmtSharpeColor(perf.sharpeRatio)} | MDD: ${chalk.red(perf.maxDrawdown.toFixed(2) + '%')}`
+      );
+    }
+    console.log('');
+  }
+
+  /**
+   * Display signal quality analysis
+   */
+  private displaySignalQualityAnalysis(): void {
+    const signalAnalysis = this.analytics.analyzeSignalQuality(this.result.trades);
+
+    if (signalAnalysis.size === 0) return;
+
+    console.log(chalk.cyan.bold('\n  🎯 Signal Quality Analysis'));
+    console.log(
+      chalk.gray('  ──────────────────────────────────────────────────────────────────────')
+    );
+
+    const sortedSignals = Array.from(signalAnalysis.values()).sort(
+      (a, b) => b.averageQualityScore - a.averageQualityScore
+    );
+
+    for (const analysis of sortedSignals) {
+      const qualityColor =
+        analysis.averageQualityScore >= 0.7
+          ? chalk.green
+          : analysis.averageQualityScore >= 0.5
+            ? chalk.yellow
+            : chalk.red;
+      const pnlColor = analysis.averagePnL >= 0 ? chalk.green : chalk.red;
+
+      console.log(`\n  ${chalk.white.bold(analysis.signalType)}`);
+      console.log(
+        `    Signals: ${chalk.white(analysis.totalSignals)} | Executed: ${chalk.white(analysis.executedSignals)}`
+      );
+      console.log(
+        `    Avg Confidence: ${chalk.white((analysis.averageConfidence * 100).toFixed(1) + '%')} | Avg Quality: ${qualityColor((analysis.averageQualityScore * 100).toFixed(1) + '%')}`
+      );
+      console.log(
+        `    Win Rate: ${chalk.white(analysis.winRate.toFixed(1) + '%')} | Avg P&L: ${pnlColor(fmtMoney(analysis.averagePnL))} | PF: ${fmtProfitFactor(analysis.profitFactor)}`
+      );
+    }
+    console.log('');
   }
 }

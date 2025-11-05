@@ -248,4 +248,3 @@ For more advanced topics, refer to:
 - [Configuration Guide](configuration.md) - Advanced configuration options
 - [Arena Guide](arena-guide.md) - Multi-drone trading arena
 - [Logging Guide](logging-guide.md) - Operation tracking and analysis
-

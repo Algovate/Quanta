@@ -54,6 +54,7 @@ export interface AIContext {
   defaultStopLoss: number;
   promptOptions?: {
     candles3m: number;
+    candles1h?: number;
     candles4h: number;
     sections: {
       candlesTA: boolean;
@@ -235,6 +236,7 @@ export class OpenRouterClient {
     });
 
     const candles3m = context.promptOptions?.candles3m ?? 10;
+    const candles1h = context.promptOptions?.candles1h ?? 8;
     const candles4h = context.promptOptions?.candles4h ?? 5;
     const sections = context.promptOptions?.sections ?? {
       candlesTA: true,
@@ -244,7 +246,7 @@ export class OpenRouterClient {
 
     // Build formatted sections
     const candlesTA = sections.candlesTA
-      ? `CANDLES & TECHNICAL ANALYSIS (per coin):\n${this.formatMarketDataDetailed(marketData, candles3m, candles4h)}`
+      ? `CANDLES & TECHNICAL ANALYSIS (per coin):\n${this.formatMarketDataDetailed(marketData, candles3m, candles1h, candles4h)}`
       : '';
 
     const accountInfo = this.formatAccountDataDetailed(account);
@@ -277,6 +279,7 @@ export class OpenRouterClient {
   private formatMarketDataDetailed(
     marketData: MarketData[],
     candles3m: number = 10,
+    candles1h: number = 8,
     candles4h: number = 5
   ): string {
     // Group market data by coin
@@ -313,14 +316,45 @@ export class OpenRouterClient {
       formatted += `  trend: ${coinData[0].trend}\n`;
       formatted += `  volatility: ${coinData[0].volatility}\n`;
 
-      // Add recent K-line data
+      // Add recent K-line data with multi-timeframe analysis
       const recent3m = coinData.find(d => d.timeframe === '3m');
+      const recent1h = coinData.find(d => d.timeframe === '1h');
       const recent4h = coinData.find(d => d.timeframe === '4h');
+
+      // Multi-timeframe trend consistency check
+      const trends: Array<{ timeframe: string; trend: string }> = [];
+      if (recent3m) trends.push({ timeframe: '3m', trend: recent3m.trend });
+      if (recent1h) trends.push({ timeframe: '1h', trend: recent1h.trend });
+      if (recent4h) trends.push({ timeframe: '4h', trend: recent4h.trend });
+
+      const bullishCount = trends.filter(t => t.trend === 'bullish').length;
+      const bearishCount = trends.filter(t => t.trend === 'bearish').length;
+      const trendConsistency =
+        trends.length > 0 ? Math.max(bullishCount, bearishCount) / trends.length : 0;
+      const hasConflict = bullishCount > 0 && bearishCount > 0;
+
+      if (trends.length > 1) {
+        formatted += `  multi_timeframe_analysis: {\n`;
+        formatted += `    trends: ${JSON.stringify(trends)},\n`;
+        formatted += `    consistency: ${(trendConsistency * 100).toFixed(1)}%,\n`;
+        formatted += `    conflict: ${hasConflict},\n`;
+        formatted += `    alignment: ${trendConsistency >= 0.67 ? 'strong' : trendConsistency >= 0.5 ? 'moderate' : 'weak'}\n`;
+        formatted += `  }\n`;
+      }
 
       if (recent3m && recent3m.candlesticks.length > 0) {
         const recent3mCandles = recent3m.candlesticks.slice(-candles3m);
         formatted += `  intraday_3min: [\n`;
         recent3mCandles.forEach(c => {
+          formatted += `    {timestamp: ${c.timestamp}, open: ${c.open.toFixed(2)}, high: ${c.high.toFixed(2)}, low: ${c.low.toFixed(2)}, close: ${c.close.toFixed(2)}, volume: ${c.volume.toFixed(2)}},\n`;
+        });
+        formatted += `  ]\n`;
+      }
+
+      if (recent1h && recent1h.candlesticks.length > 0) {
+        const recent1hCandles = recent1h.candlesticks.slice(-candles1h);
+        formatted += `  medium_term_1hour: [\n`;
+        recent1hCandles.forEach(c => {
           formatted += `    {timestamp: ${c.timestamp}, open: ${c.open.toFixed(2)}, high: ${c.high.toFixed(2)}, low: ${c.low.toFixed(2)}, close: ${c.close.toFixed(2)}, volume: ${c.volume.toFixed(2)}},\n`;
         });
         formatted += `  ]\n`;

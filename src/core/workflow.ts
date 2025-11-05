@@ -76,6 +76,9 @@ export interface SystemState {
   previousEquity?: number; // Track equity from previous cycle
   cyclePnl?: number; // P&L change in this cycle
   previousBalance?: number; // Track balance for realized P&L per-cycle
+  peakEquity?: number; // Peak equity for drawdown calculation
+  maxDrawdown?: number; // Maximum drawdown percentage (0-1)
+  drawdownState?: 'normal' | 'reduced' | 'paused'; // Drawdown protection state
 }
 
 export interface WorkflowConfig {
@@ -86,7 +89,7 @@ export interface WorkflowConfig {
   marketTimeframes?: string[]; // e.g., ['3m','4h']
   ai?: {
     prompt?: {
-      candles?: { m3?: number; h4?: number };
+      candles?: { m3?: number; h1?: number; h4?: number };
       sections?: { candlesTA?: boolean; sentiment?: boolean; technicalState?: boolean };
     };
   };
@@ -189,6 +192,9 @@ export class TradingWorkflow {
       previousEquity: 0,
       cyclePnl: 0,
       previousBalance: 0,
+      peakEquity: 0,
+      maxDrawdown: 0,
+      drawdownState: 'normal',
     };
   }
 
@@ -919,7 +925,7 @@ export class TradingWorkflow {
         timeframes: this.config.marketTimeframes ?? ['3m', '4h'],
       });
       const fetchStart = Date.now();
-      const timeframes = this.config.marketTimeframes ?? ['3m', '4h'];
+      const timeframes = this.config.marketTimeframes ?? ['3m', '1h', '4h'];
 
       // Fetch market data based on configuration
       const marketDataResult =
@@ -1091,6 +1097,7 @@ export class TradingWorkflow {
         defaultStopLoss: this.config.riskParams.defaultStopLoss,
         promptOptions: {
           candles3m: this.config.ai?.prompt?.candles?.m3 ?? 10,
+          candles1h: this.config.ai?.prompt?.candles?.h1 ?? 8,
           candles4h: this.config.ai?.prompt?.candles?.h4 ?? 5,
           sections: {
             candlesTA: this.config.ai?.prompt?.sections?.candlesTA ?? true,
@@ -1338,10 +1345,56 @@ export class TradingWorkflow {
       });
       const executeStartTime = Date.now();
 
+      // Calculate signal quality scores and sort signals by quality
+      const signalsWithQuality = signals.map(signal => {
+        const coinMarketData = allMarketData.find(md => md.coin === signal.coin);
+        const indicators = coinMarketData?.indicators;
+
+        // Get multi-timeframe market data for this coin
+        const coinMultiTimeframeData = allMarketData
+          .filter(md => md.coin === signal.coin)
+          .map(md => ({
+            timeframe: md.timeframe,
+            trend: md.trend,
+            indicators: md.indicators,
+          }));
+
+        const qualityScore = this.riskManager
+          .getSignalValidator()
+          .calculateSignalQuality(signal, indicators, coinMultiTimeframeData);
+
+        return {
+          signal,
+          qualityScore,
+          combinedScore: signal.confidence * 0.6 + qualityScore.score * 0.4, // Weighted combination
+        };
+      });
+
+      // Sort signals by combined score (confidence + quality), descending
+      signalsWithQuality.sort((a, b) => b.combinedScore - a.combinedScore);
+
+      // Log signal quality scores
+      for (const { signal, qualityScore, combinedScore } of signalsWithQuality) {
+        this.unifiedLogger.debug(
+          `Signal quality score for ${signal.coin} ${signal.action}`,
+          {
+            coin: signal.coin,
+            action: signal.action,
+            confidence: signal.confidence,
+            qualityScore: qualityScore.score,
+            combinedScore,
+            factors: qualityScore.factors,
+            breakdown: qualityScore.breakdown,
+          },
+          this.loggerContext
+        );
+      }
+
       // Accumulate decision information for all signals
       const signalDecisionInfos: SignalDecisionInfo[] = [];
 
-      for (const signal of signals) {
+      // Execute signals sequentially, prioritized by quality
+      for (const { signal } of signalsWithQuality) {
         if (!this.state.isRunning) {
           break; // Stop processing signals if workflow stopped
         }
@@ -1759,13 +1812,36 @@ export class TradingWorkflow {
       }
 
       // Get position sizing info for detailed logging (non-HOLD signals only)
+      // Check if trading should be paused due to drawdown
+      if (this.state.drawdownState === 'paused') {
+        this.state.rejectedSignals++;
+        this.state.rejectedSignalsCycle++;
+        this.emitLog(
+          'warn',
+          `⚠️  ${signal.coin}: ${signal.action} signal rejected (trading paused due to drawdown)`
+        );
+        return {
+          success: false,
+          error: 'Trading paused due to drawdown',
+          decisionInfo: {
+            coin: signal.coin,
+            action: signal.action,
+            validation: { passed: true },
+            sizing: { passed: false },
+            execution: { expectedPrice: currentPrice },
+          },
+        };
+      }
+
       const sizing = this.riskManager.calculatePositionSizing(
         signal,
         account,
         positions,
         currentPrice,
         atr14,
-        indicators
+        indicators,
+        this.state.drawdownState,
+        this.state.peakEquity
       );
 
       // Detect market regime for decision path (simplified logic)
@@ -2123,6 +2199,52 @@ export class TradingWorkflow {
         },
         this.loggerContext
       );
+    }
+
+    // Update peak equity and calculate drawdown
+    if (account.equity > 0) {
+      // Initialize peak equity if not set
+      if (!this.state.peakEquity || this.state.peakEquity === 0) {
+        this.state.peakEquity = account.equity;
+      }
+
+      // Update peak equity if current equity is higher
+      if (account.equity > this.state.peakEquity) {
+        this.state.peakEquity = account.equity;
+      }
+
+      // Calculate current drawdown
+      const currentDrawdown = (this.state.peakEquity - account.equity) / this.state.peakEquity;
+
+      // Update max drawdown if current drawdown is higher
+      if (!this.state.maxDrawdown || currentDrawdown > this.state.maxDrawdown) {
+        this.state.maxDrawdown = currentDrawdown;
+      }
+
+      // Check drawdown protection thresholds
+      const drawdownCheck = this.riskManager.checkDrawdownProtection(
+        account.equity,
+        this.state.peakEquity,
+        this.state.maxDrawdown,
+        this.state.drawdownState
+      );
+
+      // Update drawdown state
+      this.state.drawdownState = drawdownCheck.state;
+
+      // Log drawdown warnings if needed
+      if (drawdownCheck.shouldReducePositionSize || drawdownCheck.shouldPauseTrading) {
+        this.unifiedLogger.warn(
+          'Drawdown protection activated',
+          {
+            currentDrawdown: (currentDrawdown * 100).toFixed(2) + '%',
+            maxDrawdown: (this.state.maxDrawdown * 100).toFixed(2) + '%',
+            state: drawdownCheck.state,
+            action: drawdownCheck.shouldPauseTrading ? 'pause' : 'reduce',
+          },
+          this.loggerContext
+        );
+      }
     }
 
     // Calculate win rate from completed trades

@@ -28,8 +28,20 @@ export const POSITION_SIZING = {
   MAX_POSITION_SIZE_PERCENT: 0.25,
   /** ATR multiplier for stop loss (e.g., 1.5x ATR) */
   ATR_STOP_LOSS_MULTIPLIER: 1.5,
+  /** High volatility ATR multiplier (2.0x ATR for wider stops) */
+  ATR_MULTIPLIER_HIGH_VOLATILITY: 2.0,
+  /** Low volatility ATR multiplier (1.2x ATR for tighter stops) */
+  ATR_MULTIPLIER_LOW_VOLATILITY: 1.2,
+  /** High volatility threshold (ATR as percentage of price) */
+  HIGH_VOLATILITY_THRESHOLD: 0.03, // 3%
+  /** Low volatility threshold (ATR as percentage of price) */
+  LOW_VOLATILITY_THRESHOLD: 0.01, // 1%
   /** Maximum ATR percentage of price before scaling down position size */
   MAX_ATR_PERCENT_OF_PRICE: 0.02, // 2%
+  /** Trending market stop loss multiplier (33% wider) */
+  TRENDING_STOP_MULTIPLIER: 1.33,
+  /** Ranging market stop loss multiplier (25% tighter) */
+  RANGING_STOP_MULTIPLIER: 0.75,
   /** Maximum same-side positions before rejecting correlated entries */
   MAX_SAME_SIDE_POSITIONS: 3,
   /** Maximum pairwise correlation threshold (0-1) */
@@ -84,6 +96,24 @@ export const ORDER_EXECUTION = {
   TRAILING_STOP_ACTIVATION: 0.02,
   /** Trailing stop distance from peak (percentage) */
   TRAILING_STOP_DISTANCE: 0.02,
+  /** Minimum trailing stop distance (percentage) */
+  MIN_TRAILING_STOP_DISTANCE: 0.01, // 1%
+  /** Maximum trailing stop distance (percentage) */
+  MAX_TRAILING_STOP_DISTANCE: 0.05, // 5%
+  /** ATR-based trailing distance multiplier */
+  ATR_TRAILING_DISTANCE_MULTIPLIER: 1.5,
+  /** High profit trailing stop distance (at +10% profit) */
+  HIGH_PROFIT_TRAILING_DISTANCE: 0.015, // 1.5%
+  /** Medium profit trailing stop distance (at +7.5% profit) */
+  MEDIUM_PROFIT_TRAILING_DISTANCE: 0.0175, // 1.75%
+  /** High profit threshold (percentage) */
+  HIGH_PROFIT_THRESHOLD: 0.1, // 10%
+  /** Medium profit threshold (percentage) */
+  MEDIUM_PROFIT_THRESHOLD: 0.075, // 7.5%
+  /** Trailing stop tightening factor at high profit */
+  HIGH_PROFIT_TIGHTENING_FACTOR: 0.75,
+  /** Trailing stop tightening factor at medium profit */
+  MEDIUM_PROFIT_TIGHTENING_FACTOR: 0.875,
   /** Breakeven threshold (percentage profit) */
   BREAKEVEN_THRESHOLD: 0.02,
   /** R-multiple threshold for flat detection (±0.25R) */

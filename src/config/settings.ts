@@ -173,6 +173,7 @@ const ConfigSchema = z.object({
       candles: z
         .object({
           m3: z.number().int().min(1).max(200).default(10),
+          h1: z.number().int().min(1).max(200).optional(),
           h4: z.number().int().min(1).max(200).default(5),
         })
         .default({ m3: 10, h4: 5 }),
@@ -328,7 +329,7 @@ const DEFAULT_CONFIG: Partial<Config> = {
     },
     prompt: {
       activeGroup: 'default',
-      candles: { m3: 10, h4: 5 },
+      candles: { m3: 10, h1: 8, h4: 5 },
       sections: { candlesTA: true, sentiment: true, technicalState: true },
     },
   },
@@ -459,6 +460,7 @@ function parseEnvConfig(): Partial<Config> {
         activeGroup: process.env.PROMPT_ACTIVE_GROUP || 'default',
         candles: {
           m3: parseIntegerEnv(process.env.PROMPT_CANDLES_3M, 10),
+          h1: parseIntegerEnv(process.env.PROMPT_CANDLES_1H, 8),
           h4: parseIntegerEnv(process.env.PROMPT_CANDLES_4H, 5),
         },
         sections: {

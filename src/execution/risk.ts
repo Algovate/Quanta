@@ -55,6 +55,14 @@ export class RiskManager {
   }
 
   /**
+   * Get signal validator instance
+   * Used for signal quality scoring
+   */
+  getSignalValidator(): SignalValidator {
+    return this.signalValidator;
+  }
+
+  /**
    * Update performance tracker with completed trades
    * Call this periodically to keep stats current
    */
@@ -155,7 +163,9 @@ export class RiskManager {
     currentPositions: Position[],
     currentPrice: number,
     atr14?: number,
-    indicators?: TechnicalIndicators
+    indicators?: TechnicalIndicators,
+    drawdownState?: 'normal' | 'reduced' | 'paused',
+    peakEquity?: number
   ): PositionSizing | null {
     try {
       // Validate inputs
@@ -227,16 +237,30 @@ export class RiskManager {
       // Calculate ATR-based stop loss if ATR is available
       let atrBasedStopLoss: number | undefined;
       if (atr14 && atr14 > 0 && entryPrice > 0) {
-        const atrStopDistance = safeMultiply(
-          atr14,
-          POSITION_SIZING.ATR_STOP_LOSS_MULTIPLIER
-        ).toNumber();
+        // Dynamic ATR multiplier based on volatility
+        // Higher volatility = wider stops, but with adaptive multiplier
+        const atrPercent = safeDivide(atr14, entryPrice, 6).toNumber();
+        let atrMultiplier: number = POSITION_SIZING.ATR_STOP_LOSS_MULTIPLIER;
+
+        // Adjust multiplier based on volatility level
+        if (atrPercent > POSITION_SIZING.HIGH_VOLATILITY_THRESHOLD) {
+          // High volatility: use wider stops
+          atrMultiplier = POSITION_SIZING.ATR_MULTIPLIER_HIGH_VOLATILITY;
+        } else if (atrPercent < POSITION_SIZING.LOW_VOLATILITY_THRESHOLD) {
+          // Low volatility: use tighter stops
+          atrMultiplier = POSITION_SIZING.ATR_MULTIPLIER_LOW_VOLATILITY;
+        }
+
+        const atrStopDistance = safeMultiply(atr14, atrMultiplier).toNumber();
         atrBasedStopLoss = safeDivide(atrStopDistance, entryPrice, 6).toNumber();
 
-        // In trending markets, use wider stops (allow 1.5x ATR); in ranging, use tighter (1.0x ATR)
+        // In trending markets, use wider stops; in ranging, use tighter
         const originalStop = atrBasedStopLoss;
         if (regime === 'trending' && atrBasedStopLoss) {
-          atrBasedStopLoss = safeMultiply(atrBasedStopLoss, 1.33).toNumber(); // 33% wider
+          atrBasedStopLoss = safeMultiply(
+            atrBasedStopLoss,
+            POSITION_SIZING.TRENDING_STOP_MULTIPLIER
+          ).toNumber();
           this.logger.debug(
             'Trending regime: widening stop loss',
             {
@@ -247,7 +271,10 @@ export class RiskManager {
             this.context
           );
         } else if (regime === 'ranging' && atrBasedStopLoss) {
-          atrBasedStopLoss = safeMultiply(atrBasedStopLoss, 0.75).toNumber(); // 25% tighter
+          atrBasedStopLoss = safeMultiply(
+            atrBasedStopLoss,
+            POSITION_SIZING.RANGING_STOP_MULTIPLIER
+          ).toNumber();
           this.logger.debug(
             'Ranging regime: tightening stop loss',
             {
@@ -260,14 +287,73 @@ export class RiskManager {
         }
       }
 
+      // Calculate support/resistance-based stop loss if available
+      let supportResistanceStopLoss: number | undefined;
+      if (indicators?.supportResistance) {
+        const { support, resistance } = indicators.supportResistance;
+        const isLong = signal.action === 'LONG';
+
+        if (isLong && support !== null && support > 0) {
+          // For long positions, place stop below support
+          const supportStopPrice = support * 0.995; // 0.5% below support for safety
+          const supportStopPercent = safeDivide(
+            safeSubtract(entryPrice, supportStopPrice).toNumber(),
+            entryPrice,
+            6
+          ).toNumber();
+
+          if (supportStopPercent > 0 && supportStopPercent < 0.1) {
+            supportResistanceStopLoss = supportStopPercent;
+            this.logger.debug(
+              'Support-based stop loss calculated',
+              {
+                coin: signal.coin,
+                support: support.toFixed(2),
+                stopPrice: supportStopPrice.toFixed(2),
+                stopPercent: (supportResistanceStopLoss * 100).toFixed(2) + '%',
+              },
+              this.context
+            );
+          }
+        } else if (!isLong && resistance !== null && resistance > 0) {
+          // For short positions, place stop above resistance
+          const resistanceStopPrice = resistance * 1.005; // 0.5% above resistance for safety
+          const resistanceStopPercent = safeDivide(
+            safeSubtract(resistanceStopPrice, entryPrice).toNumber(),
+            entryPrice,
+            6
+          ).toNumber();
+
+          if (resistanceStopPercent > 0 && resistanceStopPercent < 0.1) {
+            supportResistanceStopLoss = resistanceStopPercent;
+            this.logger.debug(
+              'Resistance-based stop loss calculated',
+              {
+                coin: signal.coin,
+                resistance: resistance.toFixed(2),
+                stopPrice: resistanceStopPrice.toFixed(2),
+                stopPercent: (supportResistanceStopLoss * 100).toFixed(2) + '%',
+              },
+              this.context
+            );
+          }
+        }
+      }
+
       // Calculate price risk with precision
       const priceDiff = safeSubtract(currentPrice, entryPrice).toNumber();
       const priceRisk = safeDivide(Math.abs(priceDiff), currentPrice, 6).toNumber();
 
-      // Use the largest of: signal stop loss, price risk, or ATR-based stop loss
+      // Use the largest of: signal stop loss, price risk, ATR-based stop loss, or support/resistance stop loss
       let actualStopLoss = Math.max(stopLoss, priceRisk);
       if (atrBasedStopLoss) {
         actualStopLoss = Math.max(actualStopLoss, atrBasedStopLoss);
+      }
+      if (supportResistanceStopLoss) {
+        // Prefer support/resistance stop if it's reasonable (not too wide)
+        if (supportResistanceStopLoss < actualStopLoss * 1.5) {
+          actualStopLoss = Math.max(actualStopLoss, supportResistanceStopLoss);
+        }
       }
 
       // Enforce minimum stop loss to prevent division issues and unrealistic position sizes
@@ -364,16 +450,57 @@ export class RiskManager {
       );
       const adjustedPositionValue = Math.max(minPositionValue, positionValueWithUtil);
 
-      // Step 4: Calculate position size in units using precision-safe division
+      // Step 4: Apply drawdown protection multiplier to position size
+      let drawdownMultiplier = 1.0;
+      if (drawdownState && drawdownState !== 'normal') {
+        drawdownMultiplier = this.getDrawdownPositionSizeMultiplier(
+          drawdownState,
+          account.equity,
+          peakEquity
+        );
+
+        if (drawdownMultiplier <= 0) {
+          // Trading paused due to drawdown
+          this.logger.debug(
+            'Position sizing rejected: trading paused due to drawdown',
+            {
+              coin: signal.coin,
+              drawdownState,
+              currentEquity: account.equity,
+              peakEquity,
+            },
+            this.context
+          );
+          return null;
+        }
+
+        this.logger.debug(
+          'Drawdown protection applied to position sizing',
+          {
+            coin: signal.coin,
+            drawdownState,
+            multiplier: (drawdownMultiplier * 100).toFixed(1) + '%',
+          },
+          this.context
+        );
+      }
+
+      // Step 5: Calculate position size in units using precision-safe division
       // Safety check: ensure position doesn't exceed maximum size cap
       const maxPositionValue = safePercentage(
         account.equity,
         POSITION_SIZING.MAX_POSITION_SIZE_PERCENT
       ).toNumber();
       const cappedPositionValue = Math.min(adjustedPositionValue, maxPositionValue);
-      const cappedSize = safeDivide(cappedPositionValue, pricePerUnit, 8).toNumber();
 
-      // Step 5: Determine dynamic leverage based on confidence and risk
+      // Apply drawdown multiplier to position size
+      const drawdownAdjustedValue = safeMultiply(
+        cappedPositionValue,
+        drawdownMultiplier
+      ).toNumber();
+      const cappedSize = safeDivide(drawdownAdjustedValue, pricePerUnit, 8).toNumber();
+
+      // Step 6: Determine dynamic leverage based on confidence and risk
       const leverage = this.calculateDynamicLeverage(
         signal,
         account,
@@ -630,7 +757,8 @@ export class RiskManager {
     }
 
     // Warn at 75% of limit
-    if (drawdown > POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 0.75) {
+    const recoveryThreshold = POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN * 0.75;
+    if (drawdown > recoveryThreshold) {
       this.logger.warn(
         'Portfolio drawdown approaching limit',
         {
@@ -681,10 +809,13 @@ export class RiskManager {
    * Returns both the stop price and updated peak price (immutable)
    * Trail begins when position is +2% and moves to breakeven
    * At +5% profit, trail at -2% from peak
+   * Implements progressive stop tightening as profit increases
    */
   updateTrailingStop(
     position: Position,
-    currentPrice: number
+    currentPrice: number,
+    atr14?: number,
+    _indicators?: TechnicalIndicators
   ): { stopPrice: number | null; newPeakPrice: number } {
     // Validate inputs
     if (position.entryPrice <= 0 || currentPrice <= 0) {
@@ -714,14 +845,55 @@ export class RiskManager {
       : Math.min(currentPeak, currentPrice);
 
     let stopPrice: number | null = null;
+    let trailingDistance: number = ORDER_EXECUTION.TRAILING_STOP_DISTANCE;
 
+    // Calculate dynamic trailing distance based on ATR if available
+    if (atr14 && currentPrice > 0) {
+      const atrPercent = atr14 / currentPrice;
+      // Use ATR-based trailing distance with clamping
+      const atrBasedDistance = Math.min(
+        Math.max(
+          atrPercent * ORDER_EXECUTION.ATR_TRAILING_DISTANCE_MULTIPLIER,
+          ORDER_EXECUTION.MIN_TRAILING_STOP_DISTANCE
+        ),
+        ORDER_EXECUTION.MAX_TRAILING_STOP_DISTANCE
+      );
+      trailingDistance = Math.max(trailingDistance, atrBasedDistance);
+
+      this.logger.debug(
+        'ATR-based trailing distance calculated',
+        {
+          symbol: position.symbol,
+          atrPercent: (atrPercent * 100).toFixed(2) + '%',
+          trailingDistance: (trailingDistance * 100).toFixed(2) + '%',
+        },
+        this.context
+      );
+    }
+
+    // Progressive stop tightening as profit increases
     // Trailing stop conditions using constants
     if (actualPnlPercent >= ORDER_EXECUTION.TRAILING_STOP_ACTIVATION * 100) {
       if (actualPnlPercent >= ORDER_EXECUTION.TRAILING_STOP_ACTIVATION * 250) {
-        // At +5% or more: trail stop at 2% below peak
+        // At +5% or more: trail stop at dynamic distance from peak
+        // Progressive tightening: the more profit, the tighter the stop
+        if (actualPnlPercent >= ORDER_EXECUTION.HIGH_PROFIT_THRESHOLD) {
+          // At +10% or more: tighten trailing distance
+          trailingDistance = Math.max(
+            ORDER_EXECUTION.HIGH_PROFIT_TRAILING_DISTANCE,
+            trailingDistance * ORDER_EXECUTION.HIGH_PROFIT_TIGHTENING_FACTOR
+          );
+        } else if (actualPnlPercent >= ORDER_EXECUTION.MEDIUM_PROFIT_THRESHOLD) {
+          // At +7.5% or more: tighten trailing distance
+          trailingDistance = Math.max(
+            ORDER_EXECUTION.MEDIUM_PROFIT_TRAILING_DISTANCE,
+            trailingDistance * ORDER_EXECUTION.MEDIUM_PROFIT_TIGHTENING_FACTOR
+          );
+        }
+
         stopPrice = isLong
-          ? newPeakPrice * (1 - ORDER_EXECUTION.TRAILING_STOP_DISTANCE)
-          : newPeakPrice * (1 + ORDER_EXECUTION.TRAILING_STOP_DISTANCE);
+          ? newPeakPrice * (1 - trailingDistance)
+          : newPeakPrice * (1 + trailingDistance);
       } else {
         // At +2% to +5%: move stop to breakeven
         stopPrice = entryPrice;
@@ -735,10 +907,24 @@ export class RiskManager {
   /**
    * Check if trailing stop or regular stop loss should trigger
    * Updates position.peakPrice and position.trailingStopPrice as side effects
+   * @param position - The position to check
+   * @param currentPrice - Current market price
+   * @param atr14 - Optional ATR14 for dynamic trailing distance
+   * @param indicators - Optional technical indicators for enhanced stop calculation
    */
-  checkStopLossWithTrailing(position: Position, currentPrice: number): boolean {
+  checkStopLossWithTrailing(
+    position: Position,
+    currentPrice: number,
+    atr14?: number,
+    indicators?: TechnicalIndicators
+  ): boolean {
     // Check trailing stop first (more aggressive)
-    const { stopPrice, newPeakPrice } = this.updateTrailingStop(position, currentPrice);
+    const { stopPrice, newPeakPrice } = this.updateTrailingStop(
+      position,
+      currentPrice,
+      atr14,
+      indicators
+    );
 
     // Update position state with new peak price
     position.peakPrice = newPeakPrice;
@@ -841,5 +1027,165 @@ export class RiskManager {
    */
   getEffectiveTakeProfitPrice(position: Position, currentPrice: number): number {
     return position.customTakeProfit ?? this.calculateTakeProfit(position, currentPrice);
+  }
+
+  /**
+   * Check drawdown protection and return protection state
+   * Implements account-level drawdown protection with position size reduction and trading pause
+   * @param currentEquity - Current account equity
+   * @param peakEquity - Peak equity (highest equity reached)
+   * @param maxDrawdown - Maximum drawdown percentage (0-1)
+   * @param currentState - Current drawdown protection state
+   * @returns Drawdown protection check result
+   */
+  checkDrawdownProtection(
+    currentEquity: number,
+    peakEquity: number,
+    maxDrawdown: number,
+    currentState?: 'normal' | 'reduced' | 'paused'
+  ): {
+    state: 'normal' | 'reduced' | 'paused';
+    shouldReducePositionSize: boolean;
+    shouldPauseTrading: boolean;
+    positionSizeMultiplier: number;
+  } {
+    if (peakEquity <= 0 || currentEquity <= 0) {
+      return {
+        state: 'normal',
+        shouldReducePositionSize: false,
+        shouldPauseTrading: false,
+        positionSizeMultiplier: 1.0,
+      };
+    }
+
+    const currentDrawdown = (peakEquity - currentEquity) / peakEquity;
+    const maxDrawdownThreshold = POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN;
+    const reducedThreshold = maxDrawdownThreshold * 0.7; // 70% of max = 10.5% drawdown
+    const recoveryThreshold = maxDrawdownThreshold * 0.5; // 50% of max = 7.5% drawdown
+
+    let state: 'normal' | 'reduced' | 'paused' = currentState || 'normal';
+    let shouldReducePositionSize = false;
+    let shouldPauseTrading = false;
+    let positionSizeMultiplier = 1.0;
+
+    // State transitions based on drawdown levels
+    if (currentDrawdown >= maxDrawdownThreshold) {
+      // At or above max drawdown: pause trading
+      state = 'paused';
+      shouldPauseTrading = true;
+      positionSizeMultiplier = 0;
+
+      this.logger.warn(
+        'Maximum drawdown threshold reached - trading paused',
+        {
+          currentDrawdown: (currentDrawdown * 100).toFixed(2) + '%',
+          maxDrawdown: (maxDrawdown * 100).toFixed(2) + '%',
+          threshold: (maxDrawdownThreshold * 100).toFixed(2) + '%',
+        },
+        this.context
+      );
+    } else if (currentDrawdown >= reducedThreshold) {
+      // Above reduced threshold: reduce position sizes
+      state = 'reduced';
+      shouldReducePositionSize = true;
+      // Reduce position sizes proportionally: 50% reduction at reduced threshold, scaling to 0 at max
+      const reductionFactor =
+        (currentDrawdown - reducedThreshold) / (maxDrawdownThreshold - reducedThreshold);
+      positionSizeMultiplier = Math.max(0.3, 1.0 - reductionFactor * 0.7); // Minimum 30% of normal size
+
+      this.logger.info(
+        'Drawdown protection: reducing position sizes',
+        {
+          currentDrawdown: (currentDrawdown * 100).toFixed(2) + '%',
+          positionSizeMultiplier: (positionSizeMultiplier * 100).toFixed(1) + '%',
+        },
+        this.context
+      );
+    } else if (
+      currentDrawdown <= recoveryThreshold &&
+      (currentState === 'reduced' || currentState === 'paused')
+    ) {
+      // Recovered below recovery threshold: return to normal
+      state = 'normal';
+      shouldReducePositionSize = false;
+      shouldPauseTrading = false;
+      positionSizeMultiplier = 1.0;
+
+      this.logger.info(
+        'Drawdown recovery: returning to normal trading',
+        {
+          currentDrawdown: (currentDrawdown * 100).toFixed(2) + '%',
+          recoveryThreshold: (recoveryThreshold * 100).toFixed(2) + '%',
+        },
+        this.context
+      );
+    } else if (currentState === 'reduced' || currentState === 'paused') {
+      // Still in drawdown but recovering: maintain reduced state until recovery threshold
+      state = currentState;
+      shouldReducePositionSize = currentState === 'reduced';
+      shouldPauseTrading = currentState === 'paused';
+
+      if (currentState === 'reduced') {
+        // Gradually increase position size as drawdown improves
+        const improvement =
+          (currentDrawdown - reducedThreshold) / (recoveryThreshold - reducedThreshold);
+        positionSizeMultiplier = Math.max(0.3, 0.3 + improvement * 0.7); // Scale from 30% to 100%
+      } else {
+        positionSizeMultiplier = 0;
+      }
+    } else {
+      // Normal state: no restrictions
+      state = 'normal';
+      shouldReducePositionSize = false;
+      shouldPauseTrading = false;
+      positionSizeMultiplier = 1.0;
+    }
+
+    return {
+      state,
+      shouldReducePositionSize,
+      shouldPauseTrading,
+      positionSizeMultiplier,
+    };
+  }
+
+  /**
+   * Get position size multiplier based on drawdown state
+   * Used in position sizing to reduce sizes during drawdown
+   * @param drawdownState - Current drawdown protection state
+   * @param currentEquity - Current account equity
+   * @param peakEquity - Peak equity
+   * @returns Position size multiplier (0-1)
+   */
+  getDrawdownPositionSizeMultiplier(
+    drawdownState?: 'normal' | 'reduced' | 'paused',
+    currentEquity?: number,
+    peakEquity?: number
+  ): number {
+    if (!drawdownState || drawdownState === 'normal') {
+      return 1.0;
+    }
+
+    if (drawdownState === 'paused') {
+      return 0;
+    }
+
+    // Calculate multiplier based on current drawdown
+    if (currentEquity && peakEquity && peakEquity > 0) {
+      const currentDrawdown = (peakEquity - currentEquity) / peakEquity;
+      const maxDrawdownThreshold = POSITION_MONITORING.MAX_PORTFOLIO_DRAWDOWN;
+      const reducedThreshold = maxDrawdownThreshold * 0.7;
+
+      if (currentDrawdown >= maxDrawdownThreshold) {
+        return 0;
+      } else if (currentDrawdown >= reducedThreshold) {
+        const reductionFactor =
+          (currentDrawdown - reducedThreshold) / (maxDrawdownThreshold - reducedThreshold);
+        return Math.max(0.3, 1.0 - reductionFactor * 0.7);
+      }
+    }
+
+    // Default reduced state multiplier
+    return 0.5;
   }
 }

@@ -5,6 +5,46 @@ import {
   BacktestResult,
 } from '../types/index.js';
 
+export interface SymbolPerformance {
+  symbol: string;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  winRate: number;
+  totalPnL: number;
+  totalReturn: number;
+  avgWin: number;
+  avgLoss: number;
+  profitFactor: number;
+  sharpeRatio: number;
+  maxDrawdown: number;
+  qualityScore: number; // 0-1, based on multiple factors
+}
+
+export interface TimePeriodPerformance {
+  period: string; // e.g., "2024-01", "2024-01-01 to 2024-01-31"
+  startDate: string;
+  endDate: string;
+  totalTrades: number;
+  totalPnL: number;
+  totalReturn: number;
+  winRate: number;
+  profitFactor: number;
+  sharpeRatio: number;
+  maxDrawdown: number;
+}
+
+export interface SignalQualityAnalysis {
+  signalType: 'LONG' | 'SHORT' | 'CLOSE' | 'HOLD';
+  totalSignals: number;
+  executedSignals: number;
+  averageConfidence: number;
+  averageQualityScore: number;
+  winRate: number;
+  averagePnL: number;
+  profitFactor: number;
+}
+
 export class PerformanceAnalytics {
   /**
    * Calculate all performance metrics from a backtest result
@@ -292,5 +332,298 @@ export class PerformanceAnalytics {
     const losers = trades.filter(t => t.pnl < 0);
     if (losers.length === 0) return 0;
     return Math.min(...losers.map(t => t.pnl), 0);
+  }
+
+  /**
+   * Calculate performance metrics by symbol
+   * @param trades - Array of completed trades
+   * @param snapshots - Array of equity snapshots for symbol-specific analysis
+   * @returns Performance metrics grouped by symbol
+   */
+  calculateSymbolPerformance(
+    trades: CompletedTrade[],
+    _snapshots: EquitySnapshot[]
+  ): Map<string, SymbolPerformance> {
+    const symbolMap = new Map<string, SymbolPerformance>();
+
+    // Group trades by symbol
+    const tradesBySymbol = new Map<string, CompletedTrade[]>();
+    for (const trade of trades) {
+      const symbol = trade.symbol;
+      if (!tradesBySymbol.has(symbol)) {
+        tradesBySymbol.set(symbol, []);
+      }
+      tradesBySymbol.get(symbol)?.push(trade);
+    }
+
+    // Calculate metrics for each symbol
+    for (const [symbol, symbolTrades] of tradesBySymbol.entries()) {
+      const winningTrades = symbolTrades.filter(t => t.pnl > 0);
+      const losingTrades = symbolTrades.filter(t => t.pnl < 0);
+      const totalPnL = symbolTrades.reduce((sum, t) => sum + t.pnl, 0);
+      const winRate =
+        symbolTrades.length > 0 ? (winningTrades.length / symbolTrades.length) * 100 : 0;
+      const avgWin =
+        winningTrades.length > 0
+          ? winningTrades.reduce((sum, t) => sum + t.pnl, 0) / winningTrades.length
+          : 0;
+      const avgLoss =
+        losingTrades.length > 0
+          ? losingTrades.reduce((sum, t) => sum + t.pnl, 0) / losingTrades.length
+          : 0;
+      const grossProfit = winningTrades.reduce((sum, t) => sum + t.pnl, 0);
+      const grossLoss = Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0));
+      const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
+
+      // Calculate Sharpe ratio for this symbol (simplified)
+      const returns = symbolTrades.map(t => t.pnlPercent / 100);
+      const meanReturn =
+        returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+      const variance =
+        returns.length > 0
+          ? returns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / returns.length
+          : 0;
+      const stdDev = Math.sqrt(variance);
+      const sharpeRatio = stdDev > 0 ? meanReturn / stdDev : 0;
+
+      // Calculate max drawdown for this symbol
+      // Note: EquitySnapshot may not have symbol field, so we'll calculate from trades
+      const symbolPnLs = symbolTrades.map(t => t.pnl);
+      let maxDrawdown = 0;
+      let peakEquity = 0;
+      let runningEquity = 0;
+      for (const pnl of symbolPnLs) {
+        runningEquity += pnl;
+        if (runningEquity > peakEquity) {
+          peakEquity = runningEquity;
+        }
+        const drawdown = peakEquity > 0 ? ((peakEquity - runningEquity) / peakEquity) * 100 : 0;
+        if (drawdown > maxDrawdown) {
+          maxDrawdown = drawdown;
+        }
+      }
+
+      // Calculate quality score (0-1): combination of win rate, profit factor, and Sharpe ratio
+      const qualityScore = this.calculateTradeQualityScore(
+        winRate,
+        profitFactor,
+        sharpeRatio,
+        maxDrawdown
+      );
+
+      symbolMap.set(symbol, {
+        symbol,
+        totalTrades: symbolTrades.length,
+        winningTrades: winningTrades.length,
+        losingTrades: losingTrades.length,
+        winRate,
+        totalPnL,
+        totalReturn: (totalPnL / (symbolTrades[0]?.entryPrice || 1)) * 100, // Simplified return calculation
+        avgWin,
+        avgLoss,
+        profitFactor,
+        sharpeRatio,
+        maxDrawdown,
+        qualityScore,
+      });
+    }
+
+    return symbolMap;
+  }
+
+  /**
+   * Calculate performance metrics by time period
+   * @param trades - Array of completed trades
+   * @param snapshots - Array of equity snapshots
+   * @param periodType - 'monthly' or 'daily'
+   * @returns Performance metrics grouped by time period
+   */
+  calculateTimePeriodPerformance(
+    trades: CompletedTrade[],
+    _snapshots: EquitySnapshot[],
+    periodType: 'monthly' | 'daily' = 'monthly'
+  ): Map<string, TimePeriodPerformance> {
+    const periodMap = new Map<string, TimePeriodPerformance>();
+
+    // Group trades by time period
+    const tradesByPeriod = new Map<string, CompletedTrade[]>();
+    for (const trade of trades) {
+      const period = this.getPeriodKey(trade.exitTime, periodType);
+      if (!tradesByPeriod.has(period)) {
+        tradesByPeriod.set(period, []);
+      }
+      tradesByPeriod.get(period)?.push(trade);
+    }
+
+    // Calculate metrics for each period
+    for (const [period, periodTrades] of tradesByPeriod.entries()) {
+      const sortedTrades = [...periodTrades].sort((a, b) => a.exitTime - b.exitTime);
+      const startDate = new Date(sortedTrades[0]?.exitTime || 0).toISOString().split('T')[0];
+      const endDate = new Date(sortedTrades[sortedTrades.length - 1]?.exitTime || 0)
+        .toISOString()
+        .split('T')[0];
+
+      const winningTrades = periodTrades.filter(t => t.pnl > 0);
+      const totalPnL = periodTrades.reduce((sum, t) => sum + t.pnl, 0);
+      const winRate =
+        periodTrades.length > 0 ? (winningTrades.length / periodTrades.length) * 100 : 0;
+      const grossProfit = winningTrades.reduce((sum, t) => sum + t.pnl, 0);
+      const grossLoss = Math.abs(
+        periodTrades.filter(t => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0)
+      );
+      const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
+
+      // Calculate Sharpe ratio for this period
+      const returns = periodTrades.map(t => t.pnlPercent / 100);
+      const meanReturn =
+        returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+      const variance =
+        returns.length > 0
+          ? returns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / returns.length
+          : 0;
+      const stdDev = Math.sqrt(variance);
+      const sharpeRatio = stdDev > 0 ? meanReturn / stdDev : 0;
+
+      // Calculate max drawdown for this period
+      const periodPnLs = periodTrades.map(t => t.pnl);
+      let maxDrawdown = 0;
+      let peakEquity = 0;
+      let runningEquity = 0;
+      for (const pnl of periodPnLs) {
+        runningEquity += pnl;
+        if (runningEquity > peakEquity) {
+          peakEquity = runningEquity;
+        }
+        const drawdown = peakEquity > 0 ? ((peakEquity - runningEquity) / peakEquity) * 100 : 0;
+        if (drawdown > maxDrawdown) {
+          maxDrawdown = drawdown;
+        }
+      }
+
+      // Calculate initial balance for return calculation (simplified)
+      const initialBalance = periodTrades[0]?.entryPrice || 1;
+      const totalReturn = (totalPnL / initialBalance) * 100;
+
+      periodMap.set(period, {
+        period,
+        startDate,
+        endDate,
+        totalTrades: periodTrades.length,
+        totalPnL,
+        totalReturn,
+        winRate,
+        profitFactor,
+        sharpeRatio,
+        maxDrawdown,
+      });
+    }
+
+    return periodMap;
+  }
+
+  /**
+   * Analyze signal quality based on trade outcomes
+   * @param trades - Array of completed trades with signal information
+   * @returns Signal quality analysis grouped by signal type
+   */
+  analyzeSignalQuality(trades: CompletedTrade[]): Map<string, SignalQualityAnalysis> {
+    const signalMap = new Map<string, SignalQualityAnalysis>();
+
+    // Group trades by signal type (if available)
+    // Note: CompletedTrade doesn't have signal type, so we'll infer from side
+    const tradesByType = new Map<string, CompletedTrade[]>();
+    for (const trade of trades) {
+      // Infer signal type from side (LONG/SHORT) or use 'UNKNOWN' if not available
+      const signalType =
+        trade.side === 'long' ? 'LONG' : trade.side === 'short' ? 'SHORT' : 'UNKNOWN';
+      if (!tradesByType.has(signalType)) {
+        tradesByType.set(signalType, []);
+      }
+      tradesByType.get(signalType)?.push(trade);
+    }
+
+    // Calculate metrics for each signal type
+    for (const [signalType, typeTrades] of tradesByType.entries()) {
+      const winningTrades = typeTrades.filter(t => t.pnl > 0);
+      const winRate = typeTrades.length > 0 ? (winningTrades.length / typeTrades.length) * 100 : 0;
+      const averagePnL =
+        typeTrades.length > 0
+          ? typeTrades.reduce((sum, t) => sum + t.pnl, 0) / typeTrades.length
+          : 0;
+      const grossProfit = winningTrades.reduce((sum, t) => sum + t.pnl, 0);
+      const grossLoss = Math.abs(
+        typeTrades.filter(t => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0)
+      );
+      const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
+
+      // Calculate average confidence and quality score (if available in trade metadata)
+      // Note: These would need to be stored in CompletedTrade if available
+      const averageConfidence = 0.7; // Placeholder - would need to be tracked
+      const averageQualityScore = 0.7; // Placeholder - would need to be tracked
+
+      signalMap.set(signalType, {
+        signalType: signalType as 'LONG' | 'SHORT' | 'CLOSE' | 'HOLD',
+        totalSignals: typeTrades.length,
+        executedSignals: typeTrades.length,
+        averageConfidence,
+        averageQualityScore,
+        winRate,
+        averagePnL,
+        profitFactor,
+      });
+    }
+
+    return signalMap;
+  }
+
+  /**
+   * Calculate trade quality score based on multiple factors
+   * @param winRate - Win rate percentage (0-100)
+   * @param profitFactor - Profit factor
+   * @param sharpeRatio - Sharpe ratio
+   * @param maxDrawdown - Maximum drawdown percentage
+   * @returns Quality score (0-1)
+   */
+  private calculateTradeQualityScore(
+    winRate: number,
+    profitFactor: number,
+    sharpeRatio: number,
+    maxDrawdown: number
+  ): number {
+    // Normalize factors to 0-1 scale
+    const winRateScore = Math.min(winRate / 100, 1); // 50% = 0.5, 100% = 1.0
+    const profitFactorScore = Math.min(profitFactor / 3, 1); // 3.0 = 1.0, cap at 1.0
+    const sharpeScore = Math.min(Math.max(sharpeRatio / 3, 0), 1); // 3.0 = 1.0, cap at 1.0
+    const drawdownScore = Math.max(0, 1 - Math.abs(maxDrawdown) / 50); // 50% drawdown = 0, 0% = 1.0
+
+    // Weighted combination
+    const weights = {
+      winRate: 0.3,
+      profitFactor: 0.3,
+      sharpeRatio: 0.25,
+      drawdown: 0.15,
+    };
+
+    return (
+      winRateScore * weights.winRate +
+      profitFactorScore * weights.profitFactor +
+      sharpeScore * weights.sharpeRatio +
+      drawdownScore * weights.drawdown
+    );
+  }
+
+  /**
+   * Get period key for grouping trades
+   * @param timestamp - Timestamp in milliseconds
+   * @param periodType - 'monthly' or 'daily'
+   * @returns Period key string
+   */
+  private getPeriodKey(timestamp: number, periodType: 'monthly' | 'daily'): string {
+    const date = new Date(timestamp);
+    if (periodType === 'monthly') {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    } else {
+      return date.toISOString().split('T')[0];
+    }
   }
 }

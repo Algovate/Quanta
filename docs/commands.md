@@ -1027,4 +1027,3 @@ Notes:
 
 - Historical arena detail endpoints may return 404 for non-running arenas; use `/history` to enumerate and build separate flows.
 - The web UI should prefer `/running` to auto-select a live arena and avoid 404s when none are running.
-

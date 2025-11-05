@@ -119,4 +119,3 @@ quanta trade start --env live --coins BTC,ETH
 - **Use paper trading mode** to validate strategies with real market data
 - **Only use live mode** after thorough testing and with proper risk management
 - **Never trade with money you can't afford to lose**
-

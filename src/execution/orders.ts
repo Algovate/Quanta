@@ -6,6 +6,8 @@ import { UnifiedLogger } from '../logging/index.js';
 import { TradingManager } from '../web/trading-manager.js';
 import type { OrderEvent, TradeEvent } from '../web/types.js';
 import { getConfig } from '../config/settings.js';
+import { SlippageManager } from './slippage-manager.js';
+import { TechnicalIndicators } from '../types/index.js';
 
 // Type guard to check if exchange is SimulatorExchange with metadata support
 function isSimulatorExchange(exchange: Exchange): exchange is Exchange & {
@@ -30,6 +32,7 @@ export class OrderExecutor {
   private forceMarketOrders: boolean;
   private priceSanityEnabled: boolean;
   private priceSanityMaxDeviation: number;
+  private slippageManager: SlippageManager;
 
   constructor(
     exchange: Exchange,
@@ -43,6 +46,7 @@ export class OrderExecutor {
     const cfg = getConfig();
     this.priceSanityEnabled = Boolean(cfg.trading?.priceSanity?.enabled);
     this.priceSanityMaxDeviation = Number(cfg.trading?.priceSanity?.maxDeviation ?? 0.05);
+    this.slippageManager = new SlippageManager();
   }
 
   /**
@@ -212,7 +216,8 @@ export class OrderExecutor {
     signal: TradingSignal,
     account: Account,
     currentPositions: Position[],
-    currentPrice: number
+    currentPrice: number,
+    indicators?: TechnicalIndicators
   ): Promise<OrderResult> {
     try {
       // Validate signal (do not log per-failure here; caller aggregates for UI)
@@ -236,10 +241,10 @@ export class OrderExecutor {
       // Execute order based on signal action
       switch (signal.action) {
         case 'LONG':
-          return await this.executeLongOrder(signal, sizing, currentPrice);
+          return await this.executeLongOrder(signal, sizing, currentPrice, indicators);
 
         case 'SHORT':
-          return await this.executeShortOrder(signal, sizing, currentPrice);
+          return await this.executeShortOrder(signal, sizing, currentPrice, indicators);
 
         case 'CLOSE':
           return await this.executeCloseOrder(signal, currentPositions, currentPrice);
@@ -268,7 +273,8 @@ export class OrderExecutor {
     signal: TradingSignal,
     sizing: PositionSizing,
     currentPrice: number,
-    side: 'buy' | 'sell'
+    side: 'buy' | 'sell',
+    indicators?: TechnicalIndicators
   ): Promise<OrderResult> {
     try {
       // Validate current price before proceeding
@@ -281,8 +287,57 @@ export class OrderExecutor {
 
       const symbol = this.buildSymbol(signal.coin);
       const amount = sizing.suggestedSize;
+
+      // Calculate expected slippage
+      const slippageMetrics = this.slippageManager.calculateExpectedSlippage(
+        symbol,
+        amount,
+        currentPrice,
+        side,
+        indicators
+      );
+
+      // Log slippage warning if high
+      if (slippageMetrics.warning) {
+        this.logger.warn(
+          slippageMetrics.warning,
+          {
+            symbol,
+            coin: signal.coin,
+            side,
+            expectedSlippage: (slippageMetrics.expectedSlippage * 100).toFixed(2) + '%',
+            historicalAverage: (slippageMetrics.historicalAverage * 100).toFixed(2) + '%',
+            orderSize: amount,
+            orderValue: amount * currentPrice,
+          },
+          this.context
+        );
+      }
+
       // Determine intended price
+      // Use limit order if expected slippage is high and not forcing market orders
       let price = this.forceMarketOrders ? undefined : signal.entry_price || currentPrice;
+
+      // If expected slippage is high, prefer limit order to reduce slippage
+      if (!this.forceMarketOrders && slippageMetrics.shouldUseLimitOrder && !price) {
+        // Set limit price slightly better than market to reduce slippage
+        // For buy: 0.1% below market, for sell: 0.1% above market
+        const limitOffset = currentPrice * 0.001; // 0.1%
+        price = side === 'buy' ? currentPrice - limitOffset : currentPrice + limitOffset;
+
+        this.logger.info(
+          'Using limit order to reduce expected slippage',
+          {
+            symbol,
+            coin: signal.coin,
+            side,
+            expectedSlippage: (slippageMetrics.expectedSlippage * 100).toFixed(2) + '%',
+            limitPrice: price,
+            marketPrice: currentPrice,
+          },
+          this.context
+        );
+      }
 
       // Stale price guard: if entry_price deviates too much from current ticker, convert to market
       if (!this.forceMarketOrders && this.priceSanityEnabled && signal.entry_price !== undefined) {
@@ -312,6 +367,44 @@ export class OrderExecutor {
       if (isSimulatorExchange(this.exchange)) {
         this.exchange.setOrderMetadata?.(order.id, 'AI', 'signal');
       }
+
+      // Calculate actual slippage if order was filled
+      const actualPrice = order.price || currentPrice;
+      if (order.status === 'filled' && actualPrice > 0 && currentPrice > 0) {
+        const actualSlippage =
+          side === 'buy'
+            ? (actualPrice - currentPrice) / currentPrice
+            : (currentPrice - actualPrice) / currentPrice;
+
+        // Record slippage for tracking
+        this.slippageManager.recordSlippage({
+          symbol,
+          timestamp: Date.now(),
+          expectedPrice: currentPrice,
+          actualPrice,
+          slippage: actualSlippage,
+          orderSize: amount,
+          side,
+        });
+
+        // Log if actual slippage differs significantly from expected
+        if (Math.abs(actualSlippage - slippageMetrics.expectedSlippage) > 0.002) {
+          this.logger.info(
+            'Slippage deviation from expected',
+            {
+              symbol,
+              coin: signal.coin,
+              side,
+              expected: (slippageMetrics.expectedSlippage * 100).toFixed(2) + '%',
+              actual: (actualSlippage * 100).toFixed(2) + '%',
+              deviation:
+                ((actualSlippage - slippageMetrics.expectedSlippage) * 100).toFixed(2) + '%',
+            },
+            this.context
+          );
+        }
+      }
+
       this.pushOrderAndTradeEvents(order, symbol, side, amount, 'AI', 'signal', price);
 
       // Check if order was actually filled
@@ -335,17 +428,19 @@ export class OrderExecutor {
   private async executeLongOrder(
     signal: TradingSignal,
     sizing: PositionSizing,
-    currentPrice: number
+    currentPrice: number,
+    indicators?: TechnicalIndicators
   ): Promise<OrderResult> {
-    return this.executeDirectionalOrder(signal, sizing, currentPrice, 'buy');
+    return this.executeDirectionalOrder(signal, sizing, currentPrice, 'buy', indicators);
   }
 
   private async executeShortOrder(
     signal: TradingSignal,
     sizing: PositionSizing,
-    currentPrice: number
+    currentPrice: number,
+    indicators?: TechnicalIndicators
   ): Promise<OrderResult> {
-    return this.executeDirectionalOrder(signal, sizing, currentPrice, 'sell');
+    return this.executeDirectionalOrder(signal, sizing, currentPrice, 'sell', indicators);
   }
 
   private async executeCloseOrder(
