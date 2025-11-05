@@ -159,6 +159,7 @@ See [Command Reference](commands.md#arena-commands) for complete API documentati
 ## Example Configurations
 
 See `config/arena/` for examples:
+
 - `example-arena.json` - Basic comparison
 - `ppc.json` - Prompt pack comparison
 - `risk-sweep.json` - Risk parameter sweep
@@ -167,6 +168,7 @@ See `config/arena/` for examples:
 ## Storage
 
 Arena results stored in `logs/arena.db`:
+
 - `arena_runs` - Arena metadata
 - `drone_results` - Final metrics
 - `drone_snapshots` - Historical equity curves

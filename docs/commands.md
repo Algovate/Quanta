@@ -123,9 +123,6 @@ quanta log view --context Workflow --level info
 
 ---
 
- 
- 
-
 ### `trade backtest` - Run Backtest
 
 Run backtest with historical data. Results display with enhanced formatting and detailed metrics.

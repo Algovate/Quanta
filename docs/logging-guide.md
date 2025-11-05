@@ -78,6 +78,7 @@ export LOG_DIR=/absolute/path/to/logs/text
 ```
 
 **Options:**
+
 - `level`: `error`, `warn`, `info`, `debug` (default: `info`)
 - `textLogDir`: Directory for JSONL files (overridden by `LOG_DIR`)
 - `retentionDays`: Days to keep logs (default: 7)

@@ -143,8 +143,6 @@ export class TradeCommands {
           await TradeCommands.runBacktest(options);
         }, 'TradeCommands.backtest');
       });
-
-    
   }
 
   private static async startTrading(options: { env?: string; coins?: string }): Promise<void> {
@@ -451,8 +449,6 @@ export class TradeCommands {
       throw error;
     }
   }
-
-  
 
   /**
    * Validate AI configuration

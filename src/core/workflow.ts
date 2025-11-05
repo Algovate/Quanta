@@ -1,46 +1,91 @@
 import { Exchange } from '../exchange/types.js';
 import { MarketDataProvider } from '../data/market.js';
-import { OpenRouterClient, AIContext, EnrichedPositionInfo } from '../ai/agent.js';
+import { OpenRouterClient } from '../ai/agent.js';
 import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
 import { Account, Position, TradingSignal } from '../types/index.js';
 import { EventBus, TypedEventBus, type EventKey, type EventPayloads } from './event-bus.js';
 import { BarScheduler, type BarTimeframe } from './scheduler.js';
-import { aggregatePositionMetrics, PositionAggregates } from '../execution/position-utils.js';
 import { validateAccount } from '../utils/account-validation.js';
+import type { PositionAggregates } from '../execution/position-utils.js';
 import { CycleLogger, CycleDisplay } from './display/index.js';
 import chalk from 'chalk';
 import { ExchangeSnapshotService } from './exchange-snapshot.js';
 import { UnifiedLogger } from '../logging/index.js';
-import { createTickerPriceGetter } from '../utils/ticker-cache.js';
 import { ExecutionSessionManager } from './execution-session-manager.js';
 import { MarketDataFetcher } from './market-data-fetcher.js';
 import { PerformanceMetricsCalculator } from './performance-metrics-calculator.js';
 import { CycleSummaryFormatter } from './cycle-summary-formatter.js';
 import { SignalProcessor } from './signal-processor.js';
+import { runStages } from './workflow-pipeline.js';
+import type { WorkflowContext, CycleIO } from './workflow-types.js';
+import {
+  MonitorPositionsStage,
+  FetchMarketDataStage,
+  GenerateSignalsStage,
+  ProcessSignalsStage,
+  ExecuteSignalsStage,
+  FinalizeCycleStage,
+} from './workflow-stages/index.js';
+import { formatWithArenaPrefix } from './log-prefix-formatter.js';
+import { CycleEvents } from './cycle-events.js';
 
-// Decision information types for signal execution
-import type { SignalDecisionInfo } from './cycle-summary-formatter.js';
+/**
+ * TradingWorkflow - Orchestrates the complete trading cycle
+ *
+ * ## Architecture Overview
+ *
+ * TradingWorkflow manages the execution of trading cycles, where each cycle:
+ * 1. Monitors existing positions (TP1, breakeven, stop loss, etc.)
+ * 2. Fetches market data for configured coins and timeframes
+ * 3. Generates AI trading signals based on market conditions
+ * 4. Processes and displays signals
+ * 5. Executes signals (LONG/SHORT/CLOSE) with risk management
+ * 6. Finalizes the cycle (metrics, snapshots, summaries)
+ *
+ * ## Pipeline Architecture
+ *
+ * The workflow supports a staged pipeline architecture for improved modularity:
+ * - **Stages**: Independent, composable units that process a `CycleIO` object
+ * - **Pipeline Runner**: Chains stages sequentially, short-circuiting on aborts
+ * - **Context**: Shared immutable dependencies (exchange, logger, config, etc.)
+ * - **CycleIO**: Mutable cycle data (account, positions, marketData, signals)
+ *
+ * Stages are located in `workflow-stages/`:
+ * - `MonitorPositionsStage` - Position monitoring and exit decisions
+ * - `FetchMarketDataStage` - Market data retrieval with caching
+ * - `GenerateSignalsStage` - AI signal generation
+ * - `ProcessSignalsStage` - Signal post-processing and display
+ * - `ExecuteSignalsStage` - Signal execution with risk management
+ * - `FinalizeCycleStage` - Metrics, snapshots, and cycle completion
+ *
+ * The workflow always uses the staged pipeline; the legacy inline orchestration was removed.
+ *
+ * ## State Management
+ *
+ * - `SystemState`: Tracks cycle count, P&L, win rate, drawdown protection
+ * - State is updated atomically during cycle execution
+ * - Performance metrics are calculated and aggregated per cycle
+ *
+ * ## Error Handling
+ *
+ * - Errors in any stage abort the cycle gracefully
+ * - Errors are logged via UnifiedLogger with full context
+ * - Cycle errors emit `cycle:error` events
+ * - Failed cycles don't prevent subsequent cycles from running
+ *
+ * ## Logging
+ *
+ * - Uses UnifiedLogger for structured, queryable logs
+ * - Supports Arena mode with drone/session prefixes
+ * - Cycle summaries are logged to operation logs
+ * - All stages log their start/complete/duration to the same operation
+ */
 
-// Decision information types for position monitoring
-interface PositionDecisionInfo {
-  symbol: string;
-  side: string;
-  decisions: Array<{
-    type:
-      | 'maintenance'
-      | 'tp1'
-      | 'breakeven'
-      | 'auto_close'
-      | 'stop_loss'
-      | 'take_profit'
-      | 'emergency';
-    action: string;
-    reason: string;
-    details?: Record<string, any>;
-  }>;
-}
+// Decision information types for signal execution (handled within stages)
+
+// (legacy position decision info type removed; pipeline stages log decisions directly)
 
 export interface SystemState {
   isRunning: boolean;
@@ -234,36 +279,7 @@ export class TradingWorkflow {
    * - Background: Buffered logger output for efficiency
    */
   private emitLog(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
-    // Prefix message with drone and session info when in arena context
-    let prefixedMessage = message;
-    if (this.loggerContext.startsWith('Arena:')) {
-      // Extract drone/arena context from loggerContext
-      const parts = this.loggerContext.split(':');
-      if (parts.length >= 4 && parts[0] === 'Arena' && parts[2] === 'Drone') {
-        const droneId = parts[3];
-        const droneName = parts.length >= 5 ? parts[4] : undefined;
-
-        // Get ExecutionSession information
-        const sessionManager = ExecutionSessionManager.getInstance();
-        const activeSession = sessionManager.getActive();
-
-        // Build prefix
-        const prefixParts: string[] = [];
-        if (droneName) {
-          prefixParts.push(chalk.cyan(`[${droneName}]`));
-        } else {
-          prefixParts.push(chalk.cyan(`[Drone:${droneId}]`));
-        }
-        if (activeSession) {
-          prefixParts.push(chalk.gray(`[Session:${activeSession.id}]`));
-        }
-
-        if (prefixParts.length > 0) {
-          prefixedMessage = `${prefixParts.join(' ')} ${message}`;
-        }
-      }
-    }
-
+    const prefixedMessage = formatWithArenaPrefix(this.loggerContext, message);
     this.cycleLogger.log(level, prefixedMessage);
   }
 
@@ -381,7 +397,7 @@ export class TradingWorkflow {
       }
 
       // Emit cycle start event
-      this.emitEvent('cycle:start', {
+      this.emitEvent(CycleEvents.Start, {
         cycleCount: this.state.cycleCount,
         timestamp: Date.now(),
         startTime: this.state.startTime,
@@ -464,883 +480,55 @@ export class TradingWorkflow {
       // Per-cycle ticker cache to avoid redundant fetches (created early for position monitoring)
       const tickerCache = new Map<string, { price: number; timestamp: number }>();
 
-      // Helper to get ticker price with caching
-      // Returns undefined if price is invalid or unavailable (caller must handle)
-      const getTickerPrice = createTickerPriceGetter(
-        tickerCache,
-        this.snapshotService,
-        this.unifiedLogger,
-        this.loggerContext
-      );
+      // Ticker price helper created by stages when needed
 
-      // 2. Monitor existing positions
-      this.unifiedLogger.startStage(cycleOperationId, 'monitor_positions', {
-        positionsCount: positions.length,
-      });
-      let positionDecisionInfos: PositionDecisionInfo[] = [];
-
-      if (positions.length > 0) {
-        // Enrich positions with custom exit plans if getter is available
-        const enrichedPositions = this.getCustomExitPlans
-          ? positions.map(p => {
-              const customPlan = this.getCustomExitPlans!(p.symbol, p.side);
-              return {
-                ...p,
-                customStopLoss: customPlan.stopLoss,
-                customTakeProfit: customPlan.takeProfit,
-              };
-            })
-          : positions;
-
-        const monitorStartTime = Date.now();
-        positionDecisionInfos = await this.positionMonitor.monitorPositions(
-          enrichedPositions,
-          this.exchange,
-          getTickerPrice
-        );
-        const monitorDuration = Date.now() - monitorStartTime;
-
-        // Build decision path for monitor_positions
-        const positionsWithDecisions = positionDecisionInfos.filter(p => p.decisions.length > 0);
-        const totalDecisions = positionDecisionInfos.reduce(
-          (sum, p) => sum + p.decisions.length,
-          0
-        );
-
-        if (totalDecisions > 0) {
-          // Group decisions by type
-          const decisionsByType: Record<string, number> = {};
-          for (const pos of positionDecisionInfos) {
-            for (const decision of pos.decisions) {
-              decisionsByType[decision.type] = (decisionsByType[decision.type] || 0) + 1;
-            }
-          }
-
-          // Record validation checks for each position decision
-          for (const pos of positionsWithDecisions) {
-            for (const decision of pos.decisions) {
-              const checkName = `${decision.type}_${pos.symbol}`;
-              const checkReason = `${pos.symbol} (${pos.side}): ${decision.action} - ${decision.reason}`;
-
-              this.unifiedLogger.recordValidationCheck(cycleOperationId, 'monitor_positions', {
-                name: checkName,
-                passed: true,
-                reason: checkReason,
-                details: {
-                  symbol: pos.symbol,
-                  side: pos.side,
-                  decisionType: decision.type,
-                  action: decision.action,
-                  reason: decision.reason,
-                  ...decision.details,
-                },
-              });
-            }
-          }
-
-          // Build decision summary
-          const decisionParts: string[] = [];
-          if (decisionsByType['tp1']) {
-            decisionParts.push(`${decisionsByType['tp1']} TP1 (50% close)`);
-          }
-          if (decisionsByType['breakeven']) {
-            decisionParts.push(`${decisionsByType['breakeven']} breakeven`);
-          }
-          if (decisionsByType['auto_close']) {
-            decisionParts.push(`${decisionsByType['auto_close']} auto-close`);
-          }
-          if (decisionsByType['stop_loss']) {
-            decisionParts.push(`${decisionsByType['stop_loss']} stop loss`);
-          }
-          if (decisionsByType['take_profit']) {
-            decisionParts.push(`${decisionsByType['take_profit']} take profit`);
-          }
-          if (decisionsByType['maintenance']) {
-            decisionParts.push(`${decisionsByType['maintenance']} maintenance`);
-          }
-          if (decisionsByType['emergency']) {
-            decisionParts.push(`${decisionsByType['emergency']} emergency`);
-          }
-          const decision =
-            decisionParts.length > 0
-              ? `Monitored ${positions.length} positions: ${decisionParts.join(', ')}`
-              : `Monitored ${positions.length} positions: no actions`;
-
-          // Build detailed reason
-          const reasonParts: string[] = [];
-          reasonParts.push(
-            `Monitored ${positions.length} positions, ${totalDecisions} decisions made`
-          );
-
-          if (positionsWithDecisions.length > 0) {
-            reasonParts.push(`\nPositions with actions (${positionsWithDecisions.length}):`);
-            for (const pos of positionsWithDecisions.slice(0, 5)) {
-              // Top 5
-              const decisionSummary = pos.decisions.map(d => d.type).join(', ');
-              reasonParts.push(`  • ${pos.symbol} (${pos.side}): ${decisionSummary}`);
-              for (const decision of pos.decisions.slice(0, 2)) {
-                reasonParts.push(`    → ${decision.action}: ${decision.reason}`);
-              }
-            }
-            if (positionsWithDecisions.length > 5) {
-              reasonParts.push(`  ... and ${positionsWithDecisions.length - 5} more`);
-            }
-          }
-
-          const reason = reasonParts.join('\n');
-
-          // Record operation-level decision path (append to existing)
-          this.unifiedLogger.appendDecisionChoice(cycleOperationId, {
-            step: 'monitor_positions',
-            decision,
-            reason,
-            factors: {
-              positions: positionDecisionInfos,
-              summary: {
-                total: positions.length,
-                withDecisions: positionsWithDecisions.length,
-                totalDecisions,
-              },
-              decisionsByType,
-              decisionsDetail: positionDecisionInfos.map(p => ({
-                symbol: p.symbol,
-                side: p.side,
-                decisions: p.decisions,
-              })),
-            },
-          });
-        }
-
-        this.unifiedLogger.completeStage(cycleOperationId, 'monitor_positions', {
-          duration: monitorDuration,
-        });
-      } else {
-        this.unifiedLogger.completeStage(cycleOperationId, 'monitor_positions', {
-          duration: 0,
-        });
-      }
-
-      // Guard: check if stopped mid-cycle
-      if (!this.state.isRunning) {
-        return;
-      }
-
-      // 2.5. Refresh snapshot after monitoring (monitor may have closed positions)
-      // This ensures AI signal generation and signal execution use the latest position state
-      this.unifiedLogger.startStage(cycleOperationId, 'refresh_snapshot_after_monitoring', {});
-      const refreshStartTime = Date.now();
-      const { account: updatedAccount, positions: updatedPositions } =
-        await this.snapshotService.getSnapshot();
-      const refreshDuration = Date.now() - refreshStartTime;
-      this.unifiedLogger.recordAPILatency('exchange.getAccount', refreshDuration);
-      this.unifiedLogger.completeStage(cycleOperationId, 'refresh_snapshot_after_monitoring', {
-        positionsCount: updatedPositions.length,
-        positionsDiff: positions.length - updatedPositions.length,
-        duration: refreshDuration,
-      });
-
-      // Log if positions changed after monitoring
-      if (positions.length !== updatedPositions.length) {
-        this.unifiedLogger.info(
-          'Positions changed after monitoring',
-          {
-            before: positions.length,
-            after: updatedPositions.length,
-            closed: positions.length - updatedPositions.length,
-          },
-          this.loggerContext
-        );
-      }
-
-      // 3. Get market data for all coins
-      this.emitLog('info', chalk.gray('⏳ Fetching market data...'));
-      this.unifiedLogger.startStage(cycleOperationId, 'fetch_market_data', {
-        coins: this.config.coins,
-        timeframes: this.config.marketTimeframes ?? ['3m', '4h'],
-      });
-      const fetchStart = Date.now();
-      const timeframes = this.config.marketTimeframes ?? ['3m', '1h', '4h'];
-
-      // Fetch market data based on configuration
-      const marketDataResult = await this.marketDataFetcher.fetchMarketData({
-        coins: this.config.coins,
-        timeframes,
-        tickerCache,
-        snapshotService: this.snapshotService,
+      // 2-7. Pipeline execution (monitor -> fetch -> generate -> process -> execute -> finalize)
+      // mark optional getter as used to satisfy TS when custom plans are provided externally
+      void this.getCustomExitPlans;
+      const tradesBeforePipeline = this.state.totalTrades;
+      const ctx: WorkflowContext = {
+        exchange: this.exchange,
+        marketDataProvider: this.marketDataProvider,
         unifiedLogger: this.unifiedLogger,
-        loggerContext: this.loggerContext,
-        parallel: this.config.marketFetchParallel !== false,
-      });
-
-      const { marketData: allMarketData, successCount, failCount } = marketDataResult;
-      const fetchMs = Date.now() - fetchStart;
-
-      // Calculate data quality metrics
-      const expectedItems = this.config.coins.length * timeframes.length;
-      const missingItems: string[] = [];
-      const gaps: Array<{
-        symbol: string;
-        timeframe: string;
-        missingFrom: number;
-        missingTo: number;
-      }> = [];
-      let latestTimestamp = 0;
-      let staleCount = 0;
-
-      for (const coin of this.config.coins) {
-        for (const timeframe of timeframes) {
-          const key = `${coin}:${timeframe}`;
-          const data = allMarketData.find(md => md.coin === coin && md.timeframe === timeframe);
-          if (!data) {
-            missingItems.push(key);
-          } else {
-            // Check for latest timestamp
-            if (data.candlesticks.length > 0) {
-              const lastCandle = data.candlesticks[data.candlesticks.length - 1];
-              if (lastCandle.timestamp > latestTimestamp) {
-                latestTimestamp = lastCandle.timestamp;
-              }
-            }
-            // Check if stale
-            if (data.isStale || (data.cacheAge && data.cacheAge > 60000)) {
-              staleCount++;
-            }
-            // Detect gaps in candlesticks
-            if (data.candlesticks.length > 1) {
-              const timeframeMs = timeframe === '3m' ? 3 * 60 * 1000 : 4 * 60 * 60 * 1000;
-              for (let i = 1; i < data.candlesticks.length; i++) {
-                const gap = data.candlesticks[i].timestamp - data.candlesticks[i - 1].timestamp;
-                if (gap > timeframeMs * 1.5) {
-                  gaps.push({
-                    symbol: `${coin}/USDT`,
-                    timeframe,
-                    missingFrom: data.candlesticks[i - 1].timestamp + timeframeMs,
-                    missingTo: data.candlesticks[i].timestamp - timeframeMs,
-                  });
-                }
-              }
-            }
-          }
-        }
-      }
-
-      const dataQuality = {
-        freshness: latestTimestamp > 0 ? Date.now() - latestTimestamp : 0,
-        isStale: staleCount > 0,
-        completeness: expectedItems > 0 ? allMarketData.length / expectedItems : 0,
-        gapsCount: gaps.length,
-      };
-
-      this.unifiedLogger.recordDataQuality(cycleOperationId, 'fetch_market_data', dataQuality);
-
-      const marketDataQuality = {
-        expectedItems,
-        actualItems: allMarketData.length,
-        missingItems: missingItems.length > 0 ? missingItems : undefined,
-        gaps: gaps.length > 0 ? gaps : undefined,
-        staleCount,
-        latestTimestamp,
-      };
-
-      this.unifiedLogger.completeStage(cycleOperationId, 'fetch_market_data', {
-        itemsCount: allMarketData.length,
-        successCount,
-        failCount,
-        duration: fetchMs,
-        dataQuality: marketDataQuality,
-      });
-
-      // Record operation-level data quality metrics
-      this.unifiedLogger.recordOperationDataQuality(cycleOperationId, {
-        freshness: {
-          latestTimestamp,
-          ageMs: dataQuality.freshness,
-          isStale: dataQuality.isStale,
-        },
-        completeness: {
-          expectedItems,
-          actualItems: allMarketData.length,
-          missingItems: missingItems.length > 0 ? missingItems : undefined,
-        },
-        gaps: gaps.length > 0 ? gaps : undefined,
-      });
-      this.emitLog(
-        'info',
-        chalk.gray(
-          `✅ Market data ready: ${allMarketData.length} items | ${successCount} ok / ${failCount} failed | ${this.config.coins.length} coin(s) in ${fetchMs}ms`
-        )
-      );
-
-      // Validate market data before generating signals
-      // If all market data fails or insufficient data, skip signal generation
-      if (successCount === 0 || allMarketData.length === 0) {
-        this.emitLog(
-          'warn',
-          `⚠️  No market data available - skipping signal generation for this cycle`
-        );
-        this.unifiedLogger.warn(
-          'Cycle aborted due to insufficient market data',
-          {
-            cycleCount: this.state.cycleCount,
-            successCount,
-            failCount,
-            coins: this.config.coins.length,
-          },
-          this.loggerContext
-        );
-
-        // Record error and complete cycle
-        this.unifiedLogger.recordError(new Error('Insufficient market data'), {
-          cycleId: this.state.cycleCount,
-          operationId: cycleOperationId,
-        });
-        this.unifiedLogger.completeStage(
-          cycleOperationId,
-          'fetch_market_data',
-          undefined,
-          new Error('Insufficient market data')
-        );
-        this.unifiedLogger.completeOperation(
-          cycleOperationId,
-          'failed',
-          undefined,
-          new Error('Insufficient market data')
-        );
-        return; // Skip signal generation and execution
-      }
-
-      // 4. Generate AI signals
-      this.emitLog('info', chalk.gray('⏳ Generating AI signals...'));
-      this.unifiedLogger.startStage(cycleOperationId, 'generate_signals', {
-        marketDataCount: allMarketData.length,
-      });
-      const context: AIContext = {
-        startTime: this.state.startTime,
-        currentTime: Date.now(),
-        invokeCount: this.state.cycleCount,
-        tradableCoins: this.config.coins,
-        maxPositions: this.config.maxPositions,
-        maxRiskPerTrade: this.config.riskParams.maxRiskPerTrade,
-        maxLeverage: this.config.riskParams.maxLeverage,
-        minLeverage: this.config.riskParams.minLeverage,
-        defaultStopLoss: this.config.riskParams.defaultStopLoss,
-        promptOptions: {
-          candles3m: this.config.ai?.prompt?.candles?.m3 ?? 10,
-          candles1h: this.config.ai?.prompt?.candles?.h1 ?? 8,
-          candles4h: this.config.ai?.prompt?.candles?.h4 ?? 5,
-          sections: {
-            candlesTA: this.config.ai?.prompt?.sections?.candlesTA ?? true,
-            sentiment: this.config.ai?.prompt?.sections?.sentiment ?? true,
-            technicalState: this.config.ai?.prompt?.sections?.technicalState ?? true,
-          },
-        },
-      };
-
-      const signalStartTime = Date.now();
-      let signals: TradingSignal[] = [];
-      let signalError: Error | undefined;
-
-      try {
-        // Calculate enriched position information for AI
-        // This provides accurate stop-loss/take-profit prices and exit status
-        const enrichedPositions: EnrichedPositionInfo[] = [];
-        for (const position of updatedPositions) {
-          // Get current price from ticker cache or market data
-          let currentPrice: number | undefined = tickerCache.get(position.symbol)?.price;
-
-          // If not in cache, try to get from market data
-          if (!currentPrice) {
-            const positionMarketData = allMarketData.find(md => md.coin === position.symbol);
-            if (positionMarketData) {
-              currentPrice = positionMarketData.currentPrice;
-            }
-          }
-
-          // If still no price, skip enrichment for this position
-          if (!currentPrice || !isFinite(currentPrice) || currentPrice <= 0) {
-            this.unifiedLogger.warn(
-              `Cannot enrich position ${position.symbol}: invalid current price`,
-              {},
-              this.loggerContext
-            );
-            continue;
-          }
-
-          // Calculate effective stop loss and take profit prices
-          const effectiveStopLoss = this.riskManager.getEffectiveStopLossPrice(
-            position,
-            currentPrice
-          );
-          const effectiveTakeProfit = this.riskManager.getEffectiveTakeProfitPrice(
-            position,
-            currentPrice
-          );
-
-          // Calculate distance to stop loss/take profit as percentage
-          let distanceToStopLoss: number;
-          let distanceToTakeProfit: number;
-
-          if (position.side === 'long') {
-            distanceToStopLoss = ((currentPrice - effectiveStopLoss) / effectiveStopLoss) * 100;
-            distanceToTakeProfit = ((effectiveTakeProfit - currentPrice) / currentPrice) * 100;
-          } else {
-            // For short positions, stop loss is above entry, take profit is below
-            distanceToStopLoss = ((effectiveStopLoss - currentPrice) / effectiveStopLoss) * 100;
-            distanceToTakeProfit = ((currentPrice - effectiveTakeProfit) / currentPrice) * 100;
-          }
-
-          // Check for trailing stop, custom stop loss/take profit
-          const hasTrailingStop =
-            position.trailingStopPrice !== undefined && position.trailingStopPrice !== null;
-          const hasCustomStopLoss =
-            position.customStopLoss !== undefined && position.customStopLoss !== null;
-          const hasCustomTakeProfit =
-            position.customTakeProfit !== undefined && position.customTakeProfit !== null;
-
-          // Get TP1 status from position monitor
-          const tp1Executed = this.positionMonitor.getTp1Status(position.symbol);
-
-          // Calculate R-multiple
-          const rMultiple = this.riskManager.computeRMultiple(position, currentPrice);
-
-          enrichedPositions.push({
-            position,
-            effectiveStopLoss,
-            effectiveTakeProfit,
-            currentPrice,
-            distanceToStopLoss,
-            distanceToTakeProfit,
-            hasTrailingStop,
-            hasCustomStopLoss,
-            hasCustomTakeProfit,
-            tp1Executed,
-            rMultiple,
-          });
-        }
-
-        // Use updated positions and account after monitoring
-        // This ensures AI sees the latest state (positions closed by monitor, account updated by closed positions)
-        // Pass enriched position information for accurate exit decision making
-        signals = await this.aiAgent.generateTradingSignal(
-          allMarketData,
-          updatedAccount,
-          updatedPositions,
-          context,
-          enrichedPositions
-        );
-        this.state.totalSignals += signals.length;
-        const signalDuration = Date.now() - signalStartTime;
-        this.unifiedLogger.recordAPILatency('ai.generateSignal', signalDuration);
-
-        // Calculate signal quality metrics
-        const actionCounts: Record<string, number> = {};
-        const confidenceScores: number[] = [];
-        for (const signal of signals) {
-          actionCounts[signal.action] = (actionCounts[signal.action] || 0) + 1;
-          confidenceScores.push(signal.confidence);
-        }
-        const avgConfidence =
-          confidenceScores.length > 0
-            ? confidenceScores.reduce((a, b) => a + b, 0) / confidenceScores.length
-            : 0;
-        const minConfidence = confidenceScores.length > 0 ? Math.min(...confidenceScores) : 0;
-        const maxConfidence = confidenceScores.length > 0 ? Math.max(...confidenceScores) : 0;
-
-        // Record decision metrics for signal generation
-        if (signals.length > 0) {
-          const decisionMetrics = {
-            confidence: avgConfidence,
-            threshold: 0.55, // MIN_CONFIDENCE from SIGNAL_VALIDATION
-            reasoning: `Generated ${signals.length} signals from ${allMarketData.length} market data items`,
-            factors: {
-              actionDistribution: actionCounts,
-              confidenceRange: { min: minConfidence, max: maxConfidence, avg: avgConfidence },
-              marketDataCount: allMarketData.length,
-              promptOptions: context.promptOptions,
-            },
-          };
-
-          this.unifiedLogger.recordDecisionMetrics(
-            cycleOperationId,
-            'generate_signals',
-            decisionMetrics
-          );
-
-          // Build enriched decision path with AI reasoning
-          const decision = this.cycleSummaryFormatter.buildSignalDecisionString(signals);
-          const reason = this.cycleSummaryFormatter.buildSignalDecisionReason(
-            signals,
-            allMarketData.length
-          );
-          const decisionConfidence = this.cycleSummaryFormatter.calculatePrimaryDecisionConfidence(
-            signals,
-            confidenceScores,
-            avgConfidence
-          );
-
-          // Record operation-level decision path with enriched information
-          this.unifiedLogger.recordDecisionPath(cycleOperationId, {
-            choices: [
-              {
-                step: 'generate_signals',
-                decision,
-                reason,
-                confidence: decisionConfidence,
-                threshold: 0.55,
-                factors: {
-                  signals: signals.map(s => ({
-                    coin: s.coin,
-                    action: s.action,
-                    confidence: s.confidence,
-                    reasoning: s.reasoning,
-                    entryPrice: s.entry_price,
-                    positionSize: s.position_size,
-                    stopLoss: s.stop_loss,
-                    profitTarget: s.profit_target,
-                    invalidationCondition: s.invalidation_condition,
-                  })),
-                  actionDistribution: actionCounts,
-                  confidenceRange: { min: minConfidence, max: maxConfidence, avg: avgConfidence },
-                  marketDataCount: allMarketData.length,
-                  promptOptions: context.promptOptions,
-                },
-              },
-            ],
-          });
-        }
-
-        this.unifiedLogger.completeStage(cycleOperationId, 'generate_signals', {
-          signalCount: signals.length,
-          duration: signalDuration,
-          signalQuality: {
-            actionDistribution: actionCounts,
-            confidenceStats: {
-              min: minConfidence,
-              max: maxConfidence,
-              avg: avgConfidence,
-            },
-            aiContext: {
-              invokeCount: context.invokeCount,
-              tradableCoins: context.tradableCoins.length,
-              maxPositions: context.maxPositions,
-              promptOptions: context.promptOptions,
-            },
-          },
-        });
-      } catch (error) {
-        signalError = error instanceof Error ? error : new Error(String(error));
-        this.unifiedLogger.recordError(signalError, {
-          cycleId: this.state.cycleCount,
-          operationId: cycleOperationId,
-        });
-        this.unifiedLogger.completeStage(
-          cycleOperationId,
-          'generate_signals',
-          undefined,
-          signalError
-        );
-        throw error;
-      }
-
-      // Emit signals generated event
-      this.emitEvent('cycle:signals', {
-        cycleCount: this.state.cycleCount,
-        timestamp: Date.now(),
-        signalCount: signals.length,
-        signals: signals.map(s => ({ coin: s.coin, action: s.action, confidence: s.confidence })),
-      });
-
-      // 5. Process and display signals
-      await this.signalProcessor.processSignals(signals, {
+        snapshotService: this.snapshotService,
+        riskManager: this.riskManager,
+        orderExecutor: this.orderExecutor,
+        positionMonitor: this.positionMonitor,
+        aiAgent: this.aiAgent,
+        marketDataFetcher: this.marketDataFetcher,
+        signalProcessor: this.signalProcessor,
         isBackgroundMode: this.isBackgroundMode,
-        tickerCache,
-        snapshotService: this.snapshotService,
-        unifiedLogger: this.unifiedLogger,
-        loggerContext: this.loggerContext,
+        config: this.config,
         eventBus: this.eventBus,
+        loggerContext: this.loggerContext,
+        executeSignalFn: this.executeSignal.bind(this),
         emitLog: (level, message) => this.emitLog(level, message),
-      });
-
-      // 6. Execute all signals
-      const getCachedPrice = createTickerPriceGetter(
-        tickerCache,
-        this.snapshotService,
-        this.unifiedLogger,
-        this.loggerContext
-      );
-
-      // Track trades before execution to compute per-cycle tradeCount delta
-      const tradesBefore = this.state.totalTrades;
-      // Use fresh positions array that gets updated after each signal execution
-      // Start with updated positions from after monitoring (monitor may have closed positions)
-      // This ensures each signal sees the current state (positions opened by previous signals, or closed by monitor)
-      let currentPositions = updatedPositions;
-      let currentAccount = updatedAccount;
-
-      // Start execute_signals stage BEFORE executing signals
-      // This ensures the stage exists when executeSignal tries to record validation checks
-      this.unifiedLogger.startStage(cycleOperationId, 'execute_signals', {
-        signalCount: signals.length,
-        actionableSignals: signals.filter(s => s.action !== 'HOLD').length,
-      });
-      const executeStartTime = Date.now();
-
-      // Calculate signal quality scores and sort signals by quality
-      const signalsWithQuality = signals.map(signal => {
-        const coinMarketData = allMarketData.find(md => md.coin === signal.coin);
-        const indicators = coinMarketData?.indicators;
-
-        // Get multi-timeframe market data for this coin
-        const coinMultiTimeframeData = allMarketData
-          .filter(md => md.coin === signal.coin)
-          .map(md => ({
-            timeframe: md.timeframe,
-            trend: md.trend,
-            indicators: md.indicators,
-          }));
-
-        const qualityScore = this.riskManager
-          .getSignalValidator()
-          .calculateSignalQuality(signal, indicators, coinMultiTimeframeData);
-
-        return {
-          signal,
-          qualityScore,
-          combinedScore: signal.confidence * 0.6 + qualityScore.score * 0.4, // Weighted combination
-        };
-      });
-
-      // Sort signals by combined score (confidence + quality), descending
-      signalsWithQuality.sort((a, b) => b.combinedScore - a.combinedScore);
-
-      // Log signal quality scores
-      for (const { signal, qualityScore, combinedScore } of signalsWithQuality) {
-        this.unifiedLogger.debug(
-          `Signal quality score for ${signal.coin} ${signal.action}`,
-          {
-            coin: signal.coin,
-            action: signal.action,
-            confidence: signal.confidence,
-            qualityScore: qualityScore.score,
-            combinedScore,
-            factors: qualityScore.factors,
-            breakdown: qualityScore.breakdown,
-          },
-          this.loggerContext
-        );
-      }
-
-      // Accumulate decision information for all signals
-      const signalDecisionInfos: SignalDecisionInfo[] = [];
-
-      // Execute signals sequentially, prioritized by quality
-      for (const { signal } of signalsWithQuality) {
-        if (!this.state.isRunning) {
-          break; // Stop processing signals if workflow stopped
-        }
-        const symbol = `${signal.coin}/USDT`;
-        const currentPrice = await getCachedPrice(symbol);
-
-        // Skip signal execution if price is unavailable
-        // Using 0 as fallback would cause invalid position sizing and risk calculations
-        if (currentPrice === undefined || currentPrice <= 0) {
-          this.emitLog(
-            'warn',
-            `⚠️  ${signal.coin}: Skipping signal execution - price unavailable (${currentPrice === undefined ? 'undefined' : `$${currentPrice.toFixed(2)}`})`
-          );
-          this.unifiedLogger.warn(
-            'Signal execution skipped due to unavailable price',
-            {
-              coin: signal.coin,
-              symbol,
-              action: signal.action,
-              price: currentPrice,
-            },
-            this.loggerContext
-          );
-          // Record decision info for skipped signal
-          signalDecisionInfos.push({
-            coin: signal.coin,
-            action: signal.action,
-            validation: { passed: false, reason: 'Price unavailable' },
-            sizing: { passed: false },
-            execution: { expectedPrice: currentPrice ?? undefined }, // Use undefined instead of 0 for invalid price
-          });
-          continue; // Skip this signal and continue with next
-        }
-
-        // Extract indicators from market data for this coin
-        const coinMarketData = allMarketData.find(
-          md => md.coin === signal.coin && md.timeframe === '3m'
-        );
-        const atr14 = coinMarketData?.indicators.atr14;
-        const indicators = coinMarketData?.indicators;
-
-        const result = await this.executeSignal(
-          cycleOperationId,
-          signal,
-          currentAccount,
-          currentPositions,
-          tickerCache,
-          currentPrice,
-          atr14,
-          indicators
-        );
-
-        // Collect decision information
-        if (result.decisionInfo) {
-          signalDecisionInfos.push(result.decisionInfo);
-        }
-
-        // Refresh positions and account after successful signal execution
-        // This ensures subsequent signals see the updated state
-        if (
-          result.success &&
-          (signal.action === 'LONG' || signal.action === 'SHORT' || signal.action === 'CLOSE')
-        ) {
-          try {
-            const snapshot = await this.snapshotService.getSnapshot();
-            currentPositions = snapshot.positions;
-            currentAccount = snapshot.account;
-          } catch (error) {
-            this.unifiedLogger.warn(
-              'Failed to refresh positions after signal execution - aborting remaining signals',
-              {
-                coin: signal.coin,
-                action: signal.action,
-                error: error instanceof Error ? error.message : String(error),
-              },
-              this.loggerContext
-            );
-            // If position refresh fails after executing a signal, abort remaining signals
-            // to prevent stale state from causing duplicate positions or risk violations
-            break; // Exit signal loop to prevent using stale positions
-          }
-        }
-      }
-
-      // Emit execution phase event
-      this.emitEvent('cycle:execution', {
-        cycleCount: this.state.cycleCount,
-        timestamp: Date.now(),
-        executedSignals: signals.filter(s => s.action !== 'HOLD').length,
-        totalTrades: this.state.totalTrades,
-      });
-
-      // 5.5. Refresh account and positions after executing signals using a single snapshot
-      // This is the final state after all signal executions
-      const { account: finalAccount, positions: finalPositions } =
-        await this.snapshotService.getSnapshot();
-
-      const executeDuration = Date.now() - executeStartTime;
-
-      // Build decision path for execute_signals
-      const decisionPath =
-        this.cycleSummaryFormatter.buildExecutionDecisionPath(signalDecisionInfos);
-
-      // Record operation-level decision path (append to existing if any)
-      this.unifiedLogger.appendDecisionChoice(cycleOperationId, {
-        step: 'execute_signals',
-        decision: decisionPath.decision,
-        reason: decisionPath.reason,
-        factors: decisionPath.factors,
-      });
-
-      // Complete signal execution stage
-      this.unifiedLogger.completeStage(cycleOperationId, 'execute_signals', {
-        executedCount: this.state.totalTrades - tradesBefore,
-        duration: executeDuration,
-      });
-
-      // Aggregate once per cycle for reuse
-      const aggregates = aggregatePositionMetrics(finalPositions);
-
-      // 6. Update performance metrics with latest data
-      const metricsUpdate = this.performanceMetricsCalculator.updatePerformanceMetrics(
-        this.state,
-        finalAccount,
-        aggregates
-      );
-      this.state = metricsUpdate.state;
-
-      // Record cycle execution time
-      const cycleDuration = Date.now() - cycleStartTime;
-      this.unifiedLogger.recordCycleTime(this.state.cycleCount, cycleDuration);
-
-      // 7. Log cycle summary with latest data
-      const tradeCountCycle = this.state.totalTrades - tradesBefore;
-      this.logCycleSummary(finalAccount, finalPositions, signals, aggregates, {
-        rejectedSignalsCycle: this.state.rejectedSignalsCycle,
-        tradeCountCycle,
-      });
-
-      // Create system snapshot for state tracking
-      this.unifiedLogger.startStage(cycleOperationId, 'create_snapshot', {});
-      const circuitBreakers = this.getCircuitBreakerStates();
-      const recentOperations = this.getRecentOperationsSummary();
-
-      this.unifiedLogger.createSnapshot(
-        this.state.cycleCount,
-        {
-          equity: finalAccount.equity,
-          balance: finalAccount.balance,
-          marginUsed: aggregates.totalMarginUsed, // Use actual margin used from positions
-          availableMargin: finalAccount.availableMargin, // Use actual available margin
+        emitEvent: (event, payload) => this.emitEvent(event as any, payload as any),
+        cycleSummaryFormatter: this.cycleSummaryFormatter,
+        performanceMetricsCalculator: this.performanceMetricsCalculator,
+        getState: () => ({ ...this.state, tradesBefore: tradesBeforePipeline, cycleStartTime }),
+        updateState: updates => {
+          this.state = { ...this.state, ...(updates as any) };
         },
-        finalPositions.map(p => ({
-          symbol: p.symbol,
-          side: p.side,
-          size: p.size,
-          entryPrice: p.entryPrice,
-          unrealizedPnl: p.unrealizedPnl,
-        })),
-        circuitBreakers,
-        recentOperations
-      );
-      this.unifiedLogger.completeStage(cycleOperationId, 'create_snapshot', {
-        positionsCount: finalPositions.length,
-      });
-
-      // Prepare per-cycle action distribution
-      const actionCounts = { LONG: 0, SHORT: 0, CLOSE: 0, HOLD: 0 } as {
-        LONG: number;
-        SHORT: number;
-        CLOSE: number;
-        HOLD: number;
+        getCircuitBreakerStates: () => this.getCircuitBreakerStates(),
+        getRecentOperationsSummary: () => this.getRecentOperationsSummary(),
+        logCycleSummary: (acc, poss, sigs, aggs, cycleMetrics) =>
+          this.logCycleSummary(acc, poss, sigs, aggs, cycleMetrics),
       };
-      for (const s of signals) {
-        const a = s.action as 'LONG' | 'SHORT' | 'CLOSE' | 'HOLD';
-        if (a in actionCounts) actionCounts[a]++;
-      }
-
-      // Notify cycle completion via event bus (include per-cycle deltas)
-      this.emitEvent('cycle:complete', {
-        cycleCount: this.state.cycleCount,
-        timestamp: Date.now(),
-        duration: Date.now() - this.state.lastUpdate,
-        totalSignals: this.state.totalSignals,
-        totalTrades: this.state.totalTrades,
-        totalPnl: this.state.totalPnl,
-        signalCount: signals.length,
-        tradeCount: this.state.totalTrades - tradesBefore,
-        cyclePnl: this.state.cyclePnl ?? 0,
-        actionCounts,
-      });
-
-      // Aggregate validation checks from execute_signals stage before completing operation
-      this.unifiedLogger.aggregateValidationResults(cycleOperationId, 'execute_signals');
-
-      // Complete cycle operation
-      this.unifiedLogger.completeStage(cycleOperationId, 'cycle_start', {
-        cycleCount: this.state.cycleCount,
-      });
-      this.unifiedLogger.completeOperation(cycleOperationId, 'completed', {
-        cycleCount: this.state.cycleCount,
-        duration: cycleDuration,
-        signalsGenerated: signals.length,
-        tradesExecuted: tradeCountCycle,
-        totalPnl: this.state.totalPnl,
-      });
+      const initialIO: CycleIO = {
+        account,
+        positions,
+        tickerCache,
+      };
+      await runStages(cycleOperationId, ctx, initialIO, [
+        new MonitorPositionsStage(),
+        new FetchMarketDataStage(),
+        new GenerateSignalsStage(),
+        new ProcessSignalsStage(),
+        new ExecuteSignalsStage(),
+        new FinalizeCycleStage(),
+      ]);
+      return;
     } catch (error) {
       const cycleError = error instanceof Error ? error : new Error(String(error));
       this.emitLog('error', `Error in trading cycle: ${error}`);
@@ -1352,7 +540,7 @@ export class TradingWorkflow {
       });
 
       // Emit cycle error event
-      this.emitEvent('cycle:error', {
+      this.emitEvent(CycleEvents.Error, {
         cycleCount: this.state.cycleCount,
         error: cycleError.message,
         timestamp: Date.now(),
