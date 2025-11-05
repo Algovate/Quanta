@@ -1313,10 +1313,6 @@ function calculateStopLoss(
    - Validate first
    - Then go live
 
----
-
-**Last Updated**: January 2025  
-**Version**: 0.3.0
 
 ---
 

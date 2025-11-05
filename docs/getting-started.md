@@ -120,7 +120,3 @@ quanta trade start --env live --coins BTC,ETH
 - **Only use live mode** after thorough testing and with proper risk management
 - **Never trade with money you can't afford to lose**
 
----
-
-**Last Updated**: January 2025  
-**Version**: 0.3.0

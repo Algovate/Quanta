@@ -16,6 +16,7 @@ import { PaperExchange } from '../exchange/paper.js';
 import { OKXExchange } from '../exchange/okx.js';
 import { BinanceExchange } from '../exchange/binance.js';
 import { CoinbaseExchange } from '../exchange/coinbase.js';
+import { HyperliquidExchange } from '../exchange/hyperliquid.js';
 import { EventBus } from '../core/event-bus.js';
 import type { DroneConfig, DroneMetrics } from './types.js';
 import type { ArenaConfig } from './types.js';
@@ -146,9 +147,11 @@ export class DroneInstance extends EventEmitter {
         return new BinanceExchange(apiKey, apiSecret, testnet);
       case 'coinbase':
         return new CoinbaseExchange(apiKey, apiSecret, testnet);
+      case 'hyperliquid':
+        return new HyperliquidExchange(apiKey, apiSecret, testnet);
       default:
         throw new Error(
-          `Unsupported exchange for arena data source: ${name}. Supported: okx, binance, coinbase`
+          `Unsupported exchange for arena data source: ${name}. Supported: okx, binance, coinbase, hyperliquid`
         );
     }
   }

@@ -422,7 +422,3 @@ quanta config init
 - **Solution**: Use `quanta config init` to create from example
 - **Solution**: Check [Configuration Guide](configuration.md) for required fields
 
----
-
-**Last Updated**: January 2025  
-**Version**: 0.3.0

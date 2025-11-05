@@ -246,10 +246,6 @@ For more advanced topics, refer to:
 
 - [Core Concepts](concepts.md) - Complete trading concepts and algorithms
 - [Configuration Guide](configuration.md) - Advanced configuration options
-- [Error Handling & Resilience](error-handling.md) - System resilience patterns
+- [Arena Guide](arena-guide.md) - Multi-drone trading arena
 - [Logging Guide](logging-guide.md) - Operation tracking and analysis
 
----
-
-**Last Updated**: January 2025  
-**Version**: 0.3.0

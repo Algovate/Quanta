@@ -6,28 +6,30 @@ Complete documentation index for the Quanta AI trading system.
 
 ### 🚀 Getting Started
 
-- **[Getting Started](getting-started.md)** (4.0KB)
+- **[Getting Started](getting-started.md)**
   - Installation steps
   - Quick start guide
   - First simulation
 
 ### 📈 Trading
 
-- **[Trading Guide](trading-guide.md)** (8.0KB)
+- **[Trading Guide](trading-guide.md)**
   - Trading modes (simulation/paper/live)
   - Trading lifecycle
   - Risk management
   - Best practices
-- **[Position Auto-Close Strategy](position-auto-close.md)** (12KB)
-  - Flat position detection
-  - R-multiple calculation
-  - Staged exit strategy
-  - Auto-close mechanism
-  - Configuration and examples
+- **[Trading Cycle Price Usage](trading-cycle-price-usage.md)**
+  - Price source and usage in trading cycles
+  - Mark price vs ticker price
+  - Position pricing and execution
+- **[Arena Guide](arena-guide.md)**
+  - Multi-drone trading arena
+  - Parallel execution
+  - Performance comparison
 
 ### ⚙️ Configuration
 
-- **[Configuration Guide](configuration.md)** (8.0KB)
+- **[Configuration Guide](configuration.md)**
   - Configuration files
   - Environment variables
   - CLI configuration
@@ -35,11 +37,11 @@ Complete documentation index for the Quanta AI trading system.
 
 ### 📚 Reference
 
-- **[Command Reference](commands.md)** (24KB)
+- **[Command Reference](commands.md)**
   - Complete command documentation
   - All sub-commands
   - Options and examples
-- **[Supported Exchanges](exchanges.md)** (8.0KB)
+- **[Supported Exchanges](exchanges.md)**
   - Exchange list and features
   - API configuration
   - Abbreviation guide
@@ -49,15 +51,14 @@ Complete documentation index for the Quanta AI trading system.
   - Console interception and original console usage
   - `quanta log view` usage (filters, follow)
   - Configuration (`LOG_DIR`, `logging.textLogDir`, `retentionDays`)
-- **[Error Handling & Resilience](error-handling.md)** (20KB)
-  - Circuit breaker patterns
-  - Retry strategies
-  - Error recovery mechanisms
-  - Resilience best practices
+- **[Log Contexts](log-contexts.md)**
+  - Log context reference
+  - Available contexts for filtering
+  - Dynamic context usage
 
 ### 💡 Concepts & Terminology
 
-- **[Core Concepts](concepts.md)** (28KB) ⭐ COMPREHENSIVE
+- **[Core Concepts](concepts.md)** ⭐ COMPREHENSIVE
   - Complete architecture
   - Trading modes (detailed)
   - Technical indicators
@@ -87,22 +88,6 @@ Complete documentation index for the Quanta AI trading system.
 3. Review [algorithms](concepts.md#algorithms)
 4. Learn [logging system](logging-guide.md) for debugging and analysis
 
-## 📊 Documentation Statistics
-
-| Document               | Size       | Lines      | Purpose                           |
-| ---------------------- | ---------- | ---------- | --------------------------------- |
-| README.md              | 8.0KB      | 218        | Documentation index               |
-| getting-started.md     | 4.0KB      | 126        | Quick setup                       |
-| trading-guide.md       | 8.0KB      | 252        | Trading operations                |
-| position-auto-close.md | 12KB       | ~600       | Flat position auto-close strategy |
-| configuration.md       | 12KB       | 347        | System setup                      |
-| commands.md            | 28KB       | 1,037      | Command reference                 |
-| concepts.md            | 28KB       | 1,293      | Concepts & algorithms             |
-| exchanges.md           | 8.0KB      | 183        | Exchange support                  |
-| logging-guide.md       | 52KB       | 1,718      | Logging concepts + system guide   |
-| error-handling.md      | 20KB       | 688        | Error handling & resilience       |
-| **Total**              | **~180KB** | **~6,462** | Complete docs                     |
-
 ## 🔍 Key Topics
 
 ### Concepts Document Coverage
@@ -131,7 +116,6 @@ Complete documentation index for the Quanta AI trading system.
 - [Stop Loss](concepts.md#stop-loss)
 - [Take Profit](concepts.md#take-profit)
 - [Leverage](concepts.md#leverage)
-- [Flat Auto-Close Strategy](position-auto-close.md)
 
 **AI & Signals**
 
@@ -176,12 +160,12 @@ Complete documentation index for the Quanta AI trading system.
 - **New to trading?** Start with [Getting Started](getting-started.md) and [Concepts](concepts.md)
 - **Setting up?** Follow [Configuration Guide](configuration.md)
 - **Ready to trade?** Read [Trading Guide](trading-guide.md)
-- **Understanding position management?** See [Position Auto-Close Strategy](position-auto-close.md)
+- **Understanding pricing?** See [Trading Cycle Price Usage](trading-cycle-price-usage.md)
 - **Need quick reference?** Check [Commands](commands.md)
 - **Configuring exchanges?** See [Supported Exchanges](exchanges.md)
 - **Understanding concepts?** Study [Concepts](concepts.md)
 - **Debugging?** Read [Logging Guide](logging-guide.md)
-- **Troubleshooting errors?** See [Error Handling & Resilience](error-handling.md)
+- **Filtering logs?** See [Log Contexts](log-contexts.md)
 
 ## 🎓 Concepts Document Highlights
 
@@ -196,24 +180,3 @@ The comprehensive concepts document provides:
 ✅ **Comprehensive Glossary** - 50+ terms defined  
 ✅ **Algorithm Examples** - Code implementations
 
-## 🔄 Documentation Updates
-
-All documentation is actively maintained and continuously improved. Latest updates:
-
-- ✅ Added comprehensive Trading Modes section
-- ✅ Expanded glossary (50+ terms)
-- ✅ Added algorithm examples with code
-- ✅ Enhanced technical indicator explanations
-- ✅ Improved risk management section with formulas
-- ✅ Streamlined documentation structure
-- ✅ Added exchanges support guide
-- ✅ Integrated logging guide with operation-driven logging system
-- ✅ Added log query CLI commands
-- ✅ Added error handling and resilience documentation
-- ✅ Added position auto-close strategy documentation
-- ✅ Updated all documentation statistics and links
-
----
-
-**Version**: 0.4.0  
-**Last Updated**: January 2025

@@ -177,7 +177,3 @@ quanta test exchange --exchange <exchange> --coin BTC
 - Review rate limits
 - Check firewall settings if using VPN or proxy
 
----
-
-**Last Updated**: January 2025  
-**Version**: 0.3.0

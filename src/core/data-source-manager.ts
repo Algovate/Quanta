@@ -4,6 +4,7 @@ import { PaperExchange } from '../exchange/paper.js';
 import { OKXExchange } from '../exchange/okx.js';
 import { BinanceExchange } from '../exchange/binance.js';
 import { CoinbaseExchange } from '../exchange/coinbase.js';
+import { HyperliquidExchange } from '../exchange/hyperliquid.js';
 import { Config, getExchangeConfig } from '../config/settings.js';
 
 export interface DataSourceManager {
@@ -55,9 +56,11 @@ export class SimpleDataSourceManager implements DataSourceManager {
         return new BinanceExchange(config.apiKey, config.apiSecret, config.testnet);
       case 'coinbase':
         return new CoinbaseExchange(config.apiKey, config.apiSecret, config.testnet);
+      case 'hyperliquid':
+        return new HyperliquidExchange(config.apiKey, config.apiSecret, config.testnet);
       default:
         throw new Error(
-          `Unsupported exchange: ${exchangeName}. Supported exchanges: simulator, okx, binance, coinbase`
+          `Unsupported exchange: ${exchangeName}. Supported exchanges: simulator, okx, binance, coinbase, hyperliquid`
         );
     }
   }
@@ -75,9 +78,11 @@ export class SimpleDataSourceManager implements DataSourceManager {
         return new BinanceExchange(config.apiKey, config.apiSecret, config.testnet);
       case 'coinbase':
         return new CoinbaseExchange(config.apiKey, config.apiSecret, config.testnet);
+      case 'hyperliquid':
+        return new HyperliquidExchange(config.apiKey, config.apiSecret, config.testnet);
       default:
         throw new Error(
-          `Unsupported real exchange for data source: ${exchangeName}. Supported: okx, binance, coinbase`
+          `Unsupported real exchange for data source: ${exchangeName}. Supported: okx, binance, coinbase, hyperliquid`
         );
     }
   }

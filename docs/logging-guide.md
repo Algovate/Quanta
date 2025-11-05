@@ -243,7 +243,3 @@ quanta log clean --days 14 --dry-run
 
 Use `quanta log list` to see available log files and their sizes.
 
----
-
-**Last Updated**: November 2025
-**Version**: 0.5.0
