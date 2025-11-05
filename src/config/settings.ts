@@ -167,6 +167,7 @@ const ConfigSchema = z.object({
     apiKey: z.string(),
     model: z.string().default('deepseek/deepseek-chat'),
     temperature: z.number().min(0).max(2).default(0.7),
+    baseUrl: z.string().optional(), // OpenRouter API base URL (defaults to https://openrouter.ai/api/v1)
     tracing: AITracingSchema.optional(),
     prompt: z.object({
       activeGroup: z.string(),
@@ -318,6 +319,7 @@ const DEFAULT_CONFIG: Partial<Config> = {
     apiKey: '',
     model: 'deepseek/deepseek-chat-v3-0324',
     temperature: 0.7,
+    baseUrl: undefined, // Defaults to https://openrouter.ai/api/v1
     tracing: {
       langsmith: {
         enabled: false,
@@ -441,8 +443,9 @@ function parseEnvConfig(): Partial<Config> {
     },
     ai: {
       apiKey: process.env.OPENROUTER_API_KEY || '',
-      model: process.env.AI_MODEL || 'deepseek/deepseek-chat',
+      model: process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'deepseek/deepseek-chat',
       temperature: parseNumberEnv(process.env.AI_TEMPERATURE, 0.7),
+      baseUrl: process.env.OPENROUTER_BASE_URL || undefined,
       tracing: {
         langsmith: {
           enabled: parseBooleanEnv(process.env.LANGCHAIN_TRACING_V2, false),

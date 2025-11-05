@@ -10,7 +10,7 @@ export async function runStages(
   ctx: WorkflowContext,
   initialIO: CycleIO,
   stages: WorkflowStage[]
-): Promise<{ io: CycleIO; lastResult?: StageResult; aborted?: boolean }> {
+): Promise<{ io: CycleIO; lastResult?: StageResult; aborted?: boolean; stopWorkflow?: boolean }> {
   let io = initialIO;
   let lastResult: StageResult | undefined;
 
@@ -20,7 +20,12 @@ export async function runStages(
     lastResult = await stage.run(operationId, ctx, io);
 
     if (lastResult?.abort) {
-      return { io, lastResult, aborted: true };
+      return {
+        io,
+        lastResult,
+        aborted: true,
+        stopWorkflow: lastResult.abort.stopWorkflow,
+      };
     }
 
     if (lastResult?.ioDelta) {

@@ -170,6 +170,13 @@ export class SimulateCommands {
       if (useRealAI) {
         // Try environment variable first, then simulation config
         const apiKey = process.env.OPENROUTER_API_KEY || simulateConfig.ai?.real?.apiKey;
+        const model =
+          process.env.OPENROUTER_MODEL ||
+          process.env.AI_MODEL ||
+          simulateConfig.ai?.real?.model ||
+          'deepseek/deepseek-chat';
+        const temperature = simulateConfig.ai?.real?.temperature || 0.7;
+        const baseUrl = process.env.OPENROUTER_BASE_URL || undefined;
         if (!apiKey) {
           spinner.fail('Real AI requires OPENROUTER_API_KEY');
           console.error(chalk.red('\n❌ Error: Real AI mode requires API key'));
@@ -182,7 +189,7 @@ export class SimulateCommands {
           console.log(chalk.gray('     quanta simulate cycle --coins BTC --ai mock'));
           process.exit(1);
         }
-        aiAgent = new OpenRouterClient(apiKey);
+        aiAgent = new OpenRouterClient(apiKey, model, temperature, undefined, baseUrl);
         console.log(chalk.green('✓ Real AI initialized'));
       } else {
         aiAgent = new MockAIAgent();

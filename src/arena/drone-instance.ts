@@ -105,7 +105,8 @@ export class DroneInstance extends EventEmitter {
       config.aiConfig?.temperature || 0.7,
       config.id,
       this.aiCallQueue,
-      config.promptPack
+      config.promptPack,
+      globalConfig.ai.baseUrl
     );
 
     // Create market provider

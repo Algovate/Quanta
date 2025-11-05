@@ -520,7 +520,7 @@ export class TradingWorkflow {
         positions,
         tickerCache,
       };
-      await runStages(cycleOperationId, ctx, initialIO, [
+      const pipelineResult = await runStages(cycleOperationId, ctx, initialIO, [
         new MonitorPositionsStage(),
         new FetchMarketDataStage(),
         new GenerateSignalsStage(),
@@ -528,6 +528,37 @@ export class TradingWorkflow {
         new ExecuteSignalsStage(),
         new FinalizeCycleStage(),
       ]);
+
+      // If a stage requested workflow stop (e.g., AIClientError), stop the workflow
+      if (pipelineResult.stopWorkflow) {
+        const error = pipelineResult.lastResult?.abort?.error;
+        const errorMessage =
+          error?.message || pipelineResult.lastResult?.abort?.reason || 'AI client error';
+
+        // Log to structured logger
+        this.unifiedLogger.error(
+          `Stopping workflow due to AI client error: ${errorMessage}`,
+          error || new Error(errorMessage),
+          this.loggerContext
+        );
+
+        // Emit to console logger
+        this.emitLog('error', `Stopping workflow: ${errorMessage}`);
+
+        // Also output directly to console for immediate visibility
+        this.originalConsole.error('\n❌ AI Client Error - Stopping Workflow');
+        this.originalConsole.error(`   ${errorMessage}`);
+        if (error instanceof Error && error.stack) {
+          this.originalConsole.error('\n   Error details:');
+          this.originalConsole.error(error.stack.split('\n').slice(0, 3).join('\n'));
+        }
+        this.originalConsole.error('\n');
+
+        // Stop the workflow gracefully
+        await this.stop();
+        return;
+      }
+
       return;
     } catch (error) {
       const cycleError = error instanceof Error ? error : new Error(String(error));

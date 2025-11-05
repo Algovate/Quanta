@@ -251,7 +251,13 @@ export class TradeCommands {
     unifiedLogger.info('', {}, 'TradeStart');
 
     const marketProvider = new MarketDataProvider(exchange);
-    const aiClient = new OpenRouterClient(updatedConfig.ai.apiKey);
+    const aiClient = new OpenRouterClient(
+      updatedConfig.ai.apiKey,
+      updatedConfig.ai.model,
+      updatedConfig.ai.temperature,
+      undefined, // promptGroupName - will use config default
+      updatedConfig.ai.baseUrl
+    );
     const workflowConfig = this.buildWorkflowConfig(config, coins);
     const workflow = new TradingWorkflow(exchange, marketProvider, aiClient, workflowConfig);
 

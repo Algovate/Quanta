@@ -15,7 +15,25 @@ export function createWorkflowDeps(
   workflowConfig: WorkflowConfig;
 } {
   const marketProvider = new MarketDataProvider(exchange);
-  const aiClient = new OpenRouterClient(config.ai.apiKey);
+  // Validate OpenRouter config before creating client
+  try {
+    OpenRouterClient.validateConfig(config.ai.apiKey, config.ai.model, config.ai.baseUrl);
+  } catch (error) {
+    const logger = UnifiedLogger.getInstance();
+    logger.error(
+      'OpenRouter configuration validation failed',
+      error instanceof Error ? error : new Error(String(error)),
+      'createWorkflowDeps'
+    );
+    throw error;
+  }
+  const aiClient = new OpenRouterClient(
+    config.ai.apiKey,
+    config.ai.model,
+    config.ai.temperature,
+    undefined, // promptGroupName - will use config default
+    config.ai.baseUrl
+  );
   // Derive guard bands from market type
   const mt = (config.exchange?.marketType || '').toLowerCase();
   const bands =

@@ -152,7 +152,9 @@ EXCHANGE_MARKET_TYPE=swap    # or spot; aliases 'perp'/'perpetual' → swap
 
 # AI
 OPENROUTER_API_KEY=your_key
-AI_MODEL=deepseek/deepseek-chat-v3-0324
+OPENROUTER_MODEL=deepseek/deepseek-chat-v3-0324  # or use AI_MODEL (legacy)
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1  # optional, defaults to https://openrouter.ai/api/v1
+AI_MODEL=deepseek/deepseek-chat-v3-0324  # legacy, prefer OPENROUTER_MODEL
 AI_TEMPERATURE=0.7
 
 # AI Prompt
@@ -224,9 +226,30 @@ quanta config init
 
 ### AI Settings
 
-- **apiKey**: OpenRouter API key
-- **model**: AI model (default: `deepseek/deepseek-chat-v3-0324`)
+- **apiKey**: OpenRouter API key (required, set via `OPENROUTER_API_KEY` env var or `ai.apiKey` in config)
+- **model**: AI model (default: `deepseek/deepseek-chat-v3-0324`, set via `OPENROUTER_MODEL` env var or `ai.model` in config)
 - **temperature**: Creativity level (default: 0.7)
+- **baseUrl**: OpenRouter API base URL (optional, defaults to `https://openrouter.ai/api/v1`, set via `OPENROUTER_BASE_URL` env var or `ai.baseUrl` in config)
+
+**OpenRouter Configuration Validation:**
+
+At startup, the system validates OpenRouter configuration:
+
+- API key must be present and non-empty
+- Model must be non-empty
+- Base URL format is validated if provided (must be a valid HTTP/HTTPS URL)
+
+If validation fails, the system will fail fast with a clear error message indicating what needs to be fixed.
+
+**Stop-on-AI-Error Behavior:**
+
+When AI client errors occur (4xx status codes such as invalid API key, missing configuration, or payment required), the workflow will stop immediately with clear logging. This prevents the system from continuing to run with invalid AI configuration. Errors that indicate configuration problems (4xx) are distinguished from transient errors (5xx, network errors) which may be retried.
+
+**Configuration Priority:**
+
+1. Environment variables (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`)
+2. `config.json` values (`ai.apiKey`, `ai.model`, `ai.baseUrl`)
+3. Default values (model: `deepseek/deepseek-chat-v3-0324`, baseUrl: `https://openrouter.ai/api/v1`)
 
 ### Trading Settings
 

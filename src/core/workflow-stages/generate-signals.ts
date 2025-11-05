@@ -1,4 +1,5 @@
 import type { CycleIO, StageResult, WorkflowContext, WorkflowStage } from '../workflow-types.js';
+import { AIClientError } from '../../ai/agent.js';
 
 export class GenerateSignalsStage implements WorkflowStage {
   name = 'generate_signals';
@@ -65,6 +66,31 @@ export class GenerateSignalsStage implements WorkflowStage {
       return { ioDelta: { signals } };
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+
+      // If this is an AIClientError, propagate it to stop the workflow
+      if (error instanceof AIClientError) {
+        // Log detailed error information
+        unifiedLogger.error(
+          `AI client error - stopping workflow: ${err.message}`,
+          err,
+          ctx.loggerContext || 'GenerateSignalsStage'
+        );
+        unifiedLogger.recordError(err, {
+          cycleId: (ctx as any)?.getState?.()?.cycleCount ?? 0,
+          operationId,
+        });
+        unifiedLogger.completeStage(operationId, this.name, undefined, err);
+
+        // Emit error via emitLog if available
+        if (ctx.emitLog) {
+          ctx.emitLog('error', `AI client error: ${err.message}`);
+        }
+
+        // Return abort with special flag to indicate workflow should stop
+        return { abort: { reason: 'ai_client_error', error: err, stopWorkflow: true } };
+      }
+
+      // For other errors, log and abort normally
       unifiedLogger.recordError(err, {
         cycleId: (ctx as any)?.getState?.()?.cycleCount ?? 0,
         operationId,

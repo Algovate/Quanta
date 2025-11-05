@@ -161,6 +161,12 @@ export class CircuitBreaker {
       this.onSuccess();
       return result;
     } catch (error) {
+      // If this is an AIClientError, propagate it immediately without using fallback
+      // This allows the workflow to stop on client errors (e.g., 402 Payment Required)
+      if (error && ((error as any).isClientError || (error as any).name === 'AIClientError')) {
+        throw error;
+      }
+
       this.onFailure(error);
 
       // If we have a fallback and circuit is open, use it

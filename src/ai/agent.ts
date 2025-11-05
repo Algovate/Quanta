@@ -16,6 +16,29 @@ import { loadPromptGroup, renderTemplate, type PromptGroup } from './prompt-load
 import { getConfig } from '../config/settings.js';
 import { parseAiResponseWithDetails } from './prompt-parser.js';
 
+/**
+ * Error class for AI client errors (4xx status codes, configuration issues)
+ * These errors indicate problems that won't be resolved by retrying (e.g., invalid API key, missing config)
+ * The workflow should stop immediately when encountering these errors.
+ */
+export class AIClientError extends Error {
+  readonly statusCode?: number;
+  readonly isClientError = true;
+
+  constructor(message: string, statusCode?: number, cause?: Error) {
+    super(message);
+    this.name = 'AIClientError';
+    this.statusCode = statusCode;
+    if (cause) {
+      this.cause = cause;
+    }
+    // Maintain proper stack trace for where our error was thrown (only available on V8)
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, AIClientError);
+    }
+  }
+}
+
 export interface AIResponse {
   coin: string;
   action: 'LONG' | 'SHORT' | 'CLOSE' | 'HOLD';
@@ -67,6 +90,7 @@ export interface AIContext {
 export class OpenRouterClient {
   private apiKey: string;
   private model: string;
+  private baseUrl: string;
   private temperature: number;
   private logger: UnifiedLogger;
   private readonly context = 'OpenRouter';
@@ -78,10 +102,15 @@ export class OpenRouterClient {
     apiKey: string,
     model: string = 'deepseek/deepseek-chat',
     temperature: number = 0.7,
-    promptGroupName?: string
+    promptGroupName?: string,
+    baseUrl?: string
   ) {
+    // Validate configuration
+    this.validateConfig(apiKey, model, baseUrl);
+
     this.apiKey = apiKey;
     this.model = model;
+    this.baseUrl = baseUrl || 'https://openrouter.ai/api/v1';
     this.temperature = temperature;
     this.logger = UnifiedLogger.getInstance();
     this.circuitBreaker = createCircuitBreaker('OpenRouter', {
@@ -93,6 +122,90 @@ export class OpenRouterClient {
     this.promptGroupName = promptGroupName ?? getConfig().ai.prompt.activeGroup;
     // Initialize LangChain tracing from config
     initLangSmithTracing();
+  }
+
+  /**
+   * Validate OpenRouter configuration at startup
+   * Throws AIClientError if configuration is invalid
+   */
+  private validateConfig(apiKey: string, model: string, baseUrl?: string): void {
+    const errors: string[] = [];
+
+    // Validate API key
+    if (!apiKey || apiKey.trim().length === 0) {
+      errors.push(
+        'OPENROUTER_API_KEY is missing or empty. Please set it in config.json or environment variables.'
+      );
+    }
+
+    // Validate model
+    if (!model || model.trim().length === 0) {
+      errors.push(
+        'AI model is missing or empty. Please set ai.model in config.json or OPENROUTER_MODEL environment variable.'
+      );
+    }
+
+    // Validate base URL format if provided
+    if (baseUrl) {
+      try {
+        const url = new URL(baseUrl);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          errors.push(`Invalid baseUrl protocol: ${url.protocol}. Must be http:// or https://`);
+        }
+      } catch {
+        errors.push(
+          `Invalid baseUrl format: ${baseUrl}. Must be a valid URL (e.g., https://openrouter.ai/api/v1)`
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new AIClientError(
+        `OpenRouter configuration validation failed:\n${errors.map(e => `  - ${e}`).join('\n')}`
+      );
+    }
+  }
+
+  /**
+   * Validate OpenRouter configuration and optionally test the API connection
+   * This is a static method that can be called at startup before creating the client
+   */
+  static validateConfig(apiKey: string, model: string, baseUrl?: string): void {
+    const errors: string[] = [];
+
+    // Validate API key
+    if (!apiKey || apiKey.trim().length === 0) {
+      errors.push(
+        'OPENROUTER_API_KEY is missing or empty. Please set it in config.json or environment variables.'
+      );
+    }
+
+    // Validate model
+    if (!model || model.trim().length === 0) {
+      errors.push(
+        'AI model is missing or empty. Please set ai.model in config.json or OPENROUTER_MODEL environment variable.'
+      );
+    }
+
+    // Validate base URL format if provided
+    if (baseUrl) {
+      try {
+        const url = new URL(baseUrl);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          errors.push(`Invalid baseUrl protocol: ${url.protocol}. Must be http:// or https://`);
+        }
+      } catch {
+        errors.push(
+          `Invalid baseUrl format: ${baseUrl}. Must be a valid URL (e.g., https://openrouter.ai/api/v1)`
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new AIClientError(
+        `OpenRouter configuration validation failed:\n${errors.map(e => `  - ${e}`).join('\n')}`
+      );
+    }
   }
 
   /**
@@ -611,7 +724,8 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
 
   /**
    * Translate HTTP errors to user-friendly messages
-   * Preserves the original error structure so retry logic can still check status codes
+   * For 4xx errors (client errors), throws AIClientError to stop the workflow
+   * For 5xx errors (server errors), returns a regular error for retry logic
    */
   private translateOpenRouterError(error: any): any {
     // Handle axios errors with response
@@ -639,6 +753,7 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
           userFriendlyMessage = `OpenRouter API Error (404): Not Found. The requested model or endpoint was not found. ${errorData?.error?.message || statusText || ''}`;
           break;
         case 429:
+          // Rate limit (429) is a client error but may be transient - treat as regular error for retry
           userFriendlyMessage = `OpenRouter API Error (429): Rate Limit Exceeded. You have exceeded the rate limit for your API key. Please wait before retrying or upgrade your plan at https://openrouter.ai.`;
           break;
         default:
@@ -651,7 +766,13 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
           }
       }
 
-      // Preserve original error structure but update message
+      // For 4xx errors (except 429), throw AIClientError to stop workflow
+      if (status >= 400 && status < 500 && status !== 429) {
+        const originalError = error instanceof Error ? error : new Error(String(error));
+        throw new AIClientError(userFriendlyMessage, status, originalError);
+      }
+
+      // For 5xx and 429, return regular error for retry logic
       const translatedError = error instanceof Error ? error : new Error(userFriendlyMessage);
       translatedError.message = userFriendlyMessage;
       // Preserve response property for retry logic
@@ -692,6 +813,7 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
 
   private async callOpenRouterAPI(prompt: string): Promise<string> {
     // Use circuit breaker with fallback to empty response
+    // BUT: AIClientError should propagate to stop workflow, not use fallback
     return await this.circuitBreaker.execute(
       async () => {
         // Use retry logic for the actual API call
@@ -705,8 +827,9 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
               const userPrompt =
                 sepIdx >= 0 ? prompt.substring(sepIdx + separator.length).trim() : '';
 
+              const apiUrl = `${this.baseUrl}/chat/completions`;
               const response = await axios.post(
-                'https://openrouter.ai/api/v1/chat/completions',
+                apiUrl,
                 {
                   model: this.model,
                   messages: [
@@ -745,6 +868,18 @@ Used Margin: ${account.usedMargin.toFixed(2)}`;
             maxDelay: 15000, // Max 15 seconds between retries
             timeout: 30000, // Overall timeout per attempt
             shouldRetry: (error: any) => {
+              // If the error is explicitly classified as AIClientError, do not retry
+              if (error instanceof AIClientError || (error && error.isClientError)) {
+                this.logger.warn(
+                  'Not retrying OpenRouter API call due to AI client error',
+                  {
+                    message: error.message,
+                    status: (error as any)?.statusCode ?? (error as any)?.response?.status,
+                  },
+                  this.context
+                );
+                return false;
+              }
               // Don't retry on 4xx errors (client errors, likely API key or quota issues)
               if (
                 error.response?.status &&

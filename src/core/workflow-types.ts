@@ -80,6 +80,7 @@ export interface CycleIO {
 export interface StageAbort {
   reason: string;
   error?: Error;
+  stopWorkflow?: boolean; // If true, indicates the workflow should stop (e.g., AIClientError)
 }
 
 export interface StageResult<T = Partial<CycleIO>> {

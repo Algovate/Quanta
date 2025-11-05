@@ -68,9 +68,10 @@ export class DroneAIAgent {
     temperature: number,
     private droneId: string,
     private aiCallQueue: AICallQueue,
-    promptGroupName?: string
+    promptGroupName?: string,
+    baseUrl?: string
   ) {
-    this.client = new OpenRouterClient(apiKey, model, temperature, promptGroupName);
+    this.client = new OpenRouterClient(apiKey, model, temperature, promptGroupName, baseUrl);
     this.context = `DroneAIAgent:${droneId}`;
     this.logger.info(`DroneAIAgent initialized for drone ${droneId}`, { droneId }, this.context);
   }

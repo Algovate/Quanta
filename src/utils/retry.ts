@@ -137,6 +137,11 @@ export async function withRetry<T>(fn: () => Promise<T>, config: RetryConfig): P
 
       // If this was the last attempt or we shouldn't retry, throw
       if (attempt >= maxRetries || !shouldRetryError) {
+        // If the error is an AIClientError, propagate it directly without wrapping
+        // This allows the workflow to stop immediately on client errors
+        if (error && (error.isClientError || error.name === 'AIClientError')) {
+          throw error;
+        }
         throw new RetryError(
           `Failed after ${attempt + 1} attempt(s): ${error instanceof Error ? error.message : String(error)}`,
           attempt + 1,
