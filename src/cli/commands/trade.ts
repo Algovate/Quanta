@@ -152,8 +152,8 @@ export class TradeCommands {
   private static async startTrading(options: { env?: string; coins?: string }): Promise<void> {
     // Get config and resolve environment
     const config = getConfig();
-    // Trade start only supports strategy mode (use 'arena start' for multi-drone arena)
-    const runtimeMode = 'strategy' as const;
+    // Trade start only supports single workflow mode (use 'arena start' for multi-drone arena)
+    const runtimeMode = 'single' as const;
 
     // Validate and parse environment
     const env = validateEnv(options.env || config.env || 'simulate');

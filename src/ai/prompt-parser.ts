@@ -1,6 +1,6 @@
 /**
  * Parsing utilities for AI trading signal responses
- * Handles both enhanced format (<output> tags) and legacy format
+ * Supports enhanced format with <output> tags and fallback to raw JSON response
  */
 
 import { TradingSignal } from '../types/index.js';
@@ -73,7 +73,7 @@ export interface ParseResult {
 
 /**
  * Parse AI response into array of TradingSignals with error details
- * Handles enhanced format with <output> tags and legacy format
+ * Supports enhanced format with <output> tags and fallback to raw JSON response
  */
 export function parseAiResponseWithDetails(response: string): ParseResult {
   try {

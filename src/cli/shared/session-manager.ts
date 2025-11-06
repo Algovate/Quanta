@@ -57,7 +57,7 @@ export function acquireWorkflowSession(
       session: {
         id: 'unknown',
         running: false,
-        mode: 'strategy',
+        mode: 'single',
         env: env as 'simulation' | 'paper' | 'live',
         startTime: Date.now(),
       },

@@ -1,4 +1,4 @@
-export type ExecutionMode = 'arena' | 'strategy';
+export type ExecutionMode = 'single' | 'arena';
 export type ExecutionEnv = 'simulate' | 'simulation' | 'paper' | 'live';
 
 export interface ExecutionSession {

@@ -4,13 +4,13 @@ Quanta 支持多个加密货币交易所，提供统一 API。
 
 ## 可用交易所
 
-| 交易所 | 全名 | 缩写 | 状态 | 需要 API 密钥 |
-|--------|------|------|------|--------------|
-| Simulator | Simulator | - | ✅ 内置 | 否 |
-| Binance | Binance | `bin` | ✅ 支持 | 是（交易时） |
-| OKX | OKX | - | ✅ 支持 | 是（交易时） |
-| Coinbase | Coinbase | `cb` | ✅ 支持 | 是（交易时） |
-| Hyperliquid | Hyperliquid | `hliq` | ✅ 支持 | 是（交易时） |
+| 交易所      | 全名        | 缩写   | 状态    | 需要 API 密钥 |
+| ----------- | ----------- | ------ | ------- | ------------- |
+| Simulator   | Simulator   | -      | ✅ 内置 | 否            |
+| Binance     | Binance     | `bin`  | ✅ 支持 | 是（交易时）  |
+| OKX         | OKX         | -      | ✅ 支持 | 是（交易时）  |
+| Coinbase    | Coinbase    | `cb`   | ✅ 支持 | 是（交易时）  |
+| Hyperliquid | Hyperliquid | `hliq` | ✅ 支持 | 是（交易时）  |
 
 ## 交易所详情
 

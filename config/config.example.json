@@ -1,7 +1,7 @@
 {
-  "mode": "strategy",
+  "mode": "single",
   "env": "simulate",
-  "_comment_mode": "Runtime mode: 'arena' (multi strategy) or 'strategy' (single). Aliases accepted: 'single', 'solo', 'dashboard' → 'strategy'. Env vars: QUANTA_MODE or MODE.",
+  "_comment_mode": "Execution mode: 'single' (single workflow, default) or 'arena' (multi-drone arena). Env vars: QUANTA_MODE or MODE.",
   "_comment_env": "Environment: 'simulate' (mock), 'paper' (paper trading), 'live' (real). Aliases accepted: 'sim', 'dev', 'simulation' → 'simulate'; 'prod', 'production' → 'live'; 'paper-trade', 'papertrade' → 'paper'. Env vars: QUANTA_ENV (preferred) or EXCHANGE_MODE (legacy).",
 
   "exchange": {

@@ -37,7 +37,7 @@ export class ExecutionSessionManager {
   createWorkflowSession(env?: ExecutionEnv): ExecutionSession {
     const config = getConfig();
     const sessionEnv = env ?? getExecutionEnv(config);
-    return createExecutionSession('workflow', 'strategy', sessionEnv, true);
+    return createExecutionSession('workflow', 'single', sessionEnv, true);
   }
 
   acquire(session: ExecutionSession): void {

@@ -20,6 +20,7 @@ import { CycleSummaryFormatter } from './cycle-summary-formatter.js';
 import { SignalProcessor } from './signal-processor.js';
 import { runStages } from './workflow-pipeline.js';
 import type { WorkflowContext, CycleIO } from './workflow-types.js';
+import type { IStrategy } from '../strategies/index.js';
 import {
   MonitorPositionsStage,
   FetchMarketDataStage,
@@ -62,7 +63,7 @@ import { POSITION_SIZING } from '../execution/constants.js';
  * - `ExecuteSignalsStage` - Signal execution with risk management
  * - `FinalizeCycleStage` - Metrics, snapshots, and cycle completion
  *
- * The workflow always uses the staged pipeline; the legacy inline orchestration was removed.
+ * The workflow uses a staged pipeline architecture for improved modularity and testability.
  *
  * ## State Management
  *
@@ -86,8 +87,6 @@ import { POSITION_SIZING } from '../execution/constants.js';
  */
 
 // Decision information types for signal execution (handled within stages)
-
-// (legacy position decision info type removed; pipeline stages log decisions directly)
 
 export interface SystemState {
   isRunning: boolean;
@@ -169,6 +168,8 @@ export class TradingWorkflow {
   private stateService: StateService;
   private stateUnsubscribe?: () => void;
 
+  private strategy?: IStrategy;
+
   constructor(
     exchange: Exchange,
     marketDataProvider: MarketDataProvider,
@@ -179,12 +180,14 @@ export class TradingWorkflow {
       eventPrefix?: string;
       loggerContext?: string;
       logger?: UnifiedLogger;
+      strategy?: IStrategy; // Optional strategy instance (preferred over direct aiAgent calls), falls back to aiAgent if not provided
     }
   ) {
     this.exchange = exchange;
     this.marketDataProvider = marketDataProvider;
     this.aiAgent = aiAgent;
     this.config = config;
+    this.strategy = options?.strategy;
 
     // Initialize Arena support: use provided or default to singleton
     this.eventBus = options?.eventBus ?? EventBus;
@@ -259,7 +262,8 @@ export class TradingWorkflow {
   }
 
   /**
-   * Map TradingSystemState to SystemState (backward compatibility)
+   * Map TradingSystemState to SystemState
+   * Converts centralized state (from StateService) to local workflow state format
    */
   private mapTradingSystemStateToSystemState(centralState: TradingSystemState): SystemState {
     return {
@@ -566,6 +570,7 @@ export class TradingWorkflow {
         orderExecutor: this.orderExecutor,
         positionMonitor: this.positionMonitor,
         aiAgent: this.aiAgent,
+        strategy: this.strategy, // Optional strategy instance (preferred over direct aiAgent calls), falls back to aiAgent if not provided
         marketDataFetcher: this.marketDataFetcher,
         signalProcessor: this.signalProcessor,
         isBackgroundMode: this.isBackgroundMode,
@@ -579,9 +584,9 @@ export class TradingWorkflow {
         performanceMetricsCalculator: this.performanceMetricsCalculator,
         getState: () => ({ ...this.state, tradesBefore: tradesBeforePipeline, cycleStartTime }),
         updateState: updates => {
-          // Update both local state (for backward compatibility) and centralized state
+          // Update local workflow state and sync to centralized state service
           this.state = { ...this.state, ...(updates as any) };
-          // Sync to centralized state service
+          // Sync to centralized state service for cross-component access
           this.stateService.updateState(this.mapSystemStateToTradingSystemState(this.state));
         },
         getCircuitBreakerStates: () => this.getCircuitBreakerStates(),
@@ -1128,9 +1133,9 @@ export class TradingWorkflow {
       account,
       aggregates
     );
-    // Update both local state (for backward compatibility) and centralized state
+    // Update local workflow state and sync to centralized state service
     this.state = pnlMetricsResult.updatedState;
-    // Sync to centralized state service
+    // Sync to centralized state service for cross-component access
     this.stateService.updateState(this.mapSystemStateToTradingSystemState(this.state));
     const pnlMetrics = pnlMetricsResult;
     const cycleMetricsData = this.cycleSummaryFormatter.calculateCycleMetrics(

@@ -30,7 +30,7 @@ export class HyperliquidExchange implements Exchange {
     return !this.exchange.apiKey || this.exchange.apiKey === 'test';
   }
 
-  // Removed legacy balance helpers; we now use mapAccountFromBalance
+  // Account mapping now uses mapAccountFromBalance
 
   /**
    * Resolve market type for Hyperliquid defaultType option.
@@ -123,7 +123,7 @@ export class HyperliquidExchange implements Exchange {
   /**
    * Map raw positions to standardized Position format
    */
-  // Removed legacy mapper; using mapPositionsStandard directly
+  // Position mapping now uses mapPositionsStandard
 
   async getCandlesticks(symbol: string, timeframe: string, limit: number): Promise<Candlestick[]> {
     try {

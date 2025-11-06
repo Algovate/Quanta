@@ -8,7 +8,7 @@ Quanta 系统配置完整指南。
 
 ```json
 {
-  "mode": "strategy",
+  "mode": "single",
   "env": "simulate",
   "exchange": {
     "name": "okx",
@@ -41,7 +41,7 @@ Quanta 系统配置完整指南。
 
 **关键字段:**
 
-- `mode`: `strategy`（单策略）或 `arena`（多无人机）
+- `mode`: `single`（单工作流）或 `arena`（多无人机竞技场）
 - `env`: `simulate`, `paper`, 或 `live`
 - `exchange.marketType`: `spot` 或 `swap`（影响杠杆和风险参数）
 
@@ -57,7 +57,7 @@ Quanta 系统配置完整指南。
 ### 模式/环境
 
 ```bash
-QUANTA_MODE=strategy   # 或 arena
+QUANTA_MODE=single   # 或 arena
 QUANTA_ENV=paper       # 或 live|simulate
 ```
 

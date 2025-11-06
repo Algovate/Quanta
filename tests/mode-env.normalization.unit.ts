@@ -3,11 +3,18 @@ import { normalizeMode, normalizeEnvironment } from '../src/types/index.js';
 
 describe('Mode/Environment normalization', () => {
   it('normalizes mode values', () => {
+    // Canonical values
     expect(normalizeMode('arena')).toBe('arena');
-    expect(normalizeMode('strategy')).toBe('strategy');
-    expect(normalizeMode('dashboard')).toBe('strategy');
-    expect(normalizeMode('SINGLE')).toBe('strategy');
-    expect(normalizeMode(undefined)).toBe('strategy');
+    expect(normalizeMode('single')).toBe('single');
+    // Case insensitive
+    expect(normalizeMode('SINGLE')).toBe('single');
+    expect(normalizeMode('ARENA')).toBe('arena');
+    // Unknown values default to 'single' (no aliases supported)
+    expect(normalizeMode(undefined)).toBe('single');
+    expect(normalizeMode('unknown')).toBe('single');
+    expect(normalizeMode('strategy')).toBe('single'); // Treated as unknown, defaults to 'single'
+    expect(normalizeMode('solo')).toBe('single'); // Treated as unknown, defaults to 'single'
+    expect(normalizeMode('dashboard')).toBe('single'); // Treated as unknown, defaults to 'single'
   });
 
   it('normalizes environment values', () => {

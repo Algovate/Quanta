@@ -168,7 +168,7 @@ export class TradingManager extends EventEmitter {
     let sessionAcquired = false;
 
     try {
-      // Acquire exclusive execution session (mode: 'strategy')
+      // Acquire exclusive execution session (mode: 'single')
       const session = sessionManager.createWorkflowSession();
       sessionManager.acquire(session);
       sessionAcquired = true;
@@ -198,8 +198,23 @@ export class TradingManager extends EventEmitter {
       this.marketDataProvider = marketDataProvider;
       this.aiAgent = aiAgent;
 
+      // Create AIStrategy instance for workflow
+      const { AIStrategy } = await import('../strategies/index.js');
+      const aiStrategy = new AIStrategy(
+        {
+          name: 'ai-strategy',
+          description: 'AI-powered signal generation',
+          enabled: true,
+          params: {},
+        },
+        aiAgent
+      );
+
       // Create workflow - both CLI and API server modes use structured logs only
-      this.workflow = new TradingWorkflow(exchange, marketDataProvider, aiAgent, config);
+      // Pass AIStrategy instance to workflow (preferred over direct aiAgent calls)
+      this.workflow = new TradingWorkflow(exchange, marketDataProvider, aiAgent, config, {
+        strategy: aiStrategy,
+      });
       try {
         const { registerShutdownTask } = await import('../cli/shared/shutdown-handler.js');
         registerShutdownTask(() => this.workflow?.dispose());

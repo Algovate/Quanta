@@ -3,18 +3,26 @@
 export type { PositionSizing } from '../execution/risk.js';
 
 // Runtime targeting
-export type RuntimeMode = 'arena' | 'strategy';
+// Import ExecutionMode from execution-session for consistency
+import type { ExecutionMode } from '../core/types/execution-session.js';
+// Re-export for convenience
+export type { ExecutionMode };
 export type RuntimeEnvironment = 'live' | 'paper' | 'simulate';
 
 /**
- * Normalize user-provided mode values to canonical RuntimeMode.
- * Accepts common aliases and coerces unknowns to 'strategy'.
+ * Normalize user-provided mode values to canonical ExecutionMode.
+ * Only accepts canonical values: 'single' or 'arena'.
+ * Unknown values default to 'single'.
+ *
+ * @param value - Mode value to normalize
+ * @returns Normalized ExecutionMode
  */
-export function normalizeMode(value: string | null | undefined): RuntimeMode {
+export function normalizeMode(value: string | null | undefined): ExecutionMode {
   const v = (value || '').toLowerCase();
   if (v === 'arena') return 'arena';
-  if (v === 'strategy' || v === 'single' || v === 'solo' || v === 'dashboard') return 'strategy';
-  return 'strategy';
+  if (v === 'single') return 'single';
+  // Unknown values default to 'single'
+  return 'single';
 }
 
 /**

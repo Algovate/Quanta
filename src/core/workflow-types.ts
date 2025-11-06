@@ -11,6 +11,7 @@ import type { SignalProcessor } from './signal-processor.js';
 import type { Account, Position, TradingSignal } from '../types/index.js';
 import type { TypedEventBus } from './event-bus.js';
 import type { WorkflowConfig } from './workflow.js';
+import type { IStrategy } from '../strategies/index.js';
 
 export interface ExecuteSignalFn {
   (
@@ -38,7 +39,8 @@ export interface WorkflowContext {
   riskManager: RiskManager;
   orderExecutor: OrderExecutor;
   positionMonitor: PositionMonitorService;
-  aiAgent: OpenRouterClient;
+  aiAgent: OpenRouterClient; // Required for fallback when strategy is not provided
+  strategy?: IStrategy; // Optional strategy instance (preferred over direct aiAgent calls)
   marketDataFetcher: MarketDataFetcher;
   signalProcessor: SignalProcessor;
   isBackgroundMode: boolean;

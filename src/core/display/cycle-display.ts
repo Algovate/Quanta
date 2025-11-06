@@ -21,7 +21,7 @@ export class CycleDisplay {
     cycleCount: number,
     options?: {
       executionSession?: {
-        mode: 'arena' | 'strategy';
+        mode: 'arena' | 'single';
         env: 'simulate' | 'simulation' | 'paper' | 'live';
         id: string;
       };

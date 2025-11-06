@@ -160,7 +160,10 @@ const AITracingSchema = z
 
 const ConfigSchema = z.object({
   // Runtime targeting
-  mode: z.enum(['arena', 'strategy']).default('strategy'),
+  mode: z
+    .enum(['arena', 'single'])
+    .default('single')
+    .describe("Execution mode: 'single' (single workflow) or 'arena' (multi-drone)."),
   env: z.enum(['live', 'paper', 'simulate']).default('simulate'),
   exchange: ExchangeConfigSchema,
   ai: z.object({
@@ -347,7 +350,7 @@ function parseBooleanEnv(value: string | undefined, defaultTrue: boolean = true)
 
 // Default configuration
 const DEFAULT_CONFIG: Partial<Config> = {
-  mode: 'strategy',
+  mode: 'single',
   env: 'simulate',
   exchange: {
     name: 'simulator',

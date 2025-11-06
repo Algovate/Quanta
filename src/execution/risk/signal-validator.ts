@@ -162,7 +162,7 @@ export class SignalValidator {
           return { valid: false, reason };
         }
 
-        // Legacy check: also prevent too many same-side positions as additional safeguard
+        // Additional safeguard: prevent too many same-side positions to reduce correlation risk
         const targetSide = signal.action.toLowerCase() as 'long' | 'short';
         const sameSidePositions = currentPositions.filter(p => p.side === targetSide);
         if (sameSidePositions.length >= POSITION_SIZING.MAX_SAME_SIDE_POSITIONS) {
