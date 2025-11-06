@@ -69,8 +69,7 @@ export class PromptCommands {
         safeAction(async () => {
           await handleAsync(async () => {
             const logger = UnifiedLogger.getInstance();
-            const originalConsole = logger.getOriginalConsole();
-            PromptCommands.listPromptGroups(originalConsole);
+            PromptCommands.listPromptGroups();
             logger.shutdown();
           }, 'PromptCommands.list');
         }, 'PromptCommands.list')
@@ -96,19 +95,18 @@ export class PromptCommands {
   }
 
   private static async viewPrompt(options: ViewPromptOptions): Promise<void> {
-    // Use originalConsole to bypass logger interception and ensure output displays
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'PromptCommands';
 
     if (options.list) {
-      PromptCommands.listPromptGroups(originalConsole);
+      PromptCommands.listPromptGroups();
       return;
     }
 
     const groupName = PromptCommands.getGroupName(options.group);
     const promptGroup = loadPromptGroup(groupName);
 
-    PromptCommands.displayMetadata(promptGroup, groupName, originalConsole);
+    PromptCommands.displayMetadata(promptGroup, groupName);
 
     const displayOptions: DisplayOptions = {
       showSystem: !options.userOnly,
@@ -117,50 +115,42 @@ export class PromptCommands {
     };
 
     if (options.rendered) {
-      const exampleContext = PromptCommands.resolveContext(options.context, originalConsole);
-      PromptCommands.displayRenderedPrompts(
-        promptGroup,
-        exampleContext,
-        displayOptions,
-        originalConsole
-      );
+      const exampleContext = PromptCommands.resolveContext(options.context);
+      PromptCommands.displayRenderedPrompts(promptGroup, exampleContext, displayOptions);
       if (options.vars) {
-        PromptCommands.displayVariablesWithPresence(
-          promptGroup,
-          exampleContext,
-          displayOptions,
-          originalConsole
-        );
+        PromptCommands.displayVariablesWithPresence(promptGroup, exampleContext, displayOptions);
       }
     } else {
-      PromptCommands.displayRawPrompts(promptGroup, displayOptions, originalConsole);
+      PromptCommands.displayRawPrompts(promptGroup, displayOptions);
       if (options.vars) {
-        PromptCommands.displayTemplateVariables(promptGroup, displayOptions, originalConsole);
+        PromptCommands.displayTemplateVariables(promptGroup, displayOptions);
       }
     }
 
-    originalConsole.log('');
+    logger.info('', {}, context);
     // Ensure clean shutdown for CLI
     logger.shutdown();
   }
 
-  private static listPromptGroups(originalConsole: { log: typeof console.log }): void {
+  private static listPromptGroups(): void {
+    const logger = UnifiedLogger.getInstance();
+    const context = 'PromptCommands';
     const groups = listPromptGroups();
     if (groups.length === 0) {
-      originalConsole.log(chalk.yellow('No prompt groups found in config/prompts/'));
+      logger.info(chalk.yellow('No prompt groups found in config/prompts/'), {}, context);
       return;
     }
 
     const config = getConfig();
     const activeGroup = config.ai.prompt.activeGroup;
 
-    originalConsole.log(chalk.bold('\n📋 Available Prompt Groups:\n'));
+    logger.info(chalk.bold('\n📋 Available Prompt Groups:\n'), {}, context);
     groups.forEach(group => {
       const isActive = group === activeGroup;
       const marker = isActive ? chalk.green('✓ (active)') : '';
-      originalConsole.log(`  ${isActive ? chalk.green(group) : group} ${marker}`);
+      logger.info(`  ${isActive ? chalk.green(group) : group} ${marker}`, {}, context);
     });
-    originalConsole.log('');
+    logger.info('', {}, context);
   }
 
   private static getGroupName(providedGroup: string): string {
@@ -171,19 +161,17 @@ export class PromptCommands {
     return config.ai.prompt.activeGroup;
   }
 
-  private static displayMetadata(
-    promptGroup: PromptGroup,
-    groupName: string,
-    originalConsole: { log: typeof console.log }
-  ): void {
-    originalConsole.log(chalk.bold('\n📝 Prompt Group: ') + chalk.cyan(groupName));
+  private static displayMetadata(promptGroup: PromptGroup, groupName: string): void {
+    const logger = UnifiedLogger.getInstance();
+    const context = 'PromptCommands';
+    logger.info(chalk.bold('\n📝 Prompt Group: ') + chalk.cyan(groupName), {}, context);
     if (promptGroup.metadata.description) {
-      originalConsole.log(chalk.gray(`   Description: ${promptGroup.metadata.description}`));
+      logger.info(chalk.gray(`   Description: ${promptGroup.metadata.description}`), {}, context);
     }
     if (promptGroup.metadata.version) {
-      originalConsole.log(chalk.gray(`   Version: ${promptGroup.metadata.version}`));
+      logger.info(chalk.gray(`   Version: ${promptGroup.metadata.version}`), {}, context);
     }
-    originalConsole.log('');
+    logger.info('', {}, context);
   }
 
   private static createExampleContext(): Record<string, string | number> {
@@ -219,113 +207,98 @@ export class PromptCommands {
     }
   }
 
-  private static resolveContext(
-    contextPath: string | undefined,
-    originalConsole: { log: typeof console.log }
-  ): Record<string, string | number> {
+  private static resolveContext(contextPath: string | undefined): Record<string, string | number> {
+    const logger = UnifiedLogger.getInstance();
+    const context = 'PromptCommands';
     if (contextPath) {
-      originalConsole.log(chalk.gray('Using context file for rendering:\n'));
+      logger.info(chalk.gray('Using context file for rendering:\n'), {}, context);
       const ctx = PromptCommands.loadContextFromFile(contextPath);
       Object.entries(ctx).forEach(([key, value]) => {
-        originalConsole.log(chalk.gray(`  ${key}: ${value as any}`));
+        logger.info(chalk.gray(`  ${key}: ${value as any}`), {}, context);
       });
-      originalConsole.log(chalk.gray('\n' + SEPARATOR + '\n'));
+      logger.info(chalk.gray('\n' + SEPARATOR + '\n'), {}, context);
       return ctx as Record<string, string | number>;
     }
     const example = PromptCommands.createExampleContext();
-    PromptCommands.displayExampleContext(example, originalConsole);
+    PromptCommands.displayExampleContext(example);
     return example;
   }
 
-  private static displayExampleContext(
-    context: Record<string, string | number>,
-    originalConsole: { log: typeof console.log }
-  ): void {
-    originalConsole.log(chalk.gray('Using example values for rendering:\n'));
+  private static displayExampleContext(context: Record<string, string | number>): void {
+    const logger = UnifiedLogger.getInstance();
+    const contextName = 'PromptCommands';
+    logger.info(chalk.gray('Using example values for rendering:\n'), {}, contextName);
     Object.entries(context).forEach(([key, value]) => {
-      originalConsole.log(chalk.gray(`  ${key}: ${value}`));
+      logger.info(chalk.gray(`  ${key}: ${value}`), {}, contextName);
     });
-    originalConsole.log(chalk.gray('\n' + SEPARATOR + '\n'));
+    logger.info(chalk.gray('\n' + SEPARATOR + '\n'), {}, contextName);
   }
 
   private static displayRenderedPrompts(
     promptGroup: PromptGroup,
     context: Record<string, string | number>,
-    options: DisplayOptions,
-    originalConsole: { log: typeof console.log }
+    options: DisplayOptions
   ): void {
     if (options.showSystem) {
       PromptCommands.displayPrompt(
         'SYSTEM PROMPT (RENDERED)',
-        renderTemplate(promptGroup.system, context),
-        originalConsole
+        renderTemplate(promptGroup.system, context)
       );
     }
 
     if (options.showUser) {
       PromptCommands.displayPrompt(
         'USER PROMPT (RENDERED)',
-        renderTemplate(promptGroup.user, context),
-        originalConsole
+        renderTemplate(promptGroup.user, context)
       );
     }
   }
 
-  private static displayRawPrompts(
-    promptGroup: PromptGroup,
-    options: DisplayOptions,
-    originalConsole: { log: typeof console.log }
-  ): void {
+  private static displayRawPrompts(promptGroup: PromptGroup, options: DisplayOptions): void {
     if (options.showSystem) {
-      PromptCommands.displayPrompt('SYSTEM PROMPT (RAW)', promptGroup.system, originalConsole);
+      PromptCommands.displayPrompt('SYSTEM PROMPT (RAW)', promptGroup.system);
     }
 
     if (options.showUser) {
-      PromptCommands.displayPrompt('USER PROMPT (RAW)', promptGroup.user, originalConsole);
+      PromptCommands.displayPrompt('USER PROMPT (RAW)', promptGroup.user);
     }
   }
 
-  private static displayPrompt(
-    title: string,
-    content: string,
-    originalConsole: { log: typeof console.log }
-  ): void {
-    originalConsole.log(chalk.bold.cyan(`\n=== ${title} ===\n`));
-    originalConsole.log(content);
-    originalConsole.log('');
+  private static displayPrompt(title: string, content: string): void {
+    const logger = UnifiedLogger.getInstance();
+    const context = 'PromptCommands';
+    logger.info(chalk.bold.cyan(`\n=== ${title} ===\n`), {}, context);
+    logger.info(content, {}, context);
+    logger.info('', {}, context);
   }
 
-  private static displayTemplateVariables(
-    promptGroup: PromptGroup,
-    options: DisplayOptions,
-    originalConsole: { log: typeof console.log }
-  ): void {
+  private static displayTemplateVariables(promptGroup: PromptGroup, options: DisplayOptions): void {
+    const logger = UnifiedLogger.getInstance();
+    const context = 'PromptCommands';
     const { system: systemVars, user: userVars } = extractGroupVariables(promptGroup);
 
     if (systemVars.length === 0 && userVars.length === 0) {
       return;
     }
 
-    originalConsole.log(chalk.gray('\n' + SEPARATOR));
-    originalConsole.log(chalk.gray('\n📌 Template Variables:\n'));
+    logger.info(chalk.gray('\n' + SEPARATOR), {}, context);
+    logger.info(chalk.gray('\n📌 Template Variables:\n'), {}, context);
 
     if (systemVars.length > 0 && options.showSystem) {
-      PromptCommands.displayVariableList('System prompt variables', systemVars, originalConsole);
+      PromptCommands.displayVariableList('System prompt variables', systemVars);
     }
 
     if (userVars.length > 0 && options.showUser) {
-      PromptCommands.displayVariableList('User prompt variables', userVars, originalConsole);
+      PromptCommands.displayVariableList('User prompt variables', userVars);
     }
   }
 
-  private static displayVariableList(
-    title: string,
-    variables: string[],
-    originalConsole: { log: typeof console.log }
-  ): void {
-    originalConsole.log(chalk.yellow(`  ${title}:`));
-    variables.forEach(v => originalConsole.log(chalk.gray(`    {{${v}}}`)));
-    originalConsole.log('');
+  private static displayVariableList(title: string, variables: string[]): void {
+    const logger = UnifiedLogger.getInstance();
+    const context = 'PromptCommands';
+    logger.info(chalk.yellow(`  ${title}:`), {}, context);
+    variables.forEach(v => logger.info(chalk.gray(`    {{${v}}}`), {}, context));
+    logger.info('', {}, context);
   }
 
   /**
@@ -334,27 +307,28 @@ export class PromptCommands {
   private static displayVariablesWithPresence(
     promptGroup: PromptGroup,
     context: Record<string, any>,
-    options: DisplayOptions,
-    originalConsole: { log: typeof console.log }
+    options: DisplayOptions
   ): void {
+    const logger = UnifiedLogger.getInstance();
+    const contextName = 'PromptCommands';
     const { system: systemVars, user: userVars } = extractGroupVariables(promptGroup);
     const showSection = (title: string, vars: string[]) => {
       if (vars.length === 0) return;
-      originalConsole.log(chalk.yellow(`  ${title}:`));
+      logger.info(chalk.yellow(`  ${title}:`), {}, contextName);
       vars.forEach(v => {
         const present = Object.prototype.hasOwnProperty.call(context, v);
-        originalConsole.log(`    {{${v}}} ${present ? chalk.green('✓') : chalk.red('✗')}`);
+        logger.info(`    {{${v}}} ${present ? chalk.green('✓') : chalk.red('✗')}`, {}, contextName);
       });
-      originalConsole.log('');
+      logger.info('', {}, contextName);
     };
-    originalConsole.log(chalk.gray('Variable presence (context provided):\n'));
+    logger.info(chalk.gray('Variable presence (context provided):\n'), {}, contextName);
     if (options.showSystem) showSection('System prompt variables', systemVars);
     if (options.showUser) showSection('User prompt variables', userVars);
   }
 
   private static diffGroups(options: DiffPromptOptions): void {
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const loggerContext = 'PromptCommands';
 
     const leftName = PromptCommands.getGroupName(options.group);
     const rightName = options.with;
@@ -372,7 +346,7 @@ export class PromptCommands {
       const hint = suggest
         ? `Did you mean ${chalk.cyan(suggest)}?`
         : `Use ${chalk.cyan('tsx src/index.ts prompts view --list')} to see available groups.`;
-      originalConsole.log(`\n${header}\n${hint}\n`);
+      logger.info(`\n${header}\n${hint}\n`, {}, loggerContext);
       logger.shutdown();
       return name;
     };
@@ -387,17 +361,17 @@ export class PromptCommands {
     const showSystem = !options.userOnly;
     const showUser = !options.systemOnly;
 
-    const context = options.rendered
-      ? PromptCommands.resolveContext(options.context, originalConsole)
+    const templateContext = options.rendered
+      ? PromptCommands.resolveContext(options.context)
       : undefined;
 
     const leftTexts =
-      options.rendered && context
-        ? renderGroup(left, context)
+      options.rendered && templateContext
+        ? renderGroup(left, templateContext)
         : { system: left.system, user: left.user };
     const rightTexts =
-      options.rendered && context
-        ? renderGroup(right, context)
+      options.rendered && templateContext
+        ? renderGroup(right, templateContext)
         : { system: right.system, user: right.user };
 
     const sections: Array<{ title: string; a: string; b: string }> = [];
@@ -405,18 +379,20 @@ export class PromptCommands {
     if (showUser) sections.push({ title: 'USER', a: leftTexts.user, b: rightTexts.user });
 
     sections.forEach(section => {
-      originalConsole.log(
-        chalk.bold(`\n=== ${section.title} DIFF (${leftName} ↔ ${rightName}) ===\n`)
+      logger.info(
+        chalk.bold(`\n=== ${section.title} DIFF (${leftName} ↔ ${rightName}) ===\n`),
+        {},
+        loggerContext
       );
       const diff = PromptCommands.createUnifiedDiff(section.a, section.b, leftName, rightName);
       if (diff.trim().length === 0) {
-        originalConsole.log(chalk.gray('No differences.'));
+        logger.info(chalk.gray('No differences.'), {}, loggerContext);
       } else {
-        originalConsole.log(diff);
+        logger.info(diff, {}, loggerContext);
       }
     });
 
-    originalConsole.log('');
+    logger.info('', {}, loggerContext);
     logger.shutdown();
   }
 

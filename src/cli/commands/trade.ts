@@ -176,9 +176,6 @@ export class TradeCommands {
     const unifiedLogger = UnifiedLogger.getInstance();
     unifiedLogger.initialize();
 
-    // Get original console to bypass interception for minimal output
-    const originalConsole = unifiedLogger.getOriginalConsole();
-
     // Extract exchange configuration for display
     const exchangeName = updatedConfig.exchange?.name || 'simulator';
     const exchangeTestnet = updatedConfig.exchange?.testnet ?? true;
@@ -196,10 +193,12 @@ export class TradeCommands {
       exchangeDisplay = `${exchangeName}${exchangeTestnet ? ' (testnet)' : ''}`;
     }
 
-    // Console: Minimal essential info only (use originalConsole to avoid interception)
-    originalConsole.log(chalk.cyan('🏆 Quanta Trading System\n'));
-    originalConsole.log(
-      chalk.gray(`Env: ${env} | Exchange: ${exchangeDisplay} | Coins: ${coins.join(', ')}\n`)
+    // Console: Minimal essential info only
+    unifiedLogger.info(chalk.cyan('🏆 Quanta Trading System\n'), {}, 'TradeStart');
+    unifiedLogger.info(
+      chalk.gray(`Env: ${env} | Exchange: ${exchangeDisplay} | Coins: ${coins.join(', ')}\n`),
+      {},
+      'TradeStart'
     );
 
     // UnifiedLogger: Full detailed output
@@ -267,9 +266,11 @@ export class TradeCommands {
 
     spinner.succeed('Trading system initialized');
 
-    // Console: Minimal status (use originalConsole to avoid interception)
-    originalConsole.log(
-      chalk.green('🚀 Trading started. Use "quanta log view" to view detailed output.\n')
+    // Console: Minimal status
+    unifiedLogger.info(
+      chalk.green('🚀 Trading started. Use "quanta log view" to view detailed output.\n'),
+      {},
+      'TradeStart'
     );
 
     // UnifiedLogger: Full startup message
@@ -318,9 +319,9 @@ export class TradeCommands {
     const { BacktestReport } = await import('../../analytics/report.js');
     const { BacktestRenderer } = await import('../../utils/cli-render.js');
     const { format, addMonths, subMonths } = await import('date-fns');
-    const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-    originalConsole.log(chalk.cyan('📈 Quanta Backtest'));
-    originalConsole.log(chalk.gray('Historical strategy validation\n'));
+    const logger = UnifiedLogger.getInstance();
+    logger.info(chalk.cyan('📈 Quanta Backtest'), {}, 'TradeCommands');
+    logger.info(chalk.gray('Historical strategy validation\n'), {}, 'TradeCommands');
 
     // Get config for default coins
     const config = getConfig();
@@ -391,13 +392,21 @@ export class TradeCommands {
       seed: options.seed ? Number(options.seed) : undefined,
     };
 
-    originalConsole.log(chalk.blue('📊 Backtest Configuration:'));
-    originalConsole.log(`   Period: ${backtestConfig.startDate} to ${backtestConfig.endDate}`);
-    originalConsole.log(`   Coins: ${coins.join(', ')}`);
-    originalConsole.log(`   Initial Balance: $${initialBalance.toLocaleString()}`);
-    originalConsole.log(`   Max Positions: ${backtestConfig.maxPositions}`);
-    originalConsole.log(`   Cycle Period: ${backtestConfig.cyclePeriod / 1000 / 60} minutes`);
-    originalConsole.log('');
+    logger.info(chalk.blue('📊 Backtest Configuration:'), {}, 'TradeCommands');
+    logger.info(
+      `   Period: ${backtestConfig.startDate} to ${backtestConfig.endDate}`,
+      {},
+      'TradeCommands'
+    );
+    logger.info(`   Coins: ${coins.join(', ')}`, {}, 'TradeCommands');
+    logger.info(`   Initial Balance: $${initialBalance.toLocaleString()}`, {}, 'TradeCommands');
+    logger.info(`   Max Positions: ${backtestConfig.maxPositions}`, {}, 'TradeCommands');
+    logger.info(
+      `   Cycle Period: ${backtestConfig.cyclePeriod / 1000 / 60} minutes`,
+      {},
+      'TradeCommands'
+    );
+    logger.info('', {}, 'TradeCommands');
 
     // Configuration will be printed after dates are resolved below
 
@@ -435,7 +444,7 @@ export class TradeCommands {
       const result = await engine.runBacktest();
 
       if (options.json) {
-        originalConsole.log(JSON.stringify(result, null, 2));
+        logger.info(JSON.stringify(result, null, 2), {}, 'TradeCommands');
       } else {
         // Generate and display compact report
         const report = new BacktestReport(result, {
@@ -445,19 +454,19 @@ export class TradeCommands {
           showEquity: options.noEquity !== true,
         });
         report.displayReport();
-        originalConsole.log(chalk.green('✅ Backtest completed successfully!'));
+        logger.info(chalk.green('✅ Backtest completed successfully!'), {}, 'TradeCommands');
       }
     } catch (error) {
       if (error instanceof Error) {
-        originalConsole.error(chalk.red(`\n❌ Error: ${error.message}`));
+        logger.error(chalk.red(`\n❌ Error: ${error.message}`), error, 'TradeCommands');
       } else {
-        originalConsole.error(chalk.red(`\n❌ Error: ${String(error)}`));
+        logger.error(chalk.red(`\n❌ Error: ${String(error)}`), undefined, 'TradeCommands');
       }
 
-      originalConsole.log(chalk.yellow('\n💡 Troubleshooting:'));
-      originalConsole.log(chalk.gray('  1. Verify date format is YYYY-MM-DD'));
-      originalConsole.log(chalk.gray('  2. Ensure start date is before end date'));
-      originalConsole.log(chalk.gray('  3. Check coin symbols are valid'));
+      logger.info(chalk.yellow('\n💡 Troubleshooting:'), {}, 'TradeCommands');
+      logger.info(chalk.gray('  1. Verify date format is YYYY-MM-DD'), {}, 'TradeCommands');
+      logger.info(chalk.gray('  2. Ensure start date is before end date'), {}, 'TradeCommands');
+      logger.info(chalk.gray('  3. Check coin symbols are valid'), {}, 'TradeCommands');
 
       throw error;
     }

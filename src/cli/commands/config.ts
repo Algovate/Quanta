@@ -98,66 +98,66 @@ export class ConfigCommands {
   }
 
   private static async showConfig(options: { format: string }): Promise<void> {
-    // Use originalConsole to bypass logger interception and prevent database initialization hang
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'ConfigCommands';
     const config = getConfig();
 
     if (options.format === 'json') {
-      originalConsole.log(JSON.stringify(config, null, 2));
+      logger.info(JSON.stringify(config, null, 2));
     } else {
-      originalConsole.log(chalk.cyan('⚙️  Quanta Configuration'));
-      originalConsole.log(chalk.gray('Current system settings\n'));
+      logger.info(chalk.cyan('⚙️  Quanta Configuration'));
+      logger.info(chalk.gray('Current system settings\n'));
 
-      originalConsole.log(chalk.blue('🏦 Exchange Settings:'));
-      originalConsole.log(`   Mode: ${config.mode}`);
-      originalConsole.log(`   Exchange: ${config.exchange.name}`);
-      originalConsole.log(`   Testnet: ${config.exchange.testnet ? 'enabled' : 'disabled'}`);
-      originalConsole.log('');
+      logger.info(chalk.blue('🏦 Exchange Settings:'));
+      logger.info(`   Mode: ${config.mode}`, {}, context);
+      logger.info(`   Exchange: ${config.exchange.name}`, {}, context);
+      logger.info(`   Testnet: ${config.exchange.testnet ? 'enabled' : 'disabled'}`, {}, context);
+      logger.info('', {}, context);
 
-      originalConsole.log(chalk.blue('🤖 AI Settings:'));
-      originalConsole.log(`   Model: ${config.ai.model}`);
-      originalConsole.log(`   Temperature: ${config.ai.temperature}`);
-      originalConsole.log('');
+      logger.info(chalk.blue('🤖 AI Settings:'));
+      logger.info(`   Model: ${config.ai.model}`, {}, context);
+      logger.info(`   Temperature: ${config.ai.temperature}`, {}, context);
+      logger.info('', {}, context);
 
-      originalConsole.log(chalk.blue('📊 Trading Settings:'));
-      originalConsole.log(`   Coins: ${config.trading.coins.join(', ')}`);
-      originalConsole.log(`   Cycle Period: ${config.trading.cyclePeriod / 1000}s`);
-      originalConsole.log(`   Max Positions: ${config.trading.maxPositions}`);
-      originalConsole.log(
+      logger.info(chalk.blue('📊 Trading Settings:'));
+      logger.info(`   Coins: ${config.trading.coins.join(', ')}`);
+      logger.info(`   Cycle Period: ${config.trading.cyclePeriod / 1000}s`, {}, context);
+      logger.info(`   Max Positions: ${config.trading.maxPositions}`, {}, context);
+      logger.info(
         `   Leverage Range: ${config.trading.leverageRange[0]}x - ${config.trading.leverageRange[1]}x`
       );
-      originalConsole.log(`   Stop Loss: ${(config.trading.stopLoss * 100).toFixed(1)}%`);
-      originalConsole.log(`   Max Risk: ${(config.trading.maxRisk * 100).toFixed(1)}%`);
-      originalConsole.log('');
+      logger.info(`   Stop Loss: ${(config.trading.stopLoss * 100).toFixed(1)}%`);
+      logger.info(`   Max Risk: ${(config.trading.maxRisk * 100).toFixed(1)}%`);
+      logger.info('', {}, context);
 
       if (config.backtest) {
-        originalConsole.log(chalk.blue('🔬 Backtest Settings:'));
-        originalConsole.log(`   Initial Balance: $${config.backtest.initialBalance}`);
+        logger.info(chalk.blue('🔬 Backtest Settings:'));
+        logger.info(`   Initial Balance: $${config.backtest.initialBalance}`, {}, context);
         if (config.backtest.startDate)
-          originalConsole.log(`   Start Date: ${config.backtest.startDate}`);
-        if (config.backtest.endDate) originalConsole.log(`   End Date: ${config.backtest.endDate}`);
-        originalConsole.log('');
+          logger.info(`   Start Date: ${config.backtest.startDate}`, {}, context);
+        if (config.backtest.endDate)
+          logger.info(`   End Date: ${config.backtest.endDate}`, {}, context);
+        logger.info('', {}, context);
       }
 
       if (config.notifications) {
-        originalConsole.log(chalk.blue('🔔 Notification Settings:'));
-        originalConsole.log(`   Enabled: ${config.notifications.enabled ? 'yes' : 'no'}`);
+        logger.info(chalk.blue('🔔 Notification Settings:'));
+        logger.info(`   Enabled: ${config.notifications.enabled ? 'yes' : 'no'}`, {}, context);
         if (config.notifications.webhook)
-          originalConsole.log(`   Webhook: ${config.notifications.webhook.substring(0, 20)}...`);
-        originalConsole.log('');
+          logger.info(`   Webhook: ${config.notifications.webhook.substring(0, 20)}...`);
+        logger.info('', {}, context);
       }
 
       // Show configuration source
       const configFile = getConfigFilePath();
-      originalConsole.log('');
-      originalConsole.log(chalk.blue('📁 Configuration Source:'));
+      logger.info('', {}, context);
+      logger.info(chalk.blue('📁 Configuration Source:'));
       if (fs.existsSync(configFile)) {
-        originalConsole.log(`   File: ${configFile}`);
-        originalConsole.log(`   Status: ${chalk.green('Loaded from file')}`);
+        logger.info(`   File: ${configFile}`, {}, context);
+        logger.info(`   Status: ${chalk.green('Loaded from file')}`);
       } else {
-        originalConsole.log(`   File: ${configFile}`);
-        originalConsole.log(`   Status: ${chalk.yellow('Using defaults + environment variables')}`);
+        logger.info(`   File: ${configFile}`, {}, context);
+        logger.info(`   Status: ${chalk.yellow('Using defaults + environment variables')}`);
       }
     }
     // Ensure clean shutdown for CLI
@@ -165,9 +165,8 @@ export class ConfigCommands {
   }
 
   private static async setConfig(key: string, value: string): Promise<void> {
-    // Use originalConsole to bypass logger interception and prevent database initialization hang
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'ConfigCommands';
     const config = getConfig();
     const keys = key.split('.');
 
@@ -187,7 +186,7 @@ export class ConfigCommands {
 
     // Save to file
     saveConfig(config);
-    originalConsole.log(chalk.green(`✅ Configuration updated: ${key} = ${value}`));
+    logger.info(chalk.green(`✅ Configuration updated: ${key} = ${value}`), {}, context);
     logger.shutdown();
   }
 
@@ -206,91 +205,87 @@ export class ConfigCommands {
   }
 
   private static async validateConfig(): Promise<void> {
-    // Use originalConsole to bypass logger interception and prevent database initialization hang
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
-    originalConsole.log(chalk.cyan('🔍 Validating Configuration'));
-    originalConsole.log(chalk.gray('Checking system settings\n'));
+    const context = 'ConfigCommands';
+    logger.info(chalk.cyan('🔍 Validating Configuration'), {}, context);
+    logger.info(chalk.gray('Checking system settings\n'), {}, context);
 
     try {
       const config = getConfig();
       validateConfig(config);
 
-      originalConsole.log(chalk.green('✅ Configuration loaded successfully'));
-      originalConsole.log(chalk.green('✅ All required fields present'));
-      originalConsole.log(chalk.green('✅ Data types validated'));
-      originalConsole.log('');
+      logger.info(chalk.green('✅ Configuration loaded successfully'));
+      logger.info(chalk.green('✅ All required fields present'));
+      logger.info(chalk.green('✅ Data types validated'));
+      logger.info('', {}, context);
 
-      originalConsole.log(chalk.blue('📋 Validation Summary:'));
-      originalConsole.log(`   Mode: ${config.mode}`);
-      originalConsole.log(`   Exchange: ${config.exchange.name}`);
-      originalConsole.log(`   Trading Coins: ${config.trading.coins.length} configured`);
-      originalConsole.log(`   Max Positions: ${config.trading.maxPositions}`);
-      originalConsole.log('');
+      logger.info(chalk.blue('📋 Validation Summary:'));
+      logger.info(`   Mode: ${config.mode}`, {}, context);
+      logger.info(`   Exchange: ${config.exchange.name}`, {}, context);
+      logger.info(`   Trading Coins: ${config.trading.coins.length} configured`, {}, context);
+      logger.info(`   Max Positions: ${config.trading.maxPositions}`, {}, context);
+      logger.info('', {}, context);
 
       // Check API keys
       if (config.ai.apiKey) {
-        originalConsole.log(chalk.green('✅ AI API Key: Configured'));
+        logger.info(chalk.green('✅ AI API Key: Configured'));
       } else {
-        originalConsole.log(chalk.yellow('⚠️  AI API Key: Not configured'));
+        logger.info(chalk.yellow('⚠️  AI API Key: Not configured'));
       }
 
       const configFile = getConfigFilePath();
       if (fs.existsSync(configFile)) {
-        originalConsole.log(chalk.green('✅ Configuration file: Found'));
+        logger.info(chalk.green('✅ Configuration file: Found'));
       } else {
-        originalConsole.log(chalk.yellow('⚠️  Configuration file: Not found (using defaults)'));
+        logger.info(chalk.yellow('⚠️  Configuration file: Not found (using defaults)'));
       }
     } catch (error) {
-      originalConsole.log(chalk.red('❌ Configuration validation failed:'));
-      originalConsole.log(chalk.red(`   ${error}`));
+      logger.info(chalk.red('❌ Configuration validation failed:'));
+      logger.info(chalk.red(`   ${error}`));
     }
     // Ensure clean shutdown for CLI
     logger.shutdown();
   }
 
   private static async saveConfig(): Promise<void> {
-    // Use originalConsole to bypass logger interception and prevent database initialization hang
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'ConfigCommands';
     const config = getConfig();
     saveConfig(config);
-    originalConsole.log(chalk.green('✅ Configuration saved to file'));
+    logger.info(chalk.green('✅ Configuration saved to file'), {}, context);
     logger.shutdown();
   }
 
   private static async resetConfig(): Promise<void> {
-    // Use originalConsole to bypass logger interception and prevent database initialization hang
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'ConfigCommands';
     resetConfig();
-    originalConsole.log(chalk.green('✅ Configuration reset to defaults'));
+    logger.info(chalk.green('✅ Configuration reset to defaults'), {}, context);
     logger.shutdown();
   }
 
   private static async initConfig(): Promise<void> {
-    // Use originalConsole to bypass logger interception and prevent database initialization hang
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'ConfigCommands';
     const examplePath = getConfigExamplePath();
     const configPath = getConfigFilePath();
 
     if (fs.existsSync(configPath)) {
-      originalConsole.log(chalk.yellow('⚠️  Configuration file already exists'));
-      originalConsole.log(chalk.gray(`   File: ${configPath}`));
-      originalConsole.log(chalk.gray('   Use "config reset" to reset to defaults'));
+      logger.info(chalk.yellow('⚠️  Configuration file already exists'), {}, context);
+      logger.info(chalk.gray(`   File: ${configPath}`), {}, context);
+      logger.info(chalk.gray('   Use "config reset" to reset to defaults'), {}, context);
       logger.shutdown();
       return;
     }
 
     if (fs.existsSync(examplePath)) {
       fs.copyFileSync(examplePath, configPath);
-      originalConsole.log(chalk.green('✅ Configuration file initialized'));
-      originalConsole.log(chalk.gray(`   File: ${configPath}`));
-      originalConsole.log(chalk.gray('   Edit the file to customize your settings'));
+      logger.info(chalk.green('✅ Configuration file initialized'));
+      logger.info(chalk.gray(`   File: ${configPath}`));
+      logger.info(chalk.gray('   Edit the file to customize your settings'));
     } else {
-      originalConsole.log(chalk.red('❌ Example configuration file not found'));
-      originalConsole.log(chalk.gray(`   Expected: ${examplePath}`));
+      logger.info(chalk.red('❌ Example configuration file not found'));
+      logger.info(chalk.gray(`   Expected: ${examplePath}`));
     }
     // Ensure clean shutdown for CLI
     logger.shutdown();
@@ -298,7 +293,7 @@ export class ConfigCommands {
 
   private static async listKeys(prefix?: string): Promise<void> {
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'ConfigCommands';
     const config = getConfig();
 
     function isObject(value: unknown): value is Record<string, unknown> {
@@ -329,17 +324,17 @@ export class ConfigCommands {
     const pairs = isObject(target) ? flatten(target as Record<string, unknown>, prefix || '') : [];
 
     if (pairs.length === 0) {
-      originalConsole.log(chalk.yellow('No configuration keys found for the given scope.'));
+      logger.info(chalk.yellow('No configuration keys found for the given scope.'));
       logger.shutdown();
       return;
     }
 
-    originalConsole.log(chalk.cyan('\n📋 Configuration Keys' + (prefix ? ` (${prefix})` : '')));
+    logger.info(chalk.cyan('\n📋 Configuration Keys' + (prefix ? ` (${prefix})` : '')));
     for (const { key, value } of pairs) {
       const display = typeof value === 'string' ? value : JSON.stringify(value);
-      originalConsole.log(`  ${key}: ${display}`);
+      logger.info(`  ${key}: ${display}`, {}, context);
     }
-    originalConsole.log('');
+    logger.info('', {}, context);
     logger.shutdown();
   }
 }

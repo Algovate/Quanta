@@ -72,12 +72,16 @@ export async function createExchangeForMode(options: ExchangeFactoryOptions): Pr
   const { mode, config, logToConsole = true } = options;
   const { exchangeName, apiKey, apiSecret, testnet = true } = config;
 
-  const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
+  const logger = UnifiedLogger.getInstance();
 
   if (mode === 'simulation') {
     // Pure mock data simulator
     if (logToConsole) {
-      originalConsole.log('📊 Simulation mode: Using pure mock data (no real exchange data)');
+      logger.info(
+        '📊 Simulation mode: Using pure mock data (no real exchange data)',
+        {},
+        'ExchangeFactory'
+      );
     }
     return new SimulatorExchange(10000);
   } else if (mode === 'paper') {
@@ -144,14 +148,14 @@ export function validateModeConfiguration(
 
     // API keys optional but show warning
     if (!exchangeApiKey || !exchangeApiSecret) {
-      const originalConsole = UnifiedLogger.getInstance().getOriginalConsole();
-      originalConsole.log(chalk.yellow('⚠️  Warning: Running paper trading without API keys'));
-      originalConsole.log(
-        chalk.gray(
-          '   Some features may be limited. Consider adding API keys to config.json for full access.'
-        )
+      const logger = UnifiedLogger.getInstance();
+      logger.warn('⚠️  Warning: Running paper trading without API keys', {}, 'ExchangeFactory');
+      logger.info(
+        '   Some features may be limited. Consider adding API keys to config.json for full access.',
+        {},
+        'ExchangeFactory'
       );
-      originalConsole.log('');
+      logger.info('', {}, 'ExchangeFactory');
     }
   }
   // simulation mode - no validation needed

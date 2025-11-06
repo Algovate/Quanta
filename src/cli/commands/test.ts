@@ -194,6 +194,14 @@ export class TestCommands {
         console.log(chalk.gray('   Wait a moment and try again'));
       }
 
+      // Log error to UnifiedLogger for persistence (in addition to console display)
+      const logger = UnifiedLogger.getInstance();
+      logger.error(
+        `Failed to retrieve K-line data: ${errorMsg}`,
+        error instanceof Error ? error : new Error(String(error)),
+        'TestCommands'
+      );
+
       console.log(''); // Empty line before stack trace
       throw error;
     }
@@ -408,6 +416,7 @@ export class TestCommands {
 
         console.log(chalk.green(`🎯 ${exchangeName.toUpperCase()} test passed!\n`));
       } catch (error: any) {
+        // Display error to user (console for immediate feedback)
         console.log(chalk.red(`❌ ${exchangeName.toUpperCase()} test failed:`));
 
         // Clean error message without stack trace
@@ -422,6 +431,14 @@ export class TestCommands {
         } else {
           console.log(chalk.gray(`   ${errorMsg}\n`));
         }
+
+        // Log error to UnifiedLogger for persistence
+        const logger = UnifiedLogger.getInstance();
+        logger.error(
+          `${exchangeName.toUpperCase()} test failed: ${errorMsg}`,
+          error instanceof Error ? error : new Error(String(error)),
+          'TestCommands'
+        );
       }
     }
   }
@@ -528,8 +545,17 @@ export class TestCommands {
           }
           console.log('');
         } catch (error) {
+          // Display error to user (console for immediate feedback)
           console.log(chalk.red(`❌ Mock AI test failed: ${error}`));
           console.log('');
+
+          // Log error to UnifiedLogger for persistence
+          const logger = UnifiedLogger.getInstance();
+          logger.error(
+            `Mock AI test failed: ${error instanceof Error ? error.message : String(error)}`,
+            error instanceof Error ? error : new Error(String(error)),
+            'TestCommands'
+          );
         }
       }
 
@@ -594,8 +620,17 @@ export class TestCommands {
             console.log('');
           }
         } catch (error) {
+          // Display error to user (console for immediate feedback)
           console.log(chalk.red(`❌ Real AI test failed: ${error}`));
           console.log('');
+
+          // Log error to UnifiedLogger for persistence
+          const logger = UnifiedLogger.getInstance();
+          logger.error(
+            `Real AI test failed: ${error instanceof Error ? error.message : String(error)}`,
+            error instanceof Error ? error : new Error(String(error)),
+            'TestCommands'
+          );
         }
       }
 

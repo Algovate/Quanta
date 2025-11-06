@@ -28,7 +28,9 @@ import { normalizeError } from './utils.js';
 export class OperationLogger {
   private static instance: OperationLogger;
 
-  // Store original console methods to avoid recursion when console interception is enabled
+  // Store console methods for direct output (avoiding logger recursion)
+  // This prevents potential recursion if OperationLogger needs to log internally
+  // without going through UnifiedLogger (e.g., error handling, warning messages)
   private originalConsole: {
     log: typeof console.log;
     warn: typeof console.warn;
@@ -38,8 +40,8 @@ export class OperationLogger {
   private operationHandlers: Array<(operation: OperationLog) => void> = [];
 
   private constructor() {
-    // Store original console methods to avoid infinite recursion
-    // when UnifiedLogger intercepts console calls
+    // Store console methods for direct output
+    // Prevents potential recursion if OperationLogger logs internally
     this.originalConsole = {
       log: console.log.bind(console),
       warn: console.warn.bind(console),
@@ -184,7 +186,7 @@ export class OperationLogger {
       try {
         handler(operation);
       } catch (error) {
-        // Use originalConsole to avoid triggering console interception
+        // Use originalConsole to avoid recursion if handler uses UnifiedLogger
         this.originalConsole.error('Error in operation handler:', error);
       }
     }

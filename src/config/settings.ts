@@ -228,6 +228,44 @@ const ConfigSchema = z.object({
       maxFileSize: z.number().default(10485760), // 10MB
       maxFiles: z.number().default(14), // 14 days
       backgroundMode: z.boolean().default(false), // auto-detect
+      // Scheme B: Output routing configuration
+      output: z
+        .object({
+          debug: z
+            .object({
+              console: z.boolean().default(false),
+              file: z.boolean().default(true),
+              format: z.enum(['json', 'text']).default('json'),
+              includeContext: z.boolean().default(true),
+            })
+            .optional(),
+          info: z
+            .object({
+              console: z.boolean().default(true),
+              file: z.boolean().default(false),
+              format: z.enum(['json', 'text']).default('text'),
+              includeContext: z.boolean().default(false),
+            })
+            .optional(),
+          warn: z
+            .object({
+              console: z.boolean().default(true),
+              file: z.boolean().default(true),
+              format: z.enum(['json', 'text']).default('text'),
+              includeContext: z.boolean().default(false),
+            })
+            .optional(),
+          error: z
+            .object({
+              console: z.boolean().default(true),
+              file: z.boolean().default(true),
+              format: z.enum(['json', 'text']).default('text'),
+              includeContext: z.boolean().default(true),
+              includeStack: z.boolean().default(true),
+            })
+            .optional(),
+        })
+        .optional(),
     })
     .optional(),
   resilience: z
@@ -357,6 +395,42 @@ const DEFAULT_CONFIG: Partial<Config> = {
   notifications: {
     enabled: false,
   },
+  logging: {
+    level: 'info',
+    fileOutput: true,
+    logDir: './logs',
+    maxFileSize: 10485760,
+    maxFiles: 14,
+    backgroundMode: false,
+    // Scheme B: Default output routing configuration
+    output: {
+      debug: {
+        console: false,
+        file: true,
+        format: 'json',
+        includeContext: true,
+      },
+      info: {
+        console: true,
+        file: false,
+        format: 'text',
+        includeContext: false,
+      },
+      warn: {
+        console: true,
+        file: true,
+        format: 'text',
+        includeContext: false,
+      },
+      error: {
+        console: true,
+        file: true,
+        format: 'text',
+        includeContext: true,
+        includeStack: true,
+      },
+    },
+  },
   simulation: {
     simulation: {
       enabled: true,
@@ -417,9 +491,11 @@ function loadConfigFromFile(): Partial<Config> {
       return JSON.parse(configData);
     }
   } catch (error) {
-    UnifiedLogger.getInstance()
-      .getOriginalConsole()
-      .warn('Warning: Failed to load config file, using defaults:', error as unknown);
+    UnifiedLogger.getInstance().warn(
+      'Warning: Failed to load config file, using defaults:',
+      error instanceof Error ? error : undefined,
+      'Settings'
+    );
   }
   return {};
 }
@@ -619,11 +695,13 @@ export function saveConfig(config: Partial<Config>): void {
     const currentConfig = getConfig();
     const mergedConfig = { ...currentConfig, ...config };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(mergedConfig, null, 2));
-    UnifiedLogger.getInstance().getOriginalConsole().log(`Configuration saved to ${CONFIG_FILE}`);
+    UnifiedLogger.getInstance().info(`Configuration saved to ${CONFIG_FILE}`, {}, 'Settings');
   } catch (error) {
-    UnifiedLogger.getInstance()
-      .getOriginalConsole()
-      .error('Failed to save configuration:', error as unknown);
+    UnifiedLogger.getInstance().error(
+      'Failed to save configuration:',
+      error instanceof Error ? error : undefined,
+      'Settings'
+    );
     throw error;
   }
 }
@@ -634,11 +712,13 @@ export function resetConfig(): void {
       fs.unlinkSync(CONFIG_FILE);
     }
     globalConfig = null;
-    UnifiedLogger.getInstance().getOriginalConsole().log('Configuration reset to defaults');
+    UnifiedLogger.getInstance().info('Configuration reset to defaults', {}, 'Settings');
   } catch (error) {
-    UnifiedLogger.getInstance()
-      .getOriginalConsole()
-      .error('Failed to reset configuration:', error as unknown);
+    UnifiedLogger.getInstance().error(
+      'Failed to reset configuration:',
+      error instanceof Error ? error : undefined,
+      'Settings'
+    );
     throw error;
   }
 }

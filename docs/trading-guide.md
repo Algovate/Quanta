@@ -4,7 +4,11 @@ Complete guide to trading with Quanta.
 
 ## Trading Modes
 
-Quanta supports three distinct trading modes:
+| Mode         | Market Data | Execution | Risk | Best For            |
+| ------------ | ----------- | --------- | ---- | ------------------- |
+| **simulate** | Mock        | Simulated | None | Learning            |
+| **paper**    | Real        | Simulated | None | Strategy validation |
+| **live**     | Real        | Real      | High | Production          |
 
 ### 1. Simulation Mode (Mock Data)
 
@@ -14,20 +18,20 @@ Quanta supports three distinct trading modes:
 quanta trade start --env simulate --coins BTC,ETH,SOL
 ```
 
-**Features**:
+**Features:**
 
-- Uses internal mock exchange (`simulator`) that generates synthetic market data
-- Perfect risk-free environment for understanding system mechanics
-- Can use either Mock AI (predefined logic) or Real AI (requires API key)
-- No real money involved whatsoever
+- Uses internal mock exchange (`simulator`)
+- Perfect risk-free environment
+- Can use Mock AI or Real AI
+- No real money involved
 - No external API dependencies
 
-**Use Cases**:
+**Use Cases:**
 
 - Learning how the system works
-- Testing new features and modifications
-- Understanding trading algorithms and risk management
-- Initial AI prompt engineering and testing
+- Testing new features
+- Understanding algorithms
+- Initial AI prompt testing
 
 ### 2. Paper Trading Mode (Real Data, Simulated Execution)
 
@@ -37,29 +41,20 @@ quanta trade start --env simulate --coins BTC,ETH,SOL
 quanta trade start --env paper --coins BTC,ETH,SOL
 ```
 
-**Features**:
+**Features:**
 
-- Fetches **real market data** from actual exchanges (OKX, Binance, Coinbase, Hyperliquid)
+- Fetches **real market data** from actual exchanges
 - Simulates order execution and position management
 - Tracks realistic P&L based on live price movements
 - Uses real market volatility, trends, and patterns
-- No actual orders sent to exchanges
 - **API keys optional** (can fetch public market data without credentials)
 
-**Use Cases**:
+**Use Cases:**
 
 - Validating strategies with real market conditions
 - Testing AI performance on live data
 - Understanding how strategies perform in volatile markets
 - Refining risk parameters before going live
-- Backtesting recent market conditions
-
-**Key Benefits**:
-
-- Test with real market volatility and conditions
-- Identify potential issues before risking capital
-- Validate AI model performance on live markets
-- Build confidence in strategy effectiveness
 
 ### 3. Live Mode (Real Trading)
 
@@ -69,14 +64,13 @@ quanta trade start --env paper --coins BTC,ETH,SOL
 quanta trade start --env live --coins BTC
 ```
 
-**Requirements**:
+**Requirements:**
 
 - Valid API keys with trading permissions
 - Proper risk management configuration
 - Thorough testing in simulation and paper trading first
-- Understanding of leverage, margin, and liquidation risks
 
-**⚠️ Critical Warnings**:
+**⚠️ Critical Warnings:**
 
 - **Real money is at risk** - losses are permanent
 - Always test in simulation/paper mode first
@@ -86,29 +80,18 @@ quanta trade start --env live --coins BTC
 - Be aware of slippage and execution quality
 - Know how to stop trading immediately if needed (`Ctrl+C`)
 
-### Mode Comparison
-
-| Feature               | Simulation | Paper     | Live       |
-| --------------------- | ---------- | --------- | ---------- |
-| **Market Data**       | Mock       | Real      | Real       |
-| **Order Execution**   | Simulated  | Simulated | Real       |
-| **Money at Risk**     | None       | None      | Real       |
-| **API Keys Required** | No         | Optional  | Yes        |
-| **Best For**          | Learning   | Testing   | Production |
-| **Risk Level**        | None       | None      | High       |
-
 ## Trading Lifecycle
 
 ### 1. Start Trading
 
 ```bash
-# Start with simulation mode (mock data)
+# Simulation mode
 quanta trade start --env simulate --coins BTC,ETH,SOL
 
-# Or start with paper trading (real data, simulated execution)
+# Paper trading mode
 quanta trade start --env paper --coins BTC,ETH,SOL
 
-# Live trading (requires proper config and API keys)
+# Live trading
 quanta trade start --env live --coins BTC
 ```
 
@@ -163,20 +146,17 @@ The backtest report includes:
 - **Entry pricing**: Execution references real-time mid price (best bid/ask average), not candle close
 - **Exposure shown**: Sum of absolute position values (size × mark price), without leverage multiplication
 
-### Market Types and Effects
+### Market Types
 
-- **Spot**: No leverage, no funding; uses spot endpoints. Good for accumulation and lower risk.
-- **Swap/Perpetual**: Leverage supported; periodic funding applies; enables shorting. Higher risk; liquidation possible.
+| Type               | Leverage | Funding | Shorting | Risk Level |
+| ------------------ | -------- | ------- | -------- | ---------- |
+| **Spot**           | 1x only  | No      | No       | Lower      |
+| **Swap/Perpetual** | 3x-10x   | Yes     | Yes      | Higher     |
 
-**Recommended profiles**:
+**Recommended profiles:**
 
 - **Spot**: leverage [1,1], stopLoss 3–7%, maxRisk 3–5%, maxPositions 6–10
 - **Swap/Perp**: leverage [3,10], stopLoss 1–2%, maxRisk 1–2%, maxPositions 1–4
-
-**Notes**:
-
-- Startup shows marketType and effective risk parameters; values outside safe bands are clamped
-- Funding warnings are displayed during cycles when enabled via `trading.funding.warnings`
 
 ## Risk Management
 
@@ -216,8 +196,6 @@ See [Core Concepts](concepts.md#risk-management) for detailed algorithms.
 ## Profit & Loss (PnL)
 
 ### Understanding PnL
-
-Quanta tracks both **realized** and **unrealized** profit & loss:
 
 **Unrealized PnL**: Open position profit/loss (not yet closed)
 
@@ -261,8 +239,6 @@ All completed trades are recorded with:
 - Realized PnL (absolute and percentage)
 - Holding period
 - Reason for closing (signal/stop-loss/take-profit)
-
-See [Core Concepts](concepts.md#pnl-calculation) for detailed formulas.
 
 ## Best Practices
 
@@ -333,4 +309,3 @@ For more advanced topics, refer to:
 - **[Configuration Guide](configuration.md)** - Advanced configuration options
 - **[Arena Guide](arena-guide.md)** - Multi-drone trading arena
 - **[Trading Cycle Price Usage](trading-cycle-price-usage.md)** - Detailed price source documentation
-- **[Logging Guide](logging-guide.md)** - Operation tracking and analysis

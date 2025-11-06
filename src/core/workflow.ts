@@ -152,11 +152,6 @@ export class TradingWorkflow {
   private barDrivenEnabled: boolean = false;
   private barUnsubscribe?: () => void;
   private unifiedLogger: UnifiedLogger;
-  private originalConsole: {
-    log: typeof console.log;
-    warn: typeof console.warn;
-    error: typeof console.error;
-  };
   // Arena support: event bus and prefix
   private eventBus: TypedEventBus;
   private eventPrefix: string = '';
@@ -202,7 +197,6 @@ export class TradingWorkflow {
     });
     this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor);
     this.unifiedLogger.initialize();
-    this.originalConsole = this.unifiedLogger.getOriginalConsole();
     this.cycleLogger = new CycleLogger();
     this.cycleDisplay = new CycleDisplay();
     this.isBackgroundMode = this.unifiedLogger.isBackgroundMode();
@@ -284,12 +278,12 @@ export class TradingWorkflow {
   }
 
   /**
-   * Log structured output to console (bypasses interception)
+   * Log structured output to console
    * Use this for structured outputs that are already logged to operation logs.
    * This prevents duplicate storage in text logs while maintaining console display.
    */
   private logToConsole(...args: unknown[]): void {
-    this.originalConsole.log(...args);
+    this.unifiedLogger.info(args.join(' '), {}, this.loggerContext);
   }
 
   async start(): Promise<void> {

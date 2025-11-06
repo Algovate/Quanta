@@ -155,9 +155,10 @@ export function exportLogsAsCsv(logs: TextLog[]): string {
     const level = log.level || '';
     const context = log.context || '';
     const message = (log.message || '').replace(/"/g, '""'); // Escape quotes
-    const cycleId = log.cycleId?.toString() || '';
-    const operationId = log.operationId || '';
-    const traceId = log.traceId || '';
+    const metadata = log.metadata || {};
+    const cycleId = metadata.cycleId?.toString() || '';
+    const operationId = (metadata.operationId as string) || '';
+    const traceId = (metadata.traceId as string) || '';
     lines.push(
       `"${timestamp}","${level}","${context}","${message}","${cycleId}","${operationId}","${traceId}"`
     );

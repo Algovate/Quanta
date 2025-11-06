@@ -1,4 +1,5 @@
 import { QuantaError, ExchangeError, AIError, ValidationError } from '../types/index.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 export class ErrorHandler {
   static handle(error: unknown, context?: string): QuantaError {
@@ -32,26 +33,28 @@ export class ErrorHandler {
   }
 
   static logError(error: QuantaError): void {
-    console.error(`\n[${error.code}] ${error.message}`);
+    const logger = UnifiedLogger.getInstance();
+    logger.error(`[${error.code}] ${error.message}`, undefined, 'ErrorHandler');
     this.logContext(error.context);
   }
 
   private static logContext(context?: Record<string, unknown>): void {
     if (!context) return;
 
+    const logger = UnifiedLogger.getInstance();
     const contextObj = context as Record<string, unknown>;
 
     // Extract and clean original error message
     if (typeof contextObj.originalError === 'string') {
       const cleaned = this.cleanErrorMessage(contextObj.originalError);
-      console.error(`Error: ${cleaned}`);
+      logger.error(`Error: ${cleaned}`, undefined, 'ErrorHandler');
     }
 
     // Show additional context (excluding originalError)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { originalError: _originalError, ...otherContext } = contextObj;
     if (Object.keys(otherContext).length > 0) {
-      console.error(`Context: ${JSON.stringify(otherContext, null, 2)}`);
+      logger.error(`Context: ${JSON.stringify(otherContext, null, 2)}`, undefined, 'ErrorHandler');
     }
   }
 
@@ -77,6 +80,8 @@ export const handleAsync = async <T>(operation: () => Promise<T>, context?: stri
   try {
     return await operation();
   } catch (error) {
+    const logger = UnifiedLogger.getInstance();
+
     // For user-friendly errors, show clean message without stack trace
     if (error instanceof Error) {
       const isUserFriendlyError =
@@ -87,7 +92,7 @@ export const handleAsync = async <T>(operation: () => Promise<T>, context?: stri
 
       if (isUserFriendlyError) {
         // Log the error message directly and signal non-zero exit
-        console.error('\n' + error.message + '\n');
+        logger.error(error.message, error, 'ErrorHandler');
         process.exitCode = 1;
         throw error;
       }

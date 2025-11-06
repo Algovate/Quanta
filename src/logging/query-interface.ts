@@ -374,7 +374,7 @@ export class QueryInterface {
       logs = logs.filter(log => log.timestamp <= until);
     }
     if (options.cycleId !== undefined) {
-      logs = logs.filter(log => log.cycleId === options.cycleId);
+      logs = logs.filter(log => (log.metadata?.cycleId || 0) === options.cycleId);
     }
 
     const total = logs.length;
@@ -440,7 +440,9 @@ export class QueryInterface {
     return collected.filter(log => {
       if (options.context && log.context !== options.context) return false;
       if (options.level && log.level !== options.level) return false;
-      if (options.cycleId !== undefined && (log.cycleId || 0) !== options.cycleId) return false;
+      if (options.cycleId !== undefined && (log.metadata?.cycleId || 0) !== options.cycleId) {
+        return false;
+      }
       if (options.since !== undefined && log.timestamp < options.since) return false;
       if (options.until !== undefined && log.timestamp > options.until) return false;
       return true;

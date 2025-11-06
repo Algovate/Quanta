@@ -2,7 +2,6 @@
  * Session Manager - Execution session management utilities for CLI commands
  */
 
-import chalk from 'chalk';
 import { ExecutionSessionManager } from '../../core/execution-session-manager.js';
 import { UnifiedLogger } from '../../logging/index.js';
 import type { ExecutionSession } from '../../core/types/execution-session.js';
@@ -21,7 +20,6 @@ export function acquireWorkflowSession(
   loggerContext: string
 ): SessionAcquisitionResult {
   const sessionManager = ExecutionSessionManager.getInstance();
-  const originalConsole = logger.getOriginalConsole();
   let sessionAcquired = false;
   let executionSession: ExecutionSession | undefined;
 
@@ -30,9 +28,9 @@ export function acquireWorkflowSession(
     sessionManager.acquire(executionSession);
     sessionAcquired = true;
 
-    // Log session info (debug to avoid duplicate visible lines; console line below is user-facing)
-    logger.debug(
-      'Execution session acquired',
+    // Log session info
+    logger.info(
+      `📋 Execution Session: ${executionSession.mode} (${executionSession.env}) — ID: ${executionSession.id}`,
       {
         mode: executionSession.mode,
         env: executionSession.env,
@@ -42,17 +40,10 @@ export function acquireWorkflowSession(
       loggerContext
     );
 
-    // Show session info to user (include session id)
-    originalConsole.log(
-      chalk.blue(
-        `📋 Execution Session: ${executionSession.mode} (${executionSession.env}) — ID: ${executionSession.id}`
-      )
-    );
-
     return { session: executionSession, acquired: sessionAcquired };
   } catch (error) {
     if (error instanceof Error && error.message.includes('Another execution session')) {
-      originalConsole.error(chalk.red(`❌ ${error.message}`));
+      logger.error(`❌ ${error.message}`, error, loggerContext);
       throw error;
     }
     // Log warning but continue if session creation fails
@@ -84,18 +75,12 @@ export function releaseSession(
   loggerContext: string
 ): void {
   const sessionManager = ExecutionSessionManager.getInstance();
-  const originalConsole = logger.getOriginalConsole();
 
   try {
     sessionManager.release(session.id);
     const duration = Date.now() - session.startTime;
-    originalConsole.log(
-      chalk.gray(
-        `   Session: ${session.mode} (${session.env}) - Runtime: ${Math.floor(duration / 1000)}s`
-      )
-    );
     logger.info(
-      'Execution session released',
+      `   Session: ${session.mode} (${session.env}) - Runtime: ${Math.floor(duration / 1000)}s`,
       {
         id: session.id,
         mode: session.mode,

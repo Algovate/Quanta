@@ -33,7 +33,6 @@ export function registerShutdownTask(task: () => Promise<void> | void): void {
  */
 export function setupGracefulShutdown(context: ShutdownContext): void {
   const { logger, loggerContext, session, onShutdown, onError } = context;
-  const originalConsole = logger.getOriginalConsole();
 
   let isShuttingDown = false;
 
@@ -45,8 +44,7 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
     }
     isShuttingDown = true;
 
-    originalConsole.log(chalk.yellow(`\n⏹  Shutting down (${signal})...`));
-    logger.info(chalk.yellow(`Shutting down (${signal})...`), { signal }, loggerContext);
+    logger.info(chalk.yellow(`\n⏹  Shutting down (${signal})...`), { signal }, loggerContext);
 
     try {
       // Report error if provided
@@ -76,11 +74,6 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
         const sessionManager = ExecutionSessionManager.getInstance();
         sessionManager.release(session.session.id);
         const duration = Date.now() - session.session.startTime;
-        originalConsole.log(
-          chalk.gray(
-            `   Session: ${session.session.mode} (${session.session.env}) - Runtime: ${Math.floor(duration / 1000)}s`
-          )
-        );
         logger.info(
           'Execution session released',
           {
@@ -100,7 +93,7 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
       } else {
         logger.shutdown();
       }
-      originalConsole.log(chalk.green('✅ Stopped gracefully'));
+      logger.info('✅ Stopped gracefully', {}, loggerContext);
       process.exit(0);
     } catch (error) {
       // Still release session even on error
@@ -112,7 +105,7 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
         }
       }
 
-      originalConsole.error(chalk.red('❌ Error during shutdown'));
+      logger.error('❌ Error during shutdown', undefined, loggerContext);
       if (error instanceof Error) {
         logger.error('Error during shutdown', error, loggerContext);
       }
@@ -137,7 +130,7 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
 
   process.on('SIGINT', () => {
     shutdownHandler('SIGINT').catch(error => {
-      originalConsole.error(chalk.red('❌ Fatal error during shutdown'));
+      logger.error('❌ Fatal error during shutdown', undefined, loggerContext);
       if (error instanceof Error) {
         logger.error('Fatal error during shutdown', error, loggerContext);
       }
@@ -152,7 +145,7 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
 
   process.on('SIGTERM', () => {
     shutdownHandler('SIGTERM').catch(error => {
-      originalConsole.error(chalk.red('❌ Fatal error during shutdown'));
+      logger.error('❌ Fatal error during shutdown', undefined, loggerContext);
       if (error instanceof Error) {
         logger.error('Fatal error during shutdown', error, loggerContext);
       }
@@ -168,7 +161,7 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
   // Global error handlers
   process.on('unhandledRejection', reason => {
     void shutdownHandler('unhandledRejection', reason).catch(error => {
-      originalConsole.error(chalk.red('❌ Fatal error during shutdown (unhandledRejection)'));
+      logger.error('❌ Fatal error during shutdown (unhandledRejection)', undefined, loggerContext);
       if (error instanceof Error) {
         logger.error('Fatal error during shutdown (unhandledRejection)', error, loggerContext);
       }
@@ -183,7 +176,7 @@ export function setupGracefulShutdown(context: ShutdownContext): void {
 
   process.on('uncaughtException', error => {
     void shutdownHandler('uncaughtException', error).catch(err => {
-      originalConsole.error(chalk.red('❌ Fatal error during shutdown (uncaughtException)'));
+      logger.error('❌ Fatal error during shutdown (uncaughtException)', undefined, loggerContext);
       if (err instanceof Error) {
         logger.error('Fatal error during shutdown (uncaughtException)', err, loggerContext);
       }

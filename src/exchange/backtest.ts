@@ -220,7 +220,7 @@ export class BacktestExchange implements Exchange {
     const orderLeverage = leverage || 1;
 
     const order: Order = {
-      id: `bt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `bt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
       symbol: normalizedSymbol,
       side,
       amount,

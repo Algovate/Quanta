@@ -117,7 +117,52 @@
     "maxFiles": 14,
     "_comment_maxFiles": "Number of days to keep logs (default: 14)",
     "backgroundMode": false,
-    "_comment_backgroundMode": "Force background mode (auto-detected if false)"
+    "_comment_backgroundMode": "Force background mode (auto-detected if false)",
+    "output": {
+      "_comment": "Scheme B: Configure output routing for each log level",
+      "debug": {
+        "console": false,
+        "_comment_console": "Output debug logs to console (default: false)",
+        "file": true,
+        "_comment_file": "Write debug logs to file (default: true)",
+        "format": "json",
+        "_comment_format": "Format for console output: 'json' or 'text' (file always uses structured JSONL)",
+        "includeContext": true,
+        "_comment_includeContext": "Include operationId, traceId, cycleId in output (default: true for debug)"
+      },
+      "info": {
+        "console": true,
+        "_comment_console": "Output info logs to console (default: true)",
+        "file": false,
+        "_comment_file": "Write info logs to file (default: false)",
+        "format": "text",
+        "_comment_format": "Format for console output: 'json' or 'text'",
+        "includeContext": false,
+        "_comment_includeContext": "Include operationId, traceId, cycleId in output (default: false for info)"
+      },
+      "warn": {
+        "console": true,
+        "_comment_console": "Output warn logs to console (default: true)",
+        "file": true,
+        "_comment_file": "Write warn logs to file (default: true)",
+        "format": "text",
+        "_comment_format": "Format for console output: 'json' or 'text'",
+        "includeContext": false,
+        "_comment_includeContext": "Include operationId, traceId, cycleId in output (default: false for warn)"
+      },
+      "error": {
+        "console": true,
+        "_comment_console": "Output error logs to console (default: true)",
+        "file": true,
+        "_comment_file": "Write error logs to file (default: true)",
+        "format": "text",
+        "_comment_format": "Format for console output: 'json' or 'text'",
+        "includeContext": true,
+        "_comment_includeContext": "Include operationId, traceId, cycleId in output (default: true for error)",
+        "includeStack": true,
+        "_comment_includeStack": "Include stack trace in console output (default: true for error)"
+      }
+    }
   },
 
   "resilience": {

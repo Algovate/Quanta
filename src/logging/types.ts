@@ -285,17 +285,16 @@ export interface SamplingConfig {
   };
 }
 
+/**
+ * Simplified text log structure
+ * All optional fields are merged into metadata for simplicity
+ */
 export interface TextLog {
-  logId: string;
   timestamp: number;
   level: 'info' | 'warn' | 'error' | 'debug';
+  message: string;
   context: string;
-  message: string; // Plain text (for querying)
-  formattedMessage?: string; // Optional: Formatted with ANSI codes (for console display, not stored in DB)
-  metadata?: Record<string, any>;
-  cycleId: number; // Required: Link to cycle
-  operationId?: string; // Link to operation
-  traceId?: string; // Link to trace/cycle
+  metadata?: Record<string, any>; // Contains cycleId, operationId, traceId, formattedMessage, etc.
 }
 
 export interface APICallLog {

@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { safeAction } from '../shared/command-utils.js';
 import chalk from 'chalk';
+import { UnifiedLogger } from '../../logging/index.js';
 
 export class HelpCommand {
   static register(program: Command): void {
@@ -15,70 +16,76 @@ export class HelpCommand {
   }
 
   private static showHelp(): void {
-    console.log(chalk.cyan('🏆 Quanta CLI Help'));
-    console.log(chalk.gray('AI-powered quantitative trading system\n'));
+    const logger = UnifiedLogger.getInstance();
 
-    console.log(chalk.blue('📋 Available Commands (grouped):'));
-    console.log('');
+    logger.info(chalk.cyan('🏆 Quanta CLI Help'), {}, 'HelpCommands');
+    logger.info(chalk.gray('AI-powered quantitative trading system\n'), {}, 'HelpCommands');
 
-    console.log(chalk.yellow('🏦 Trading'));
-    console.log('  quanta trade start        Start AI trading system');
-    console.log('  quanta trade backtest     Run backtest with historical data');
+    logger.info(chalk.blue('📋 Available Commands (grouped):'), {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
 
-    console.log('');
+    logger.info(chalk.yellow('🏦 Trading'), {}, 'HelpCommands');
+    logger.info('  quanta trade start        Start AI trading system', {}, 'HelpCommands');
+    logger.info(
+      '  quanta trade backtest     Run backtest with historical data',
+      {},
+      'HelpCommands'
+    );
 
-    console.log(chalk.yellow('🏟️  Arena'));
-    console.log('  quanta arena start        Start multi-drone arena');
-    console.log('  quanta arena status [id]  Show arena status');
-    console.log('  quanta arena list         List arenas');
-    console.log('  quanta arena compare <id> Compare drones within an arena');
-    console.log('  quanta arena stop <id>    Stop arena');
-    console.log('  quanta arena configs      List arena configs');
-    console.log('');
+    logger.info('', {}, 'HelpCommands');
 
-    console.log(chalk.yellow('🧪 Testing / Simulation'));
-    console.log('  quanta test exchange      Test exchange data retrieval');
-    console.log('  quanta test ai            Test AI integration');
-    console.log('  quanta simulate cycle     Run a single demonstration cycle');
-    console.log('');
+    logger.info(chalk.yellow('🏟️  Arena'), {}, 'HelpCommands');
+    logger.info('  quanta arena start        Start multi-drone arena', {}, 'HelpCommands');
+    logger.info('  quanta arena status [id]  Show arena status', {}, 'HelpCommands');
+    logger.info('  quanta arena list         List arenas', {}, 'HelpCommands');
+    logger.info('  quanta arena compare <id> Compare drones within an arena', {}, 'HelpCommands');
+    logger.info('  quanta arena stop <id>    Stop arena', {}, 'HelpCommands');
+    logger.info('  quanta arena configs      List arena configs', {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
 
-    console.log(chalk.yellow('⚙️  System'));
-    console.log('  quanta config show        Show current configuration');
-    console.log('  quanta config set         Set configuration values');
-    console.log('  quanta config validate    Validate configuration');
-    console.log('  quanta config save        Save configuration');
-    console.log('  quanta config reset       Reset configuration');
-    console.log('  quanta config init        Initialize configuration file');
-    console.log('');
-    console.log(chalk.yellow('📝 Logs'));
-    console.log('  quanta log view           View console output logs');
-    console.log('  quanta log clean          Clean old log files');
-    console.log('  quanta log list           List log files with metadata');
-    console.log('  quanta log stats          Show log statistics');
-    console.log('  quanta log export         Export logs to JSON/CSV/TXT');
-    console.log('');
+    logger.info(chalk.yellow('🧪 Testing / Simulation'), {}, 'HelpCommands');
+    logger.info('  quanta test exchange      Test exchange data retrieval', {}, 'HelpCommands');
+    logger.info('  quanta test ai            Test AI integration', {}, 'HelpCommands');
+    logger.info('  quanta simulate cycle     Run a single demonstration cycle', {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
 
-    console.log(chalk.blue('💡 Examples:'));
-    console.log('');
-    console.log('  # Start simulation trading');
-    console.log('  quanta trade start --env simulate --coins BTC,ETH');
-    console.log('');
-    console.log('  # Test single exchange');
-    console.log('  quanta test exchange --exchange okx --coin BTC');
-    console.log('');
-    console.log('  # Test all exchanges');
-    console.log('  quanta test exchange --all --coin BTC');
-    console.log('');
-    console.log('  # Show configuration');
-    console.log('  quanta config show');
-    console.log('');
-    console.log('  # Run backtest');
-    console.log('  quanta trade backtest --start 2024-01-01 --end 2024-12-31');
-    console.log('');
+    logger.info(chalk.yellow('⚙️  System'), {}, 'HelpCommands');
+    logger.info('  quanta config show        Show current configuration', {}, 'HelpCommands');
+    logger.info('  quanta config set         Set configuration values', {}, 'HelpCommands');
+    logger.info('  quanta config validate    Validate configuration', {}, 'HelpCommands');
+    logger.info('  quanta config save        Save configuration', {}, 'HelpCommands');
+    logger.info('  quanta config reset       Reset configuration', {}, 'HelpCommands');
+    logger.info('  quanta config init        Initialize configuration file', {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
+    logger.info(chalk.yellow('📝 Logs'), {}, 'HelpCommands');
+    logger.info('  quanta log view           View console output logs', {}, 'HelpCommands');
+    logger.info('  quanta log clean          Clean old log files', {}, 'HelpCommands');
+    logger.info('  quanta log list           List log files with metadata', {}, 'HelpCommands');
+    logger.info('  quanta log stats          Show log statistics', {}, 'HelpCommands');
+    logger.info('  quanta log export         Export logs to JSON/CSV/TXT', {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
 
-    console.log(chalk.red('⚠️  Risk Warning:'));
-    console.log('  This software is for educational purposes only.');
-    console.log('  Cryptocurrency trading involves substantial risk.');
-    console.log('  Never trade with money you cannot afford to lose.');
+    logger.info(chalk.blue('💡 Examples:'), {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
+    logger.info('  # Start simulation trading', {}, 'HelpCommands');
+    logger.info('  quanta trade start --env simulate --coins BTC,ETH', {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
+    logger.info('  # Test single exchange', {}, 'HelpCommands');
+    logger.info('  quanta test exchange --exchange okx --coin BTC', {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
+    logger.info('  # Test all exchanges', {}, 'HelpCommands');
+    logger.info('  quanta test exchange --all --coin BTC', {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
+    logger.info('  # Show configuration', {}, 'HelpCommands');
+    logger.info('  quanta config show', {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
+    logger.info('  # Run backtest', {}, 'HelpCommands');
+    logger.info('  quanta trade backtest --start 2024-01-01 --end 2024-12-31', {}, 'HelpCommands');
+    logger.info('', {}, 'HelpCommands');
+
+    logger.info(chalk.red('⚠️  Risk Warning:'), {}, 'HelpCommands');
+    logger.info('  This software is for educational purposes only.', {}, 'HelpCommands');
+    logger.info('  Cryptocurrency trading involves substantial risk.', {}, 'HelpCommands');
+    logger.info('  Never trade with money you cannot afford to lose.', {}, 'HelpCommands');
   }
 }

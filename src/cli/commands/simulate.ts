@@ -11,6 +11,7 @@ import { OrderExecutor } from '../../execution/orders.js';
 import { PositionMonitorService } from '../../execution/monitor.js';
 import { handleAsync } from '../../utils/error-handler.js';
 import { safeAction } from '../shared/command-utils.js';
+import { UnifiedLogger } from '../../logging/index.js';
 import {
   validateCoins,
   validateAIType,
@@ -78,8 +79,11 @@ export class SimulateCommands {
       const config = getConfig() as unknown as { simulation?: Partial<SimulateConfig> };
       return config.simulation ?? {};
     } catch {
-      console.warn(
-        chalk.yellow('Warning: Could not load simulation settings from config.json, using defaults')
+      const logger = UnifiedLogger.getInstance();
+      logger.warn(
+        'Warning: Could not load simulation settings from config.json, using defaults',
+        {},
+        'SimulateCommands'
       );
       return {};
     }
@@ -146,18 +150,23 @@ export class SimulateCommands {
     // Validate AI type
     const useRealAI = validateAIType(options.ai) === 'real';
 
-    console.log(chalk.cyan('🎯 Quanta - Multi-Coin Trade Cycle Simulation'));
-    console.log(chalk.gray('='.repeat(60)));
-    console.log(
-      `Coins: ${coins.join(', ')} | Initial Balance: $${initialBalance.toLocaleString()}`
+    const logger = UnifiedLogger.getInstance();
+    const loggerContext = 'SimulateCommands';
+
+    logger.info(chalk.cyan('🎯 Quanta - Multi-Coin Trade Cycle Simulation'), {}, loggerContext);
+    logger.info(chalk.gray('='.repeat(60)), {}, loggerContext);
+    logger.info(
+      `Coins: ${coins.join(', ')} | Initial Balance: $${initialBalance.toLocaleString()}`,
+      {},
+      loggerContext
     );
-    console.log(`Max Positions: ${maxPositions}`);
-    console.log(`AI Type: ${useRealAI ? 'Real AI (OpenRouter)' : 'Mock AI'}`);
+    logger.info(`Max Positions: ${maxPositions}`, {}, loggerContext);
+    logger.info(`AI Type: ${useRealAI ? 'Real AI (OpenRouter)' : 'Mock AI'}`, {}, loggerContext);
     if (useRealAI && simulateConfig.ai?.real?.model) {
-      console.log(`AI Model: ${simulateConfig.ai.real.model}`);
+      logger.info(`AI Model: ${simulateConfig.ai.real.model}`, {}, loggerContext);
     }
-    console.log(`Cycles: ${cycles} | Interval: ${intervalMs} ms`);
-    console.log('');
+    logger.info(`Cycles: ${cycles} | Interval: ${intervalMs} ms`, {}, loggerContext);
+    logger.info('', {}, loggerContext);
 
     const spinner = ora('Initializing simulation...').start();
 
@@ -180,22 +189,22 @@ export class SimulateCommands {
         const baseUrl = process.env.OPENROUTER_BASE_URL || undefined;
         if (!apiKey) {
           spinner.fail('Real AI requires OPENROUTER_API_KEY');
-          console.error(chalk.red('\n❌ Error: Real AI mode requires API key'));
-          console.log(chalk.yellow('\n💡 To use real AI:'));
-          console.log(chalk.yellow('  1. Get API key from https://openrouter.ai'));
-          console.log(chalk.yellow('  2. Set environment variable or update config.json:'));
-          console.log(chalk.gray('     export OPENROUTER_API_KEY="your_api_key_here"'));
-          console.log(chalk.gray('     or edit config.json: simulation.ai.real.apiKey'));
-          console.log(chalk.yellow('  3. Or use Mock AI (default):'));
-          console.log(chalk.gray('     quanta simulate cycle --coins BTC --ai mock'));
+          logger.error('\n❌ Error: Real AI mode requires API key', undefined, loggerContext);
+          logger.info('\n💡 To use real AI:', {}, loggerContext);
+          logger.info('  1. Get API key from https://openrouter.ai', {}, loggerContext);
+          logger.info('  2. Set environment variable or update config.json:', {}, loggerContext);
+          logger.info('     export OPENROUTER_API_KEY="your_api_key_here"', {}, loggerContext);
+          logger.info('     or edit config.json: simulation.ai.real.apiKey', {}, loggerContext);
+          logger.info('  3. Or use Mock AI (default):', {}, loggerContext);
+          logger.info('     quanta simulate cycle --coins BTC --ai mock', {}, loggerContext);
           process.exitCode = 1;
           return;
         }
         aiAgent = new OpenRouterClient(apiKey, model, temperature, undefined, baseUrl);
-        console.log(chalk.green('✓ Real AI initialized'));
+        logger.info(chalk.green('✓ Real AI initialized'), {}, loggerContext);
       } else {
         aiAgent = new MockAIAgent();
-        console.log(chalk.green('✓ Mock AI initialized'));
+        logger.info(chalk.green('✓ Mock AI initialized'), {}, loggerContext);
       }
 
       const riskParams = {
@@ -219,7 +228,7 @@ export class SimulateCommands {
       let finalTotalPnl = 0;
 
       for (let i = 1; i <= cycles; i++) {
-        console.log(chalk.cyan(`\n===== Cycle ${i}/${cycles} =====`));
+        logger.info(chalk.cyan(`\n===== Cycle ${i}/${cycles} =====`), {}, loggerContext);
         const result = await SimulateCommands.executeTradeCycle(
           exchange,
           marketProvider,
@@ -259,19 +268,30 @@ export class SimulateCommands {
     } catch (error) {
       spinner.fail('Simulation failed');
 
+      const logger = UnifiedLogger.getInstance();
+      const loggerContext = 'SimulateCommands';
+
       // Don't show duplicate error messages
       if (!(error instanceof Error && error.message.includes('OPENROUTER_API_KEY not found'))) {
-        console.error(chalk.red('\n❌ Simulation Error:'));
-        console.error(chalk.red(`   ${error instanceof Error ? error.message : String(error)}`));
+        logger.error(
+          '\n❌ Simulation Error:',
+          error instanceof Error ? error : undefined,
+          loggerContext
+        );
+        logger.error(
+          `   ${error instanceof Error ? error.message : String(error)}`,
+          error instanceof Error ? error : undefined,
+          loggerContext
+        );
 
-        console.log(chalk.yellow('\n💡 Common Issues:'));
-        console.log(chalk.yellow('  1. Check if all required parameters are valid'));
-        console.log(chalk.yellow('  2. Verify network connection (for market data)'));
-        console.log(chalk.yellow('  3. Check API credentials (for Real AI mode)'));
-        console.log(chalk.yellow('  4. Review verbose output with --verbose flag'));
+        logger.info('\n💡 Common Issues:', {}, loggerContext);
+        logger.info('  1. Check if all required parameters are valid', {}, loggerContext);
+        logger.info('  2. Verify network connection (for market data)', {}, loggerContext);
+        logger.info('  3. Check API credentials (for Real AI mode)', {}, loggerContext);
+        logger.info('  4. Review verbose output with --verbose flag', {}, loggerContext);
 
-        console.log(chalk.yellow('\n📚 For help:'));
-        console.log(chalk.gray('     quanta simulate cycle --help'));
+        logger.info('\n📚 For help:', {}, loggerContext);
+        logger.info('     quanta simulate cycle --help', {}, loggerContext);
       }
 
       throw error;
@@ -296,10 +316,13 @@ export class SimulateCommands {
     openPositions: number;
     totalPnl: number;
   }> {
+    const logger = UnifiedLogger.getInstance();
+    const loggerContext = 'SimulateCommands';
+
     const cycleStartTime = Date.now();
 
-    console.log(chalk.blue('\n📊 PHASE 1: PERCEPTION (Market Data Collection)'));
-    console.log(chalk.gray('-'.repeat(60)));
+    logger.info('\n📊 PHASE 1: PERCEPTION (Market Data Collection)', {}, loggerContext);
+    logger.info('-'.repeat(60), {}, loggerContext);
 
     // Phase 1: Perception - Fetch market data for all coins
     const spinner1 = ora(`Fetching market data for ${coins.length} coin(s)...`).start();
@@ -313,11 +336,11 @@ export class SimulateCommands {
 
     if (allMarketData.length === 0) {
       spinner1.fail('Failed to fetch market data');
-      console.error(chalk.red('\n❌ Error: No market data available'));
-      console.log(chalk.yellow('\n💡 Possible solutions:'));
-      console.log(chalk.yellow(`  1. Check network connection`));
-      console.log(chalk.yellow(`  2. Verify coins are valid: ${coins.join(', ')}`));
-      console.log(chalk.yellow(`  3. Try different coins: --coins BTC,ETH`));
+      logger.error('\n❌ Error: No market data available', undefined, loggerContext);
+      logger.info('\n💡 Possible solutions:', {}, loggerContext);
+      logger.info(`  1. Check network connection`, {}, loggerContext);
+      logger.info(`  2. Verify coins are valid: ${coins.join(', ')}`, {}, loggerContext);
+      logger.info(`  3. Try different coins: --coins BTC,ETH`, {}, loggerContext);
       throw new Error('No market data available');
     }
 
@@ -335,39 +358,61 @@ export class SimulateCommands {
       );
 
       Object.entries(marketDataByCoin).forEach(([coin, dataArray]) => {
-        console.log(chalk.gray(`\n  📈 ${coin} Analysis:`));
+        logger.info(chalk.gray(`\n  📈 ${coin} Analysis:`), {}, loggerContext);
         (dataArray as any[]).forEach(data => {
-          console.log(chalk.gray(`    ✓ ${data.timeframe}: ${data.candlesticks.length} candles`));
-          console.log(chalk.gray(`      - Current Price: $${data.currentPrice.toFixed(2)}`));
-          console.log(chalk.gray(`      - Trend: ${data.trend} | Volatility: ${data.volatility}`));
-          console.log(
+          logger.info(
+            chalk.gray(`    ✓ ${data.timeframe}: ${data.candlesticks.length} candles`),
+            {},
+            loggerContext
+          );
+          logger.info(
+            chalk.gray(`      - Current Price: $${data.currentPrice.toFixed(2)}`),
+            {},
+            loggerContext
+          );
+          logger.info(
+            chalk.gray(`      - Trend: ${data.trend} | Volatility: ${data.volatility}`),
+            {},
+            loggerContext
+          );
+          logger.info(
             chalk.gray(
               `      - EMA20: $${data.indicators.ema20.toFixed(2)} | EMA50: $${data.indicators.ema50.toFixed(2)}`
-            )
+            ),
+            {},
+            loggerContext
           );
-          console.log(
+          logger.info(
             chalk.gray(
               `      - MACD: ${data.indicators.macd.macd.toFixed(4)} | Signal: ${data.indicators.macd.signal.toFixed(4)}`
-            )
+            ),
+            {},
+            loggerContext
           );
-          console.log(
+          logger.info(
             chalk.gray(
               `      - RSI(14): ${data.indicators.rsi14.toFixed(2)} | ATR(14): $${data.indicators.atr14.toFixed(2)}`
-            )
+            ),
+            {},
+            loggerContext
           );
           if (data.indicators.bollinger) {
             const b = data.indicators.bollinger;
-            console.log(
+            logger.info(
               chalk.gray(
                 `      - Bollinger: pos=${b.position} | %B=${b.percentB.toFixed(2)} | BW=${b.bandwidth.toFixed(3)}`
-              )
+              ),
+              {},
+              loggerContext
             );
           }
           if (data.indicators.volume) {
-            console.log(
+            logger.info(
               chalk.gray(
                 `      - Volume: SMA20=${data.indicators.volume.sma20.toFixed(0)} | Ratio=${data.indicators.volume.ratio.toFixed(2)}`
-              )
+              ),
+              {},
+              loggerContext
             );
           }
           if (data.indicators.supportResistance) {
@@ -375,10 +420,12 @@ export class SimulateCommands {
             const ds = sr.distToSupport != null ? (sr.distToSupport * 100).toFixed(2) + '%' : 'n/a';
             const dr =
               sr.distToResistance != null ? (sr.distToResistance * 100).toFixed(2) + '%' : 'n/a';
-            console.log(
+            logger.info(
               chalk.gray(
                 `      - S/R: S=${sr.support ?? 'n/a'} | R=${sr.resistance ?? 'n/a'} | dS=${ds} | dR=${dr}`
-              )
+              ),
+              {},
+              loggerContext
             );
           }
         });
@@ -386,8 +433,8 @@ export class SimulateCommands {
     }
 
     // Phase 2: Decision - AI Analysis
-    console.log(chalk.blue('\n🤖 PHASE 2: DECISION (AI Analysis)'));
-    console.log(chalk.gray('-'.repeat(60)));
+    logger.info('\n🤖 PHASE 2: DECISION (AI Analysis)', {}, loggerContext);
+    logger.info('-'.repeat(60), {}, loggerContext);
 
     const spinner2 = ora('Analyzing market conditions for all coins...').start();
 
@@ -412,16 +459,24 @@ export class SimulateCommands {
       signals = await aiAgent.generateTradingSignal(allMarketData, account, positions, context);
     } catch (error) {
       spinner2.fail('AI analysis failed');
-      console.error(chalk.red(`\n❌ Error: Failed to generate trading signals`));
-      console.error(chalk.red(`   ${error instanceof Error ? error.message : String(error)}`));
+      logger.error(
+        '\n❌ Error: Failed to generate trading signals',
+        error instanceof Error ? error : undefined,
+        loggerContext
+      );
+      logger.error(
+        `   ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error : undefined,
+        loggerContext
+      );
 
       if (useRealAI) {
-        console.log(chalk.yellow('\n💡 Troubleshooting tips for Real AI:'));
-        console.log(chalk.yellow('  1. Verify OPENROUTER_API_KEY is set correctly'));
-        console.log(chalk.yellow('  2. Check API key is valid and has credits'));
-        console.log(chalk.yellow('  3. Review error message above for details'));
-        console.log(chalk.yellow('\n   Or use Mock AI instead:'));
-        console.log(chalk.gray('     quanta simulate cycle --coins BTC --ai mock'));
+        logger.info('\n💡 Troubleshooting tips for Real AI:', {}, loggerContext);
+        logger.info('  1. Verify OPENROUTER_API_KEY is set correctly', {}, loggerContext);
+        logger.info('  2. Check API key is valid and has credits', {}, loggerContext);
+        logger.info('  3. Review error message above for details', {}, loggerContext);
+        logger.info('\n   Or use Mock AI instead:', {}, loggerContext);
+        logger.info('     quanta simulate cycle --coins BTC --ai mock', {}, loggerContext);
       }
       throw error;
     }
@@ -429,7 +484,7 @@ export class SimulateCommands {
     spinner2.succeed(`Generated ${signals.length} signal(s) across ${coins.length} coin(s)`);
 
     if (signals.length === 0) {
-      console.log(chalk.yellow('  No trading signals generated'));
+      logger.info('  No trading signals generated', {}, loggerContext);
     } else {
       // Group signals by coin for better display
       const signalsByCoin = signals.reduce(
@@ -442,41 +497,55 @@ export class SimulateCommands {
       );
 
       Object.entries(signalsByCoin).forEach(([coin, coinSignals]) => {
-        console.log(chalk.green(`\n  📊 ${coin} Signals:`));
+        logger.info(`\n  📊 ${coin} Signals:`, {}, loggerContext);
         (coinSignals as any[]).forEach(signal => {
-          console.log(chalk.green(`    ✓ ${signal.action} ${signal.coin}`));
+          logger.info(`    ✓ ${signal.action} ${signal.coin}`, {}, loggerContext);
           if (verbose) {
-            console.log(chalk.gray(`      - Confidence: ${(signal.confidence * 100).toFixed(1)}%`));
+            logger.info(
+              `      - Confidence: ${(signal.confidence * 100).toFixed(1)}%`,
+              {},
+              loggerContext
+            );
             if (signal.entry_price) {
-              console.log(chalk.gray(`      - Entry Price: $${signal.entry_price.toFixed(2)}`));
-            }
-            if (signal.position_size) {
-              console.log(chalk.gray(`      - Position Size: ${signal.position_size}`));
-            }
-            if (signal.stop_loss) {
-              console.log(chalk.gray(`      - Stop Loss: ${(signal.stop_loss * 100).toFixed(1)}%`));
-            }
-            if (signal.profit_target) {
-              console.log(
-                chalk.gray(`      - Take Profit: ${(signal.profit_target * 100).toFixed(1)}%`)
+              logger.info(
+                `      - Entry Price: $${signal.entry_price.toFixed(2)}`,
+                {},
+                loggerContext
               );
             }
-            console.log(chalk.gray(`      - Reasoning: ${signal.reasoning}`));
+            if (signal.position_size) {
+              logger.info(`      - Position Size: ${signal.position_size}`, {}, loggerContext);
+            }
+            if (signal.stop_loss) {
+              logger.info(
+                `      - Stop Loss: ${(signal.stop_loss * 100).toFixed(1)}%`,
+                {},
+                loggerContext
+              );
+            }
+            if (signal.profit_target) {
+              logger.info(
+                `      - Take Profit: ${(signal.profit_target * 100).toFixed(1)}%`,
+                {},
+                loggerContext
+              );
+            }
+            logger.info(`      - Reasoning: ${signal.reasoning}`, {}, loggerContext);
           }
         });
       });
     }
 
     // Phase 3: Execution - Risk Management & Order Placement
-    console.log(chalk.blue('\n⚡ PHASE 3: EXECUTION (Risk Management & Order Placement)'));
-    console.log(chalk.gray('-'.repeat(60)));
+    logger.info('\n⚡ PHASE 3: EXECUTION (Risk Management & Order Placement)', {}, loggerContext);
+    logger.info('-'.repeat(60), {}, loggerContext);
 
     let executedOrders = 0;
     let totalPnl = 0;
 
     for (const signal of signals) {
       if (signal.action === 'HOLD') {
-        console.log(chalk.yellow(`  ⏸️  HOLD signal for ${signal.coin} - no action taken`));
+        logger.info(`  ⏸️  HOLD signal for ${signal.coin} - no action taken`, {}, loggerContext);
         continue;
       }
 
@@ -515,25 +584,27 @@ export class SimulateCommands {
           // Debug: Log positions after each order execution
           if (verbose) {
             const positionsAfterExecution = await exchange.getPositions();
-            console.log(chalk.gray(`    - Order ID: ${result.order.id}`));
-            console.log(chalk.gray(`    - Amount: ${result.order.amount} ${signal.coin}`));
-            console.log(chalk.gray(`    - Price: $${result.order.price?.toFixed(2)}`));
-            console.log(chalk.gray(`    - Status: ${result.order.status}`));
+            logger.info(`    - Order ID: ${result.order.id}`, {}, loggerContext);
+            logger.info(`    - Amount: ${result.order.amount} ${signal.coin}`, {}, loggerContext);
+            logger.info(`    - Price: $${result.order.price?.toFixed(2)}`, {}, loggerContext);
+            logger.info(`    - Status: ${result.order.status}`, {}, loggerContext);
             if (result.order.status === 'open') {
-              console.log(
-                chalk.yellow(
-                  `    - ⚠️  Order pending: limit order not yet filled (not counted as executed)`
-                )
+              logger.info(
+                `    - ⚠️  Order pending: limit order not yet filled (not counted as executed)`,
+                {},
+                loggerContext
               );
             }
-            console.log(
-              chalk.dim(`    - Positions after order: ${positionsAfterExecution.length} open`)
+            logger.info(
+              `    - Positions after order: ${positionsAfterExecution.length} open`,
+              {},
+              loggerContext
             );
           }
         } else {
           spinner3.fail(`Failed to execute ${signal.action} signal for ${signal.coin}`);
           if (verbose && result.error) {
-            console.log(chalk.red(`    - Error: ${result.error}`));
+            logger.error(`    - Error: ${result.error}`, undefined, loggerContext);
             // Log additional debugging info for position sizing failures
             if (result.error.includes('Position sizing calculation failed')) {
               const currentPositionsAfterFailure = await exchange.getPositions();
@@ -543,26 +614,26 @@ export class SimulateCommands {
                   ? (accountAfterFailure.usedMargin / accountAfterFailure.equity) * 100
                   : 0;
               const maxTotalRisk = 30; // Default from config
-              console.log(
-                chalk.yellow(
-                  `    - [DEBUG] Positions: ${currentPositionsAfterFailure.length}/${maxPositions}, ` +
-                    `Available Margin: $${accountAfterFailure.availableMargin.toFixed(2)}, ` +
-                    `Used Margin: $${accountAfterFailure.usedMargin.toFixed(2)} ` +
-                    `(${marginUsageRatio.toFixed(2)}%), ` +
-                    `Equity: $${accountAfterFailure.equity.toFixed(2)}`
-                )
+              logger.info(
+                `    - [DEBUG] Positions: ${currentPositionsAfterFailure.length}/${maxPositions}, ` +
+                  `Available Margin: $${accountAfterFailure.availableMargin.toFixed(2)}, ` +
+                  `Used Margin: $${accountAfterFailure.usedMargin.toFixed(2)} ` +
+                  `(${marginUsageRatio.toFixed(2)}%), ` +
+                  `Equity: $${accountAfterFailure.equity.toFixed(2)}`,
+                {},
+                loggerContext
               );
               if (marginUsageRatio >= maxTotalRisk) {
-                console.log(
-                  chalk.yellow(
-                    `    - [REASON] Margin limit reached: ${marginUsageRatio.toFixed(2)}% >= ${maxTotalRisk}%`
-                  )
+                logger.info(
+                  `    - [REASON] Margin limit reached: ${marginUsageRatio.toFixed(2)}% >= ${maxTotalRisk}%`,
+                  {},
+                  loggerContext
                 );
               } else if (currentPositionsAfterFailure.length >= maxPositions) {
-                console.log(
-                  chalk.yellow(
-                    `    - [REASON] Max positions reached: ${currentPositionsAfterFailure.length} >= ${maxPositions}`
-                  )
+                logger.info(
+                  `    - [REASON] Max positions reached: ${currentPositionsAfterFailure.length} >= ${maxPositions}`,
+                  {},
+                  loggerContext
                 );
               }
             }
@@ -576,16 +647,16 @@ export class SimulateCommands {
     // Debug: Log all positions after execution phase
     if (verbose) {
       const positionsAfterExecution = await exchange.getPositions();
-      console.log(
-        chalk.dim(
-          `\n  [DEBUG] Positions after execution phase: ${positionsAfterExecution.length} open`
-        )
+      logger.info(
+        `\n  [DEBUG] Positions after execution phase: ${positionsAfterExecution.length} open`,
+        {},
+        loggerContext
       );
       positionsAfterExecution.forEach(pos => {
-        console.log(
-          chalk.dim(
-            `    - ${pos.side.toUpperCase()} ${pos.symbol}: ${pos.size} @ $${pos.entryPrice.toFixed(2)}`
-          )
+        logger.info(
+          `    - ${pos.side.toUpperCase()} ${pos.symbol}: ${pos.size} @ $${pos.entryPrice.toFixed(2)}`,
+          {},
+          loggerContext
         );
       });
     }
@@ -596,8 +667,8 @@ export class SimulateCommands {
     // flushSync is no longer needed with UnifiedLogger (async storage)
 
     // Phase 4: Monitoring - Position Management
-    console.log(chalk.blue('\n🔍 PHASE 4: MONITORING (Position Management)'));
-    console.log(chalk.gray('-'.repeat(60)));
+    logger.info('\n🔍 PHASE 4: MONITORING (Position Management)', {}, loggerContext);
+    logger.info('-'.repeat(60), {}, loggerContext);
 
     const spinner4 = ora('Monitoring all positions...').start();
 
@@ -607,14 +678,16 @@ export class SimulateCommands {
 
     // Debug: Log positions before monitoring
     if (verbose) {
-      console.log(
-        chalk.dim(`\n  [DEBUG] Positions before monitoring: ${updatedPositions.length} open`)
+      logger.info(
+        `\n  [DEBUG] Positions before monitoring: ${updatedPositions.length} open`,
+        {},
+        loggerContext
       );
       updatedPositions.forEach(pos => {
-        console.log(
-          chalk.dim(
-            `    - ${pos.side.toUpperCase()} ${pos.symbol}: ${pos.size} @ $${pos.entryPrice.toFixed(2)} (P&L: $${pos.unrealizedPnl.toFixed(2)})`
-          )
+        logger.info(
+          `    - ${pos.side.toUpperCase()} ${pos.symbol}: ${pos.size} @ $${pos.entryPrice.toFixed(2)} (P&L: $${pos.unrealizedPnl.toFixed(2)})`,
+          {},
+          loggerContext
         );
       });
     }
@@ -625,7 +698,7 @@ export class SimulateCommands {
       );
 
       // Simulate price movement for all coins
-      console.log(chalk.gray('  ✓ Simulating market movements...'));
+      logger.info('  ✓ Simulating market movements...', {}, loggerContext);
       for (const coin of coins) {
         const symbol = `${coin}/USDT`;
         await SimulateCommands.simulatePriceMovement(exchange, symbol);
@@ -641,16 +714,16 @@ export class SimulateCommands {
       // Debug: Log positions after monitoring
       if (verbose) {
         const positionsAfterMonitoring = await exchange.getPositions();
-        console.log(
-          chalk.dim(
-            `\n  [DEBUG] Positions after monitoring: ${positionsAfterMonitoring.length} open`
-          )
+        logger.info(
+          `\n  [DEBUG] Positions after monitoring: ${positionsAfterMonitoring.length} open`,
+          {},
+          loggerContext
         );
         positionsAfterMonitoring.forEach(pos => {
-          console.log(
-            chalk.dim(
-              `    - ${pos.side.toUpperCase()} ${pos.symbol}: ${pos.size} @ $${pos.entryPrice.toFixed(2)} (P&L: $${pos.unrealizedPnl.toFixed(2)})`
-            )
+          logger.info(
+            `    - ${pos.side.toUpperCase()} ${pos.symbol}: ${pos.size} @ $${pos.entryPrice.toFixed(2)} (P&L: $${pos.unrealizedPnl.toFixed(2)})`,
+            {},
+            loggerContext
           );
         });
       }
@@ -670,46 +743,68 @@ export class SimulateCommands {
     // Debug: Always show position details if verbose, or if there's a concern
     // Note: positions count != executed orders is normal (orders can combine or close positions)
     if (verbose && finalPositions.length > 0) {
-      console.log(
-        chalk.dim(`\n  [DEBUG] Final positions detail: ${finalPositions.length} position(s)`)
+      logger.info(
+        `\n  [DEBUG] Final positions detail: ${finalPositions.length} position(s)`,
+        {},
+        loggerContext
       );
       finalPositions.forEach(pos => {
         const calcNotional = pos.size * pos.markPrice * pos.leverage;
         const notionalMatch = Math.abs(calcNotional - pos.notional) < 0.01;
-        console.log(
-          chalk.dim(
-            `    - ${pos.side.toUpperCase()} ${pos.symbol}: size=${pos.size.toFixed(8)}, entry=$${pos.entryPrice.toFixed(2)}, mark=$${pos.markPrice.toFixed(2)}, notional=$${pos.notional.toFixed(2)} (calc: $${calcNotional.toFixed(2)}${notionalMatch ? '' : ' ⚠️ MISMATCH'})`
-          )
+        logger.info(
+          `    - ${pos.side.toUpperCase()} ${pos.symbol}: size=${pos.size.toFixed(8)}, entry=$${pos.entryPrice.toFixed(2)}, mark=$${pos.markPrice.toFixed(2)}, notional=$${pos.notional.toFixed(2)} (calc: $${calcNotional.toFixed(2)}${notionalMatch ? '' : ' ⚠️ MISMATCH'})`,
+          {},
+          loggerContext
         );
       });
     }
 
     if (finalPositions.length > 0 && verbose) {
-      console.log(chalk.gray('\n  📊 Portfolio Overview:'));
-      console.log(
-        chalk.gray(`    - Total Exposure: $${portfolioMetrics.totalExposure.toFixed(2)}`)
+      logger.info('\n  📊 Portfolio Overview:', {}, loggerContext);
+      logger.info(
+        `    - Total Exposure: $${portfolioMetrics.totalExposure.toFixed(2)}`,
+        {},
+        loggerContext
       );
-      console.log(chalk.gray(`    - Total Leverage: ${portfolioMetrics.leverage.toFixed(2)}x`));
-      console.log(
-        chalk.gray(`    - Total Unrealized P&L: $${portfolioMetrics.totalUnrealizedPnl.toFixed(2)}`)
+      logger.info(
+        `    - Total Leverage: ${portfolioMetrics.leverage.toFixed(2)}x`,
+        {},
+        loggerContext
+      );
+      logger.info(
+        `    - Total Unrealized P&L: $${portfolioMetrics.totalUnrealizedPnl.toFixed(2)}`,
+        {},
+        loggerContext
       );
 
-      console.log(chalk.gray('\n  📊 Position Details by Symbol:'));
+      logger.info('\n  📊 Position Details by Symbol:', {}, loggerContext);
       Object.entries(portfolioMetrics.exposureBySymbol).forEach(([symbol, exposure]) => {
         const pnl = portfolioMetrics.pnlBySymbol[symbol] || 0;
         // Calculate P&L percentage as ROI on invested capital (exposure)
         // For accurate ROI: P&L / exposure * 100
         const pnlPercent = exposure > 0 ? (pnl / exposure) * 100 : 0;
-        console.log(chalk.gray(`    📈 ${symbol}:`));
-        console.log(chalk.gray(`      - Exposure: $${exposure.toFixed(2)}`));
-        console.log(chalk.gray(`      - P&L: $${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}% ROI)`));
+        logger.info(`    📈 ${symbol}:`, {}, loggerContext);
+        logger.info(`      - Exposure: $${exposure.toFixed(2)}`, {}, loggerContext);
+        logger.info(
+          `      - P&L: $${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}% ROI)`,
+          {},
+          loggerContext
+        );
       });
 
-      console.log(chalk.gray('\n  📊 Individual Positions:'));
+      logger.info('\n  📊 Individual Positions:', {}, loggerContext);
 
       // Header
-      console.log(chalk.gray('\n    │ SIDE     │ COIN │ LEVERAGE │ NOTIONAL    │ UNREAL P&L'));
-      console.log(chalk.gray('    ├──────────┼──────┼──────────┼──────────────┼────────────'));
+      logger.info(
+        '\n    │ SIDE     │ COIN │ LEVERAGE │ NOTIONAL    │ UNREAL P&L',
+        {},
+        loggerContext
+      );
+      logger.info(
+        '    ├──────────┼──────┼──────────┼──────────────┼────────────',
+        {},
+        loggerContext
+      );
 
       // Position rows
       finalPositions.forEach(position => {
@@ -720,10 +815,10 @@ export class SimulateCommands {
         const pnlColor = position.unrealizedPnl >= 0 ? chalk.green : chalk.red;
         const pnlText = `$${position.unrealizedPnl.toFixed(2)}`;
 
-        console.log(
-          chalk.gray(
-            `    │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.cyan(notionalText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(11))}`
-          )
+        logger.info(
+          `    │ ${sideColor(sideText.padEnd(8))} │ ${position.symbol.replace('/USDT', '').padEnd(4)} │ ${chalk.cyan(leverageText.padEnd(8))} │ ${chalk.cyan(notionalText.padEnd(13))} │ ${pnlColor(pnlText.padEnd(11))}`,
+          {},
+          loggerContext
         );
       });
     }
@@ -752,8 +847,11 @@ export class SimulateCommands {
     exchange: SimulatorExchange,
     symbol: string
   ): Promise<void> {
+    const logger = UnifiedLogger.getInstance();
+    const loggerContext = 'SimulateCommands';
+
     // This is a simple simulation - in a real scenario, you'd get live price updates
-    console.log(chalk.gray('  ✓ Simulating market movement...'));
+    logger.info('  ✓ Simulating market movement...', {}, loggerContext);
 
     // Add a small random price movement for demonstration
     const ticker = await exchange.getTicker(symbol);
@@ -761,10 +859,10 @@ export class SimulateCommands {
     const movement = (Math.random() - 0.5) * 0.02; // ±1% movement
     const newPrice = currentPrice * (1 + movement);
 
-    console.log(
-      chalk.gray(
-        `  ✓ Price movement: $${currentPrice.toFixed(2)} → $${newPrice.toFixed(2)} (${(movement * 100).toFixed(2)}%)`
-      )
+    logger.info(
+      `  ✓ Price movement: $${currentPrice.toFixed(2)} → $${newPrice.toFixed(2)} (${(movement * 100).toFixed(2)}%)`,
+      {},
+      loggerContext
     );
 
     // Persist the simulated move into the simulator's market data so subsequent
@@ -796,8 +894,11 @@ export class SimulateCommands {
     totalPnl: number,
     coinsAnalyzed: number
   ): void {
-    console.log(chalk.blue('\n📈 PORTFOLIO SUMMARY'));
-    console.log(chalk.gray('='.repeat(60)));
+    const logger = UnifiedLogger.getInstance();
+    const loggerContext = 'SimulateCommands';
+
+    logger.info('\n📈 PORTFOLIO SUMMARY', {}, loggerContext);
+    logger.info('='.repeat(60), {}, loggerContext);
 
     const pnlPercent = (totalPnl / initialBalance) * 100;
     const pnlColor = totalPnl >= 0 ? chalk.green : chalk.red;
@@ -806,19 +907,29 @@ export class SimulateCommands {
     // Available cash is the available margin (free to use)
     const availableCash = finalAccount.availableMargin || 0;
 
-    console.log(chalk.magenta(`TOTAL ACCOUNT VALUE: $${finalAccount.equity.toFixed(2)}`));
-    console.log(`Initial Balance:    $${initialBalance.toLocaleString()}`);
-    console.log(`Available Cash:    $${availableCash.toFixed(2)}`);
-    console.log(
-      `Total P&L:          ${pnlColor(`${pnlSign}$${totalPnl.toFixed(2)} (${pnlSign}${pnlPercent.toFixed(2)}%)`)}`
+    logger.info(`TOTAL ACCOUNT VALUE: $${finalAccount.equity.toFixed(2)}`, {}, loggerContext);
+    logger.info(`Initial Balance:    $${initialBalance.toLocaleString()}`, {}, loggerContext);
+    logger.info(`Available Cash:    $${availableCash.toFixed(2)}`, {}, loggerContext);
+    logger.info(
+      `Total P&L:          ${pnlColor(`${pnlSign}$${totalPnl.toFixed(2)} (${pnlSign}${pnlPercent.toFixed(2)}%)`)}`,
+      {},
+      loggerContext
     );
-    console.log(`Coins Analyzed:     ${coinsAnalyzed}`);
-    console.log(`Orders Executed:    ${executedOrders}`);
-    console.log(`Open Positions:     ${openPositions}`);
-    console.log(`Risk Level:         ${SimulateCommands.getRiskLevel(Math.abs(pnlPercent))}`);
+    logger.info(`Coins Analyzed:     ${coinsAnalyzed}`, {}, loggerContext);
+    logger.info(`Orders Executed:    ${executedOrders}`, {}, loggerContext);
+    logger.info(`Open Positions:     ${openPositions}`, {}, loggerContext);
+    logger.info(
+      `Risk Level:         ${SimulateCommands.getRiskLevel(Math.abs(pnlPercent))}`,
+      {},
+      loggerContext
+    );
 
-    console.log(chalk.gray('\n' + '='.repeat(60)));
-    console.log(chalk.green('✅ Multi-coin multi-position simulation completed successfully!'));
+    logger.info('\n' + '='.repeat(60), {}, loggerContext);
+    logger.info(
+      '✅ Multi-coin multi-position simulation completed successfully!',
+      {},
+      loggerContext
+    );
 
     // Final flush of logger buffer to ensure all warnings/logs are shown
     // This catches any warnings that occurred during the simulation

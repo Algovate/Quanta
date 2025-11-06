@@ -9,6 +9,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { OperationLogger } from './operation-logger.js';
 import { JsonlWriter } from './writers/jsonl-writer.js';
+import { getConfig } from '../config/settings.js';
 import type {
   TraceContext,
   OperationLog,
@@ -40,15 +41,6 @@ export class UnifiedLogger {
   private static instance: UnifiedLogger;
 
   // Constants
-  private static readonly OPERATION_CONTEXT_MAP: Record<string, string> = {
-    trading_cycle: 'TradingCycle',
-    signal_generation: 'AISignal',
-    order_execution: 'Execution',
-    position_monitoring: 'Account',
-    account_sync: 'Account',
-    market_data: 'MarketData',
-  };
-
   private static readonly SENSITIVE_HEADER_KEYS = [
     'authorization',
     'api-key',
@@ -73,13 +65,6 @@ export class UnifiedLogger {
 
   // State
   private initialized: boolean = false;
-  private consoleInterceptionEnabled: boolean = false;
-  private originalConsole: {
-    log: typeof console.log;
-    warn: typeof console.warn;
-    error: typeof console.error;
-  };
-  private isLoggingInternally: boolean = false;
   private operationContextStorage: AsyncLocalStorage<OperationContext>;
 
   private constructor() {
@@ -91,13 +76,6 @@ export class UnifiedLogger {
       retentionDays: 7,
     });
     this.operationContextStorage = new AsyncLocalStorage<OperationContext>();
-
-    // Store original console methods
-    this.originalConsole = {
-      log: console.log.bind(console),
-      warn: console.warn.bind(console),
-      error: console.error.bind(console),
-    };
   }
 
   static getInstance(): UnifiedLogger {
@@ -115,78 +93,14 @@ export class UnifiedLogger {
       return;
     }
 
-    // Lite mode has no background handlers
-    this.setupConsoleInterception();
-
     this.initialized = true;
-  }
-
-  /**
-   * Set up console interception to capture all console output
-   * NOTE: We capture console output to logs, but do NOT output to console.
-   * This keeps the console clean - users can view captured logs via "quanta log view"
-   */
-  private setupConsoleInterception(): void {
-    if (this.consoleInterceptionEnabled) {
-      return;
-    }
-
-    // Wrap console.log - capture to logs only, do NOT output to console
-    console.log = (...args: unknown[]) => {
-      // Do NOT output to console - just capture to logs
-      if (!this.isLoggingInternally) {
-        const message = this.formatConsoleArgs(args);
-        this.captureConsoleOutput('info', message);
-      }
-    };
-
-    // Wrap console.warn - capture to logs only, do NOT output to console
-    console.warn = (...args: unknown[]) => {
-      // Do NOT output to console - just capture to logs
-      if (!this.isLoggingInternally) {
-        const message = this.formatConsoleArgs(args);
-        this.captureConsoleOutput('warn', message);
-      }
-    };
-
-    // Wrap console.error - capture to logs only, do NOT output to console
-    console.error = (...args: unknown[]) => {
-      // Do NOT output to console - just capture to logs
-      if (!this.isLoggingInternally) {
-        const message = this.formatConsoleArgs(args);
-        this.captureConsoleOutput('error', message);
-      }
-    };
-
-    this.consoleInterceptionEnabled = true;
-  }
-
-  /**
-   * Format console arguments to string message
-   */
-  private formatConsoleArgs(args: unknown[]): string {
-    return args
-      .map(arg => {
-        if (typeof arg === 'string') {
-          return arg;
-        }
-        if (arg instanceof Error) {
-          return arg.message;
-        }
-        try {
-          return JSON.stringify(arg, null, 2);
-        } catch {
-          return String(arg);
-        }
-      })
-      .join(' ');
   }
 
   /**
    * Generate a unique log ID
    */
   private generateLogId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   }
 
   /**
@@ -194,57 +108,6 @@ export class UnifiedLogger {
    */
   private getOperationContext(): OperationContext | undefined {
     return this.operationContextStorage.getStore();
-  }
-
-  /**
-   * Resolve context from operation type
-   */
-  private resolveContextFromOperation(operationType: string): string {
-    return UnifiedLogger.OPERATION_CONTEXT_MAP[operationType] || 'Console';
-  }
-
-  /**
-   * Capture console output to text logs
-   */
-  private captureConsoleOutput(level: 'info' | 'warn' | 'error', message: string): void {
-    const opContext = this.getOperationContext();
-    const context = this.determineContext(opContext);
-    const cycleId = opContext?.cycleId ?? 0;
-
-    const textLog: TextLog = {
-      logId: this.generateLogId(),
-      timestamp: Date.now(),
-      level,
-      context,
-      message: this.stripAnsiCodes(message),
-      formattedMessage: message, // Optional: Keep ANSI codes for display (not stored in DB)
-      metadata: {},
-      cycleId,
-      operationId: opContext?.operationId,
-      traceId: opContext?.traceId,
-    };
-
-    // Store asynchronously to JSONL (non-tiered)
-    this.jsonlWriter.append(textLog as unknown as Record<string, unknown>).catch(err => {
-      // Use original console to avoid recursion
-      this.originalConsole.error('Failed to write text log:', err);
-    });
-  }
-
-  /**
-   * Determine context from operation context
-   */
-  private determineContext(opContext?: OperationContext): string {
-    if (!opContext?.operationId) {
-      return 'Console';
-    }
-
-    const operation = this.operationLogger.getOperation(opContext.operationId);
-    if (!operation) {
-      return 'Console';
-    }
-
-    return this.resolveContextFromOperation(operation.operationType);
   }
 
   // Lite mode: no background handlers or aggregations
@@ -754,19 +617,15 @@ export class UnifiedLogger {
   }
 
   /**
-   * Get the original console methods (bypass interception)
-   * Useful for minimal output that shouldn't be logged
-   */
-  getOriginalConsole(): {
-    log: typeof console.log;
-    warn: typeof console.warn;
-    error: typeof console.error;
-  } {
-    return this.originalConsole;
-  }
-
-  /**
    * Log info message
+   *
+   * Output routing (Scheme B):
+   * - Default: Console only (text format, no context)
+   * - Configurable via logging.output.info in config.json
+   *
+   * @param message - Log message
+   * @param metadata - Optional metadata object
+   * @param context - Optional context name
    */
   info(message: string, metadata?: Record<string, any>, context?: string): void {
     this.logText('info', message, metadata, context);
@@ -774,6 +633,14 @@ export class UnifiedLogger {
 
   /**
    * Log warn message
+   *
+   * Output routing (Scheme B):
+   * - Default: Console + File (text format, no context in console)
+   * - Configurable via logging.output.warn in config.json
+   *
+   * @param message - Log message
+   * @param metadata - Optional metadata object
+   * @param context - Optional context name
    */
   warn(message: string, metadata?: Record<string, any>, context?: string): void {
     this.logText('warn', message, metadata, context);
@@ -781,6 +648,14 @@ export class UnifiedLogger {
 
   /**
    * Log error message
+   *
+   * Output routing (Scheme B):
+   * - Default: Console + File (text format, includes context and stack trace)
+   * - Configurable via logging.output.error in config.json
+   *
+   * @param message - Log message
+   * @param error - Optional Error object (stack trace will be included)
+   * @param context - Optional context name
    */
   error(message: string, error?: Error, context?: string): void {
     const metadata = error
@@ -797,13 +672,32 @@ export class UnifiedLogger {
 
   /**
    * Log debug message
+   *
+   * Output routing (Scheme B):
+   * - Default: File only (JSON format, includes full context)
+   * - Configurable via logging.output.debug in config.json
+   *
+   * @param message - Log message
+   * @param metadata - Optional metadata object
+   * @param context - Optional context name
    */
   debug(message: string, metadata?: Record<string, any>, context?: string): void {
     this.logText('debug', message, metadata, context);
   }
 
   /**
-   * Internal method to log text messages
+   * Internal method to log text messages with smart routing (Scheme B)
+   *
+   * Routes logs to console and/or file based on configuration:
+   * - Gets configuration from config.json (logging.output[level])
+   * - Falls back to defaults if not configured
+   * - Console output: Respects includeContext flag for formatting
+   * - File output: Always includes full context for queryability
+   *
+   * @param level - Log level (info, warn, error, debug)
+   * @param message - Log message
+   * @param metadata - Optional metadata object
+   * @param context - Optional context name
    */
   private logText(
     level: 'info' | 'warn' | 'error' | 'debug',
@@ -811,31 +705,130 @@ export class UnifiedLogger {
     metadata?: Record<string, any>,
     context?: string
   ): void {
+    // Get configuration for this log level
+    const config = getConfig();
+    const loggingConfig = config.logging;
+
+    // Default behavior if no output config is specified
+    const defaultOutputConfig = {
+      debug: { console: false, file: true, format: 'json' as const, includeContext: true },
+      info: { console: true, file: false, format: 'text' as const, includeContext: false },
+      warn: { console: true, file: true, format: 'text' as const, includeContext: false },
+      error: {
+        console: true,
+        file: true,
+        format: 'text' as const,
+        includeContext: true,
+        includeStack: true,
+      },
+    };
+
+    // Use configured output or default
+    const outputConfig = loggingConfig?.output?.[level];
+    const levelConfig = outputConfig || defaultOutputConfig[level];
+
+    // Get operation context
     const opContext = this.getOperationContext();
     const cycleId = opContext?.cycleId ?? 0;
 
-    const textLog: TextLog = {
-      logId: this.generateLogId(),
+    // Build simplified log structure
+    const baseLog: TextLog = {
       timestamp: Date.now(),
       level,
       context: context || 'UnifiedLogger',
       message: this.stripAnsiCodes(message), // Plain text for querying
-      formattedMessage: message, // Optional: formatted with ANSI codes (not stored in DB)
-      metadata: metadata || {},
-      cycleId,
-      operationId: opContext?.operationId,
-      traceId: opContext?.traceId,
+      metadata: {
+        formattedMessage: message, // Keep ANSI codes for display
+        cycleId,
+        ...(opContext?.operationId && { operationId: opContext.operationId }),
+        ...(opContext?.traceId && { traceId: opContext.traceId }),
+        ...(metadata || {}), // Merge user-provided metadata
+      },
     };
 
-    // Store to JSONL (non-tiered)
-    this.jsonlWriter.append(textLog as unknown as Record<string, unknown>).catch(err => {
-      this.originalConsole.error('Failed to write text log:', err);
-    });
+    // Route to console if configured
+    if (levelConfig.console) {
+      this.outputToConsole(level, baseLog, {
+        format: levelConfig.format || 'text',
+        includeContext: levelConfig.includeContext ?? false,
+      });
+    }
 
-    // NOTE: We do NOT output to console here - all console output should go through
-    // originalConsole.log() directly for minimal output, or through unifiedLogger
-    // which stores logs that can be viewed via "quanta log view"
-    // This prevents duplicate output and keeps console clean
+    // Route to file if configured
+    // File output always includes context for queryability, regardless of includeContext flag
+    if (levelConfig.file && loggingConfig?.fileOutput !== false) {
+      this.outputToFile(baseLog);
+    }
+  }
+
+  /**
+   * Output log to console
+   */
+  private outputToConsole(
+    level: 'info' | 'warn' | 'error' | 'debug',
+    log: TextLog,
+    config: { format: 'json' | 'text'; includeContext?: boolean }
+  ): void {
+    const includeContext = config.includeContext ?? false;
+    const metadata = log.metadata || {};
+
+    if (config.format === 'json') {
+      // JSON format: output structured JSON
+      const jsonOutput: Record<string, unknown> = {
+        timestamp: new Date(log.timestamp).toISOString(),
+        level: log.level,
+        context: log.context,
+        message: log.message,
+      };
+
+      // Include context fields from metadata only if includeContext is true
+      if (includeContext) {
+        if (metadata.operationId) jsonOutput.operationId = metadata.operationId;
+        if (metadata.traceId) jsonOutput.traceId = metadata.traceId;
+        if (metadata.cycleId !== undefined && metadata.cycleId !== null) {
+          jsonOutput.cycleId = metadata.cycleId;
+        }
+      }
+
+      // Include other metadata if present
+      if (Object.keys(metadata).length > 0) {
+        jsonOutput.metadata = metadata;
+      }
+
+      console.log(JSON.stringify(jsonOutput));
+    } else {
+      // Text format: output human-readable text
+      const formattedMessage = (metadata.formattedMessage as string) || log.message;
+      switch (level) {
+        case 'info':
+          console.log(formattedMessage);
+          break;
+        case 'warn':
+          console.warn(formattedMessage);
+          break;
+        case 'error':
+          console.error(formattedMessage);
+          // If error has stack trace, output it
+          if (metadata.error && typeof metadata.error === 'object' && 'stack' in metadata.error) {
+            console.error(metadata.error.stack as string);
+          }
+          break;
+        case 'debug':
+          console.log(formattedMessage);
+          break;
+      }
+    }
+  }
+
+  /**
+   * Output log to file
+   * Always stores as simplified structured JSONL
+   */
+  private outputToFile(log: TextLog): void {
+    // Store simplified log structure directly
+    this.jsonlWriter.append(log as unknown as Record<string, unknown>).catch(err => {
+      console.error('Failed to write log to file:', err);
+    });
   }
 
   /**

@@ -181,13 +181,6 @@ See [Configuration Guide](configuration.md#market-types) for details on market t
 - Understand on-chain transaction costs
 - Be aware of network latency
 
-### For Risk Management
-
-- Test first with simulator before real trading
-- Start with paper trading mode
-- Use small position sizes initially
-- Monitor positions regularly
-
 ## Troubleshooting
 
 ### API Errors
@@ -209,13 +202,6 @@ quanta test exchange --exchange <exchange> --coin BTC --verbose
 - Hyperliquid requires perpetual format, auto-handled
 - OKX uses `BASE/USDT:USDT` format for perpetuals
 - Check exchange-specific symbol requirements
-
-### Network Errors
-
-- Check internet connection
-- Verify API endpoint accessibility
-- Review rate limits
-- Check firewall settings if using VPN or proxy
 
 ### Connection Issues
 

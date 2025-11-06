@@ -191,7 +191,7 @@ Query: `quanta arena compare <arenaId>`
 
 **High API costs**: Reduce `maxConcurrentAICalls`, use fewer drones, increase `cyclePeriod`
 
-**View logs**: Use `quanta log view --context ArenaManager` - see [Logging Guide](logging-guide.md)
+**View logs**: Use `quanta log view --context ArenaManager` - see [Command Reference](commands.md#log-commands)
 
 ## Advanced
 
@@ -216,4 +216,4 @@ EventBus.on('drone:abc123:cycle:complete', payload => console.log('Cycle:', payl
 
 ---
 
-**Related**: [Logging Guide](logging-guide.md) | [Command Reference](commands.md#arena-commands) | [Configuration Guide](configuration.md)
+**Related**: [Command Reference](commands.md#arena-commands) | [Configuration Guide](configuration.md)

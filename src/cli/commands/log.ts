@@ -114,9 +114,7 @@ export class LogCommands {
   }): Promise<void> {
     const query = QueryInterface.getInstance();
     const logger = UnifiedLogger.getInstance();
-
-    // Get original console to bypass interception when displaying logs
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'LogCommands';
 
     // Parse and validate level
     const level = parseLogLevel(options.level);
@@ -135,19 +133,21 @@ export class LogCommands {
 
       // Display logs
       if (logs.length === 0) {
-        originalConsole.log(chalk.yellow('⚠️  No console output found matching the criteria'));
+        logger.info(chalk.yellow('⚠️  No console output found matching the criteria'), {}, context);
         return;
       }
 
       // Display initial logs (sorted chronologically)
-      this.displayLogs(logs, originalConsole, options.format);
+      this.displayLogs(logs, options.format);
 
       // Show info message for non-follow mode
       if (!options.follow) {
-        originalConsole.log(
+        logger.info(
           chalk.gray(
             `\n--- Showing last ${logs.length} log entries (use --follow for real-time updates) ---`
-          )
+          ),
+          {},
+          context
         );
       }
 
@@ -155,7 +155,6 @@ export class LogCommands {
       if (options.follow) {
         await this.startFollowMode({
           query,
-          originalConsole,
           options: {
             context: options.context,
             level,
@@ -179,19 +178,20 @@ export class LogCommands {
    */
   private static displayLogs(
     logs: Array<{ message: string; formattedMessage?: string }>,
-    originalConsole: { log: typeof console.log },
     format?: string
   ): void {
+    const logger = UnifiedLogger.getInstance();
+    const context = 'LogCommands';
     // Logs are already sorted by timestamp DESC (newest first)
     // For display, we want oldest first so they appear in chronological order
     const sortedLogs = [...logs].reverse();
 
     for (const log of sortedLogs) {
       if (format === 'raw') {
-        originalConsole.log(log.message);
+        logger.info(log.message, {}, context);
       } else {
         // Use formatted message (with ANSI codes) for display
-        originalConsole.log(log.formattedMessage || log.message);
+        logger.info(log.formattedMessage || log.message, {}, context);
       }
     }
   }
@@ -201,7 +201,6 @@ export class LogCommands {
    */
   private static async startFollowMode(options: {
     query: QueryInterface;
-    originalConsole: { log: typeof console.log; error: typeof console.error };
     options: {
       context?: string;
       level?: 'info' | 'warn' | 'error' | 'debug';
@@ -210,12 +209,14 @@ export class LogCommands {
     };
     initialTimestamp: number;
   }): Promise<void> {
-    const { query, originalConsole, options: queryOptions, initialTimestamp } = options;
+    const logger = UnifiedLogger.getInstance();
+    const context = 'LogCommands';
+    const { query, options: queryOptions, initialTimestamp } = options;
     let pollInterval: NodeJS.Timeout | undefined;
     let lastTimestamp = initialTimestamp;
 
     try {
-      originalConsole.log(chalk.gray('\n--- Following logs (press Ctrl+C to stop) ---\n'));
+      logger.info(chalk.gray('\n--- Following logs (press Ctrl+C to stop) ---\n'), {}, context);
 
       pollInterval = setInterval(async () => {
         try {
@@ -233,11 +234,11 @@ export class LogCommands {
 
           // Display new logs and update timestamp
           for (const log of newLogs) {
-            this.displayLogs([log], originalConsole, queryOptions.format);
+            this.displayLogs([log], queryOptions.format);
             lastTimestamp = Math.max(lastTimestamp, log.timestamp);
           }
         } catch (error) {
-          originalConsole.error(chalk.red('Error polling logs:'), error);
+          logger.error(chalk.red('Error polling logs:'), error, context);
         }
       }, 1000); // Poll every second
 
@@ -247,7 +248,7 @@ export class LogCommands {
           clearInterval(pollInterval);
         }
         this.cleanupResources();
-        originalConsole.log(chalk.yellow('\n\nStopped following logs.'));
+        logger.info(chalk.yellow('\n\nStopped following logs.'));
         process.exitCode = 0;
         return;
       };
@@ -259,7 +260,7 @@ export class LogCommands {
       });
     } catch (error) {
       // Handle any errors that occur during follow mode setup or execution
-      originalConsole.error(chalk.red('Error in follow mode:'), error);
+      logger.error(chalk.red('Error in follow mode:'), error);
       throw error;
     } finally {
       // Ensure cleanup happens even if an error occurs
@@ -293,11 +294,11 @@ export class LogCommands {
     dryRun?: boolean;
   }): Promise<void> {
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'LogCommands';
     const files = await getLogFiles();
 
     if (files.length === 0) {
-      originalConsole.log(chalk.yellow('⚠️  No log files found'));
+      logger.info(chalk.yellow('⚠️  No log files found'), {}, context);
       return;
     }
 
@@ -316,23 +317,21 @@ export class LogCommands {
     }
 
     if (filesToDelete.length === 0) {
-      originalConsole.log(chalk.green('✓ No files to delete'));
+      logger.info(chalk.green('✓ No files to delete'));
       return;
     }
 
     // Show what would be deleted
-    originalConsole.log(chalk.blue(`\n📋 Files to delete (${filesToDelete.length}):\n`));
+    logger.info(chalk.blue(`\n📋 Files to delete (${filesToDelete.length}):\n`));
     let totalSize = 0;
     for (const file of filesToDelete) {
       totalSize += file.size;
-      originalConsole.log(
-        `  ${chalk.gray(file.name)} ${chalk.dim(`(${formatFileSize(file.size)})`)}`
-      );
+      logger.info(`  ${chalk.gray(file.name)} ${chalk.dim(`(${formatFileSize(file.size)})`)}`);
     }
-    originalConsole.log(chalk.dim(`\nTotal size: ${formatFileSize(totalSize)}\n`));
+    logger.info(chalk.dim(`\nTotal size: ${formatFileSize(totalSize)}\n`));
 
     if (options.dryRun) {
-      originalConsole.log(chalk.yellow('🔍 Dry run mode - no files were deleted'));
+      logger.info(chalk.yellow('🔍 Dry run mode - no files were deleted'));
       return;
     }
 
@@ -340,7 +339,7 @@ export class LogCommands {
     if (!options.force) {
       const confirmed = await promptConfirmation(`Delete ${filesToDelete.length} file(s)?`);
       if (!confirmed) {
-        originalConsole.log(chalk.yellow('✗ Cleanup cancelled'));
+        logger.info(chalk.yellow('✗ Cleanup cancelled'));
         return;
       }
     }
@@ -355,15 +354,15 @@ export class LogCommands {
         deletedCount++;
       } catch (error) {
         errorCount++;
-        originalConsole.error(chalk.red(`Failed to delete ${file.name}:`), error);
+        logger.error(chalk.red(`Failed to delete ${file.name}:`), error);
       }
     }
 
     if (deletedCount > 0) {
-      originalConsole.log(chalk.green(`\n✓ Deleted ${deletedCount} file(s)`));
+      logger.info(chalk.green(`\n✓ Deleted ${deletedCount} file(s)`));
     }
     if (errorCount > 0) {
-      originalConsole.log(chalk.red(`✗ Failed to delete ${errorCount} file(s)`));
+      logger.info(chalk.red(`✗ Failed to delete ${errorCount} file(s)`));
     }
   }
 
@@ -388,11 +387,11 @@ export class LogCommands {
    */
   private static async listLogFiles(options: { format?: string; sort?: string }): Promise<void> {
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'LogCommands';
     const files = await getLogFiles();
 
     if (files.length === 0) {
-      originalConsole.log(chalk.yellow('⚠️  No log files found'));
+      logger.info(chalk.yellow('⚠️  No log files found'), {}, context);
       return;
     }
 
@@ -419,7 +418,7 @@ export class LogCommands {
       output = formatLogFilesAsTable(filesWithLineCounts);
     }
 
-    originalConsole.log(output);
+    logger.info(output, {}, context);
   }
 
   /**
@@ -474,7 +473,7 @@ export class LogCommands {
     format?: string;
   }): Promise<void> {
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'LogCommands';
     const query = QueryInterface.getInstance();
 
     // Calculate time range
@@ -494,7 +493,7 @@ export class LogCommands {
     const logs = result.logs;
 
     if (logs.length === 0) {
-      originalConsole.log(chalk.yellow('⚠️  No logs found matching the criteria'));
+      logger.info(chalk.yellow('⚠️  No logs found matching the criteria'));
       return;
     }
 
@@ -504,7 +503,7 @@ export class LogCommands {
     const format = options.format || 'table';
     const output = format === 'json' ? formatStatsAsJson(stats) : formatStatsAsTable(stats);
 
-    originalConsole.log(output);
+    logger.info(output, {}, context);
   }
 
   /**
@@ -554,18 +553,18 @@ export class LogCommands {
     until?: string;
   }): Promise<void> {
     const logger = UnifiedLogger.getInstance();
-    const originalConsole = logger.getOriginalConsole();
+    const context = 'LogCommands';
     const query = QueryInterface.getInstance();
 
     if (!options.output) {
-      originalConsole.error(chalk.red('✗ Error: --output is required'));
+      logger.error(chalk.red('✗ Error: --output is required'), undefined, context);
       return;
     }
 
     // Calculate time range
     const timeRange = this.calculateExportTimeRange(options);
     if (timeRange.error) {
-      originalConsole.error(chalk.red(`✗ ${timeRange.error}`));
+      logger.error(chalk.red(`✗ ${timeRange.error}`));
       return;
     }
 
@@ -584,7 +583,7 @@ export class LogCommands {
     const logs = result.logs;
 
     if (logs.length === 0) {
-      originalConsole.log(chalk.yellow('⚠️  No logs found matching the criteria'));
+      logger.info(chalk.yellow('⚠️  No logs found matching the criteria'));
       return;
     }
 
@@ -601,19 +600,17 @@ export class LogCommands {
     } else if (format === 'txt') {
       content = exportLogsAsText(logs);
     } else {
-      originalConsole.error(chalk.red(`✗ Invalid format: ${format}. Use json, csv, or txt`));
+      logger.error(chalk.red(`✗ Invalid format: ${format}. Use json, csv, or txt`));
       return;
     }
 
     // Write to file
     try {
       await fs.promises.writeFile(options.output, content, 'utf-8');
-      originalConsole.log(
-        chalk.green(`✓ Exported ${logs.length} log entries to ${options.output}`)
-      );
-      originalConsole.log(chalk.dim(`Format: ${format}, Size: ${formatFileSize(content.length)}`));
+      logger.info(chalk.green(`✓ Exported ${logs.length} log entries to ${options.output}`));
+      logger.info(chalk.dim(`Format: ${format}, Size: ${formatFileSize(content.length)}`));
     } catch (error) {
-      originalConsole.error(chalk.red(`✗ Failed to write file: ${options.output}`), error);
+      logger.error(chalk.red(`✗ Failed to write file: ${options.output}`), error);
       throw error;
     }
   }

@@ -1,31 +1,12 @@
-### API Server Execution Exclusivity
-
-When starting trading via API routes, the server enforces a single active execution session at any time. Attempts to start an Arena while a Strategy is running (or vice versa) will be rejected with a clear error. Use the `/api/system/session` endpoint to inspect the current session.
-
 # Command Reference
 
 Complete reference for all Quanta commands.
 
-## Top-Level Commands
-
-```
-quanta
-├── trade      Trading operations (2 sub-commands)
-├── arena      Multi-drone trading arena (6 sub-commands)
-├── test       Testing and validation (2 sub-commands)
-├── config     Configuration management (6 sub-commands)
-├── simulate   Simulation and demonstration (1 sub-command)
-├── server     Web server for trading UI (3 sub-commands)
-├── log        Log management (view, clean, list, stats, export)
-├── prompts    Prompt group management (3 sub-commands)
-└── help       Show help information
-```
-
 ## Trading Commands
 
-### `trade start` - Start AI Trading System
+### `trade start` - Start Trading System
 
-Start the trading system specifying environment and coins.
+Start the trading system.
 
 ```bash
 quanta trade start [options]
@@ -46,118 +27,28 @@ quanta trade start --env paper --coins BTC,ETH,SOL
 
 # Strategy · Live (requires API keys)
 quanta trade start --env live --coins BTC
-
-# Note: For backtesting, use the dedicated command:
-# quanta trade backtest --start 2024-01-01 --end 2024-12-31
 ```
 
-**Startup Output:**
-
-The command displays minimal startup information:
-
-```
-🏆 Quanta Trading System
-Env: paper | Coins: BTC, ETH, SOL
-✔ Trading system initialized
-🚀 Trading started. Use "quanta log view" to view detailed output.
-```
-
-Configuration display includes:
-
-```
-📊 Configuration:
-   Env: paper
-   Exchange: Paper (OKX, testnet)
-   Market Type: spot
-```
-
-**Note:** For multi-drone arena trading, use the `arena` command instead:
-
-```bash
-quanta arena start --config <config-name>
-```
-
-### API Error Responses
-
-All API endpoints return standardized error objects:
-
-```json
-{
-  "code": "E_INVALID_CONFIG",
-  "message": "Invalid arena configuration",
-  "details": {},
-  "timestamp": 1712345678901
-}
-```
-
-Common codes: `E_SESSION_ACTIVE`, `E_INVALID_ENV`, `E_INVALID_CONFIG`, `E_MISSING_API_KEY`, `E_VALIDATION_ERROR`, `E_NOT_FOUND`.
-
-Risk parameter validation:
-
-- Shows warnings for parameters that are adjusted (e.g., `[risk-guard] Clamped leverage.min: 5 -> 1`)
-- Displays a summary of all effective risk parameters with their allowed ranges:
-
-```
-[risk-guard] Risk parameters for marketType=spot:
-   Leverage: 1x - 1x
-   Stop Loss: 5.0% (range: 3.0% - 7.0%)
-   Max Risk: 5.0% (range: 3.0% - 5.0%)
-   Max Positions: 6 (range: 6 - 10)
-```
-
-- Parameters within the allowed range are shown without warnings
-- Only adjusted parameters show warning messages
-
-**Note:** Detailed cycle summaries (account status, risk status, positions, etc.) are no longer displayed directly in the console. Use `quanta log view` to view detailed output:
-
-```bash
-# View detailed console output
-quanta log view
-
-# Follow in real-time (like tail -f)
-quanta log view --follow
-
-# View with specific context or level
-quanta log view --context Workflow --level info
-```
-
----
+**Note:** For multi-drone arena trading, use `arena` command instead.
 
 ### `trade backtest` - Run Backtest
 
-Run backtest with historical data. Results display with enhanced formatting and detailed metrics.
+Run backtest with historical data.
 
 ```bash
 quanta trade backtest [options]
 
 Options:
-  -c, --coins <coins>                 Comma-separated list of coins (default: "BTC,ETH,SOL")
+  -c, --coins <coins>                 Comma-separated list of coins
   -s, --start <date>                  Start date (YYYY-MM-DD)
   -e, --end <date>                    End date (YYYY-MM-DD)
   --initial-balance <amount>          Initial balance (default: "10000")
-  --seed <number>                     Seed for deterministic randomness (default: none)
+  --seed <number>                     Seed for deterministic randomness
   --verbose                           Verbose output
-  --quiet                             Minimal output (summary + errors)
+  --quiet                             Minimal output
   --json                              Output raw JSON
-  --no-progress                       Disable progress bar
-  --update-interval <ms>              UI update interval in ms (default: 750)
-  --cycle-sample <n>                  Print every N cycles (default: 10)
-  --equity-delta-pct <pct>            Print when equity % change ≥ pct (default: 0.001)
-  --upnl-delta <usd>                  Print when UPNL $ change ≥ usd (default: 10)
-  --exposure-delta-pct <pct>          Print when exposure % change ≥ pct (default: 0.1)
-  --leverage-delta <val>              Print when leverage absolute change ≥ val (default: 0.2)
-  --dd-steps <steps>                  Drawdown alert steps, comma-separated (e.g., 5,10,15)
-  --summary-only                      Only print executive summary line
-  --no-risks                          Hide Risk Metrics section
-  --no-signals                        Hide Signal Statistics section
-  --no-equity                         Hide Equity Curve section
+  --summary-only                      Only print executive summary
 ```
-
-Defaults:
-
-- If neither `--start` nor `--end` is provided, the default span is the last 4 months.
-- If only `--start` is provided, `--end` defaults to 4 months later.
-- If only `--end` is provided, `--start` defaults to 4 months earlier.
 
 **Examples:**
 
@@ -168,26 +59,11 @@ quanta trade backtest
 # Fixed window
 quanta trade backtest --start 2024-06-01 --end 2024-10-01
 
-# Deterministic run with reduced noise
-quanta trade backtest --seed 42 --no-signals --no-equity --cycle-sample 20
-
-# Summary line only
-quanta trade backtest --summary-only
+# Deterministic run
+quanta trade backtest --seed 42 --summary-only
 ```
 
-**Report Sections:**
-
-The backtest output includes:
-
-- **Signal Statistics**: Generated, accepted, rejected signals with acceptance rate
-- **Performance Summary**: Total return, P&L, annualized return, Sharpe ratio, max drawdown
-- **Trade Statistics**: Win/loss breakdown with visual progress bar, average profit/loss, best/worst trades
-- **Risk Metrics**: Volatility, VaR, max drawdown value, largest win/loss
-- **Equity Curve**: Peak and lowest equity, positive periods percentage
-
-All metrics use color coding (green/yellow/red) based on performance thresholds and include locale-formatted numbers with commas for thousands.
-
----
+**Defaults:** If neither `--start` nor `--end` is provided, defaults to last 4 months.
 
 ## Testing Commands
 
@@ -199,9 +75,9 @@ Test AI integration (Mock and Real AI).
 quanta test ai [options]
 
 Options:
-  -t, --type <type>  AI type to test: mock, real, or both (default: "both")
+  -t, --type <type>  AI type: mock, real, or both (default: "both")
   -c, --coin <coin>  Coin to test (default: "BTC")
-  -v, --verbose       Show detailed output (default: false)
+  -v, --verbose      Show detailed output
 ```
 
 **Examples:**
@@ -212,16 +88,11 @@ quanta test ai --type mock --coin BTC
 
 # Test Real AI
 quanta test ai --type real --coin BTC
-
-# Test both with details
-quanta test ai --type both --verbose
 ```
-
----
 
 ### `test exchange` - Test Exchange Data
 
-Test exchange connectivity and data retrieval with comprehensive technical analysis.
+Test exchange connectivity and data retrieval.
 
 ```bash
 quanta test exchange [options]
@@ -230,35 +101,23 @@ Options:
   -e, --exchange <exchange>    Exchange to test (default: "simulator")
   -a, --all                    Test all supported exchanges
   -c, --coin <coin>            Coin to test (default: "BTC")
-  -t, --timeframe <timeframe>  Timeframe to test (default: "3m")
-  -l, --limit <limit>          Number of candles to fetch (default: "20")
-  -v, --verbose                Show detailed output when testing all exchanges
+  -v, --verbose                Show detailed output
 ```
 
 **Examples:**
 
 ```bash
-# Test single exchange with detailed analysis
+# Test single exchange
 quanta test exchange --exchange okx --coin BTC
 
-# Quick connectivity test of all exchanges
+# Test all exchanges
 quanta test exchange --all --coin BTC
 
-# Detailed test of all exchanges (comprehensive)
-quanta test exchange --all --verbose --coin BTC
-
-# Test simulator (default)
-quanta test exchange --coin BTC
-
 # Test with abbreviations
-quanta test exchange --exchange bin --coin BTC --timeframe 1h
-quanta test exchange --exchange cb --coin ETH
-quanta test exchange --exchange hliq --coin SOL
+quanta test exchange --exchange bin --coin BTC
 ```
 
 **Supported exchanges**: simulator, binance/bin, okx, coinbase/cb, hyperliquid/hliq
-
----
 
 ## Simulation Commands
 
@@ -270,13 +129,11 @@ Simulate a complete trade cycle.
 quanta simulate cycle [options]
 
 Options:
-  -c, --coins <coins>              Comma-separated list of coins (default: "BTC")
-  -b, --initial-balance <amount>   Initial balance in USD (default: "10000")
-  -v, --verbose                    Show detailed logging (default: false)
-  -p, --max-positions <number>     Maximum number of concurrent positions (default: "3")
-  --cycles <number>                Number of cycles to run (default: "1")
-  --interval <ms>                  Delay between cycles in ms (default: "3000")
-  -a, --ai <type>                  AI type: mock or real (default: "mock")
+  -c, --coins <coins>              Comma-separated list of coins
+  -b, --initial-balance <amount>    Initial balance in USD
+  -v, --verbose                    Show detailed logging
+  --cycles <number>                Number of cycles to run
+  -a, --ai <type>                  AI type: mock or real
 ```
 
 **Examples:**
@@ -285,69 +142,11 @@ Options:
 # Basic simulation
 quanta simulate cycle --coins BTC --verbose
 
-# Multi-coin simulation
-quanta simulate cycle --coins BTC,ETH,SOL --verbose --max-positions 5
-
-# Multiple continuous cycles (state persists)
-quanta simulate cycle --coins BTC,ETH \
-  --cycles 5 --interval 3000 --verbose
-
-# Real AI simulation
-quanta simulate cycle --coins BTC --ai real --verbose
+# Multiple cycles
+quanta simulate cycle --coins BTC,ETH --cycles 5 --verbose
 ```
 
-Note:
-
-- `simulate cycle` is a developer/demo tool for single or few cycles. It is ideal for learning and quick checks.
-- `quanta trade start --env simulate` runs the full trading workflow continuously in a simulation environment for production-like behavior.
-
----
-
-## LangSmith Tracing
-
-You can enable rich tracing for AI operations using LangSmith.
-
-Configuration (file): add under `ai.tracing.langsmith` in `config.json`:
-
-```json
-{
-  "ai": {
-    "tracing": {
-      "langsmith": {
-        "enabled": true,
-        "project": "quanta",
-        "redact": true,
-        "includeSections": { "prompts": true, "response": true, "market": false }
-      }
-    }
-  }
-}
-```
-
-Environment (optional overrides):
-
-```bash
-export LANGCHAIN_API_KEY=lsm_...
-export LANGCHAIN_PROJECT=quanta
-# optional fine-grained controls (defaults shown)
-export LANGSMITH_REDACT=true
-export LANGSMITH_INCLUDE_PROMPTS=true
-export LANGSMITH_INCLUDE_RESPONSE=true
-export LANGSMITH_INCLUDE_MARKET=false
-```
-
-Example run (config controls enablement):
-
-```bash
-LANGCHAIN_API_KEY=lsm_... \
-LANGCHAIN_PROJECT=quanta \
-OPENROUTER_API_KEY=sk-or-... \
-quanta test ai --type real --coin BTC --verbose
-```
-
-If available, a LangSmith run URL is printed after signal generation.
-
----
+**Note:** `simulate cycle` is for single/few cycles. For continuous trading, use `quanta trade start --env simulate`.
 
 ## Server Commands
 
@@ -362,18 +161,6 @@ Options:
   -p, --port <port>  Port to listen on (default: "3001")
 ```
 
-**Examples:**
-
-```bash
-# Start on default port
-quanta server start
-
-# Start on custom port
-quanta server start --port 8080
-```
-
----
-
 ### `server stop` - Stop API Server
 
 Stop the running API server.
@@ -381,15 +168,6 @@ Stop the running API server.
 ```bash
 quanta server stop
 ```
-
-**Examples:**
-
-```bash
-# Stop the server
-quanta server stop
-```
-
----
 
 ### `server status` - Check Server Status
 
@@ -399,20 +177,6 @@ Check API server status.
 quanta server status
 ```
 
-**Examples:**
-
-```bash
-# Check if server is running
-quanta server status
-```
-
-**Output:**
-
-- Shows server status (running/stopped)
-- Displays port and basic information
-
----
-
 ## Configuration Commands
 
 ### `config show` - Show Configuration
@@ -420,30 +184,17 @@ quanta server status
 Show current configuration.
 
 ```bash
-quanta config show [options]
+quanta config show
 ```
-
----
 
 ### `config set <key> <value>` - Set Configuration
 
 Set configuration values.
 
 ```bash
-quanta config set <key> <value>
-```
-
-**Examples:**
-
-```bash
-# Set AI model
 quanta config set ai.model deepseek/deepseek-chat-v3-0324
-
-# Set temperature
 quanta config set ai.temperature 0.7
 ```
-
----
 
 ### `config validate` - Validate Configuration
 
@@ -453,174 +204,73 @@ Validate current configuration.
 quanta config validate
 ```
 
----
-
-### `config save` - Save Configuration
-
-Save current configuration to file.
+### Other Config Commands
 
 ```bash
-quanta config save
+quanta config save      # Save configuration to file
+quanta config reset     # Reset to defaults
+quanta config init      # Initialize from example
 ```
-
----
-
-### `config reset` - Reset Configuration
-
-Reset configuration to defaults.
-
-```bash
-quanta config reset
-```
-
----
-
-### `config init` - Initialize Configuration
-
-Initialize configuration file from example.
-
-```bash
-quanta config init
-```
-
----
 
 ## Log Commands
 
 ### `log view` - View Console Output
 
-View console output logs captured during `trade start` and `server start` commands. This is the primary way to view detailed cycle summaries, account status, risk metrics, and other operational details after starting the trading system.
+View console output logs captured during `trade start` and `server start`.
 
 ```bash
 quanta log view [options]
 
 Options:
   --lines <n>           Show last N lines (default: 50)
-  -f, --follow         Follow mode (real-time updates, like tail -f)
-  --context <context>  Filter by logger context (e.g., TradeStart, Server)
+  -f, --follow         Follow mode (real-time updates)
+  --context <context>  Filter by logger context
   --level <level>      Filter by log level (info|warn|error|debug)
-  --grep <pattern>     Search/filter by pattern in message
-  --format <format>    Output format (formatted|raw, default: formatted)
+  --grep <pattern>     Search/filter by pattern
 ```
 
 **Examples:**
 
 ```bash
-# View last 50 lines from all contexts
+# View last 50 lines
 quanta log view
 
-# Follow in real-time (like tail -f)
+# Follow in real-time
 quanta log view --follow
 
-# Follow only trade start output
-quanta log view --follow --context TradeStart
-
-# View server startup output
-quanta log view --lines 100 --context Server
-
-# Filter by level
-quanta log view --level error
-
-# Search for specific pattern
-quanta log view --grep "Configuration"
-
-# Raw output (no ANSI color codes)
-quanta log view --format raw
+# Filter by context
+quanta log view --follow --context Workflow
 ```
-
-**Output:**
-
-The command displays console output exactly as it appeared during operation, preserving chalk formatting and colors.
-
-**Follow Mode:**
-
-Use `--follow` or `-f` to watch logs in real-time (similar to `tail -f`). The command polls JSONL text logs every second for new entries and displays them as they're written.
-
----
 
 ### `log clean` - Clean Old Log Files
 
-Delete old log files based on retention period or custom criteria.
+Delete old log files.
 
 ```bash
 quanta log clean [options]
 
 Options:
-  --all                Delete all log files (with confirmation)
+  --all                Delete all log files
   --days <n>          Delete files older than N days
   --force             Skip confirmation prompt
-  --dry-run           Show what would be deleted without deleting
+  --dry-run           Show what would be deleted
 ```
-
-**Examples:**
-
-```bash
-# Clean files older than retention period (default: 7 days)
-quanta log clean
-
-# Clean files older than 14 days
-quanta log clean --days 14
-
-# Show what would be deleted without deleting
-quanta log clean --days 14 --dry-run
-
-# Delete all log files (with confirmation)
-quanta log clean --all
-
-# Delete all files without confirmation prompt
-quanta log clean --all --force
-```
-
-**Notes:**
-
-- Default behavior deletes files older than 7 days (retention period).
-- Use `--dry-run` to preview what would be deleted.
-- Confirmation is required unless `--force` is used.
-
----
 
 ### `log list` - List Log Files
 
-Show available log files with metadata including filename, date, size, and line count.
+Show available log files with metadata.
 
 ```bash
 quanta log list [options]
 
 Options:
-  --format <format>    Output format: table, json, csv (default: table)
-  --sort <field>      Sort by: date, size, name (default: date)
+  --format <format>    Output format: table, json, csv
+  --sort <field>      Sort by: date, size, name
 ```
-
-**Examples:**
-
-```bash
-# List all log files in table format
-quanta log list
-
-# List sorted by size (largest first)
-quanta log list --sort size
-
-# Export list as JSON
-quanta log list --format json
-
-# Export list as CSV
-quanta log list --format csv
-```
-
-**Output:**
-
-The table format displays:
-
-- Filename
-- Date (YYYY-MM-DD)
-- Size (human-readable)
-- Line count
-
----
 
 ### `log stats` - Show Log Statistics
 
-Display aggregated statistics from logs including entry counts, error rates, and breakdowns by level and context.
+Display aggregated statistics from logs.
 
 ```bash
 quanta log stats [options]
@@ -628,100 +278,32 @@ quanta log stats [options]
 Options:
   --days <n>          Analyze last N days
   --context <context> Filter by context
-  --level <level>     Filter by log level (info|warn|error|debug)
-  --format <format>   Output format: table, json (default: table)
+  --level <level>     Filter by log level
 ```
-
-**Examples:**
-
-```bash
-# Show statistics for all logs
-quanta log stats
-
-# Show statistics for last 7 days
-quanta log stats --days 7
-
-# Show statistics for errors only
-quanta log stats --level error
-
-# Show statistics for specific context
-quanta log stats --context TradeStart
-
-# Export statistics as JSON
-quanta log stats --format json
-```
-
-**Output:**
-
-The table format displays:
-
-- Total entries
-- Time range (earliest to latest)
-- Breakdown by level (info, warn, error, debug) with counts and percentages
-- Breakdown by context (top 10) with counts and percentages
-- Error rate and warning rate
-
----
 
 ### `log export` - Export Logs
 
-Export logs to different formats (JSON, CSV, TXT) with filtering options.
+Export logs to different formats.
 
 ```bash
 quanta log export [options]
 
 Options:
-  --format <format>   Export format: json, csv, txt (default: json)
-  --output <file>      Output file path (required)
+  --format <format>   Export format: json, csv, txt
+  --output <file>     Output file path (required)
   --days <n>          Export last N days
   --context <context> Filter by context
-  --level <level>     Filter by log level (info|warn|error|debug)
-  --since <date>      Start date (YYYY-MM-DD)
-  --until <date>      End date (YYYY-MM-DD)
 ```
-
-**Examples:**
-
-```bash
-# Export all logs as JSON
-quanta log export --output logs.json
-
-# Export last 7 days as CSV
-quanta log export --output logs.csv --format csv --days 7
-
-# Export errors only as text
-quanta log export --output errors.txt --format txt --level error
-
-# Export logs for specific date range
-quanta log export --output logs.json --since 2024-01-01 --until 2024-01-31
-
-# Export logs for specific context
-quanta log export --output trade-logs.json --context TradeStart
-```
-
-**Output Formats:**
-
-- **JSON**: Pretty-printed JSON array of log entries
-- **CSV**: Comma-separated values with headers (timestamp, level, context, message, cycleId, operationId, traceId)
-- **TXT**: Plain text format with timestamp, level, context, and message
-
-**Notes:**
-
-- Logs are exported in chronological order (oldest first).
-- The `--output` option is required.
-- CSV format escapes quotes in messages.
-
----
 
 ## Prompt Commands
 
 ### `prompts list` - List Prompt Groups
 
+List available prompt groups in `config/prompts`.
+
 ```bash
 quanta prompts list
 ```
-
-Outputs available groups in `config/prompts`, marking the active one.
 
 ### `prompts view` - View Prompt Group Content
 
@@ -731,146 +313,51 @@ View raw templates or rendered prompts.
 quanta prompts view [options]
 
 Options:
-  -g, --group <name>       Prompt group name (default: from config)
+  -g, --group <name>       Prompt group name
   -r, --rendered           Show rendered prompts with example values
   -s, --system-only        Show only system prompt
   -u, --user-only          Show only user prompt
-  --list                   List all available prompt groups (alias for `prompts list`)
   --context <path.json>    Render using values from a JSON file
-  --vars                   Show template variables (and presence if context provided)
+  --vars                   Show template variables
 ```
 
 **Examples:**
 
 ```bash
-# View current active prompt group (raw templates)
+# View current active prompt group
 quanta prompts view
 
-# View a specific prompt group
-quanta prompts view --group default
-
-# View rendered prompts (built-in example context)
+# View rendered prompts
 quanta prompts view --rendered
 
-# Render with a custom context file and show variable presence
-quanta prompts view --rendered --context config/prompts/context.dev.json --vars
-
-# View only system prompt
-quanta prompts view --system-only
-
-# List all available prompt groups
-quanta prompts list
-```
-
-**Output Format:**
-
-Raw mode (default):
-
-```
-📝 Prompt Group: default
-   Description: Default trading prompt with balanced risk and technical analysis focus
-   Version: 1.0.0
-
-=== SYSTEM PROMPT (RAW) ===
-
-You are an expert cryptocurrency trader...
-
-=== USER PROMPT (RAW) ===
-
-Market Snapshot
-- Time elapsed: {{elapsedMinutes}} minutes
-...
-
-📌 Template Variables:
-
-  System prompt variables:
-    {{defaultStopLoss}}
-    {{maxLeverage}}
-    {{maxPositions}}
-    {{maxRiskPerTrade}}
-    {{minLeverage}}
-    {{tradableCoins}}
-
-  User prompt variables:
-    {{accountInfo}}
-    {{candlesTA}}
-    {{currentTime}}
-    {{elapsedMinutes}}
-    {{invokeCount}}
-    {{positionsInfo}}
-    {{sentimentInfo}}
-    {{technicalState}}
-```
-
-Rendered mode (`--rendered`):
-
-```
-📝 Prompt Group: default
-
-Using example values for rendering:
-
-  tradableCoins: BTC, ETH, SOL
-  maxPositions: 6
-  maxRiskPerTrade: 5
-  minLeverage: 5
-  maxLeverage: 40
-  defaultStopLoss: 5.0
-  elapsedMinutes: 15
-  currentTime: 2025-01-15T10:30:00.000Z
-  invokeCount: 5
-  candlesTA: [Example: CANDLES & TECHNICAL ANALYSIS section would appear here]
-  accountInfo: [Example: ACCOUNT INFORMATION section would appear here]
-  positionsInfo: [Example: POSITIONS section would appear here]
-  sentimentInfo: [Example: SENTIMENT section would appear here]
-  technicalState: [Example: TECHNICAL STATE section would appear here]
-
-────────────────────────────────────────────────────────────────────────────────
-
-=== SYSTEM PROMPT (RENDERED) ===
-
-You are an expert cryptocurrency trader managing a live perpetual futures portfolio.
-
-## HARD CONSTRAINTS
-
-- Tradable coins: BTC, ETH, SOL
-- Maximum 6 concurrent positions
-...
+# View specific group
+quanta prompts view --group default
 ```
 
 ### `prompts diff` - Diff Prompt Groups
 
-Compare two groups either as raw templates or after rendering.
+Compare two prompt groups.
 
 ```bash
 quanta prompts diff -g <left> --with <right> [options]
 
 Options:
   -r, --rendered           Render before diffing
-  -s, --system-only        Diff only system prompt
-  -u, --user-only          Diff only user prompt
-  --context <path.json>    Render using values from a JSON file
+  -s, --system-only         Diff only system prompt
+  -u, --user-only           Diff only user prompt
 ```
 
-Examples:
+## Arena Commands
+
+See [Arena Guide](arena-guide.md) for complete arena command documentation.
 
 ```bash
-# Raw diff between groups
-quanta prompts diff -g default --with conservative
-
-# Rendered diff with explicit context
-quanta prompts diff -g default --with aggressive --rendered --context config/prompts/context.dev.json
+quanta arena configs          # List arena configurations
+quanta arena start --config <name>  # Start arena
+quanta arena status <arenaId> # Check status
+quanta arena list             # List all arenas
+quanta arena stop <arenaId>   # Stop arena
 ```
-
-**Notes:**
-
-- By default, shows the active prompt group from configuration (`ai.prompt.activeGroup`)
-- Use `--group` to view a specific prompt group
-- Raw mode shows the template with `{{variables}}` placeholders
-- Rendered mode shows prompts with example values filled in
-- Use `--system-only` or `--user-only` to focus on a specific prompt type
-- Use `--list` to see all available prompt groups and identify the active one
-
----
 
 ## Quick Reference
 
@@ -883,67 +370,9 @@ quanta test ai --type mock --coin BTC
 # Run simulation
 quanta simulate cycle --coins BTC,ETH,SOL --verbose
 
-# Start trading (Strategy · Sim)
+# Start trading
 quanta trade start --env simulate --coins BTC,ETH,SOL
 
-# View detailed output (cycle summaries, account status, positions, etc.)
-quanta log view --follow
-
-# Monitor output
+# View detailed output
 quanta log view --follow
 ```
-
----
-
-## API Endpoints (for QuantaWeb)
-
-The Quanta server provides RESTful API endpoints for the web interface:
-
-### Health & Status
-
-- `GET /health` — Quick health check (synchronous, fast)
-- `GET /health/detailed` — Comprehensive health check with component status
-- `GET /api/status` — System status and configuration
-
-### Market Data
-
-- `GET /api/klines/:symbol?timeframe=1h&limit=100` — Fetch candlesticks for a symbol
-- `GET /api/market/summary?symbols=BTC%2FUSDT,ETH%2FUSDT&interval=1m` — Current prices and latest kline per symbol
-
-### Running the Server
-
-```bash
-# Start the API server
-quanta server start
-
-# Or use npm script
-npm run api:dev
-
-# Server will be available at:
-# http://localhost:3001
-```
-
-## Arena API (for QuantaWeb)
-
-List endpoints to distinguish running vs historical arenas:
-
-```
-GET /api/arena/list       # all arenas (running + persisted)
-GET /api/arena/running    # only running arenas
-GET /api/arena/history    # non-running (persisted) arenas
-```
-
-Per-arena data endpoints (require a running arenaId):
-
-```
-GET /api/arena/status/:arenaId
-GET /api/arena/:arenaId/positions
-GET /api/arena/:arenaId/trades
-GET /api/arena/:arenaId/performance-history?timeRange=1H|4H|24H|7D
-GET /api/arena/:arenaId/ticker-prices
-```
-
-Notes:
-
-- Historical arena detail endpoints may return 404 for non-running arenas; use `/history` to enumerate and build separate flows.
-- The web UI should prefer `/running` to auto-select a live arena and avoid 404s when none are running.

@@ -34,17 +34,18 @@ export class CycleLogger {
 
   /**
    * Log directly to console (foreground mode only)
+   * Uses logger API which respects Scheme B configuration
    */
   private logToConsole(level: 'info' | 'warn' | 'error' | 'success', message: string): void {
     switch (level) {
       case 'error':
-        console.error(message);
+        this.logger.error(message, undefined, this.context);
         break;
       case 'warn':
-        console.warn(message);
+        this.logger.warn(message, {}, this.context);
         break;
       default:
-        console.log(message);
+        this.logger.info(message, {}, this.context);
     }
   }
 
@@ -69,10 +70,11 @@ export class CycleLogger {
 
   /**
    * Log formatted content to console only (when not in background mode)
+   * Uses logger API which respects Scheme B configuration
    */
   logFormatted(content: string): void {
     if (!this.isBackgroundMode) {
-      console.log(content);
+      this.logger.info(content, {}, this.context);
     }
   }
 

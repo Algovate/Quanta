@@ -86,10 +86,15 @@ export class CLIApplication {
       .command('status')
       .description('Show aggregated system status (trade/arena)')
       .action(async () => {
+        const logger = UnifiedLogger.getInstance();
         // Note: Server status check removed - server is now optional/separate
         // Recommend sub-status commands for details
-        console.log('ℹ️  For details: quanta log view --follow | quanta arena status');
-        console.log('ℹ️  For API server status: Use @quanta/server package if installed');
+        logger.info('ℹ️  For details: quanta log view --follow | quanta arena status', {}, 'CLI');
+        logger.info(
+          'ℹ️  For API server status: Use @quanta/server package if installed',
+          {},
+          'CLI'
+        );
       });
   }
 
