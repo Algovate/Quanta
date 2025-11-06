@@ -1,4 +1,6 @@
 // Core types for Quanta CLI
+// Re-export PositionSizing from execution module
+export type { PositionSizing } from '../execution/risk.js';
 
 // Runtime targeting
 export type RuntimeMode = 'arena' | 'strategy';

@@ -8,6 +8,7 @@ import { TechnicalIndicators } from '../../types/index.js';
 import { SIGNAL_VALIDATION, POSITION_SIZING } from '../constants.js';
 import { UnifiedLogger } from '../../logging/index.js';
 import { SymbolPerformanceTracker } from '../symbol-performance.js';
+import { PortfolioCorrelationAnalyzer } from '../portfolio-correlation.js';
 
 export interface SignalValidationResult {
   valid: boolean;
@@ -32,10 +33,12 @@ export class SignalValidator {
   private logger: UnifiedLogger;
   private readonly context = 'SignalValidator';
   private performanceTracker: SymbolPerformanceTracker;
+  private correlationAnalyzer: PortfolioCorrelationAnalyzer;
 
   constructor(performanceTracker: SymbolPerformanceTracker) {
     this.logger = UnifiedLogger.getInstance();
     this.performanceTracker = performanceTracker;
+    this.correlationAnalyzer = new PortfolioCorrelationAnalyzer();
   }
 
   validateSignal(
@@ -130,8 +133,36 @@ export class SignalValidator {
         return { valid: false, reason };
       }
 
-      // Correlation check: prevent over-concentration of same-side positions
+      // Enhanced correlation check using PortfolioCorrelationAnalyzer
       if (signal.action === 'LONG' || signal.action === 'SHORT') {
+        const newSymbol = `${signal.coin}/USDT`;
+        const newSide = signal.action === 'LONG' ? 'long' : 'short';
+
+        // Check if adding this position would create excessive correlation
+        const canAdd = this.correlationAnalyzer.canAddPosition(
+          currentPositions,
+          newSymbol,
+          newSide,
+          0.8 // Max correlation threshold
+        );
+
+        if (!canAdd) {
+          const correlation = this.correlationAnalyzer.calculateCorrelation(currentPositions);
+          const reason = `Position rejected: would create excessive correlation (max: ${correlation.maxCorrelation.toFixed(2)})`;
+          this.logger.debug(
+            `Signal validation rejected for ${signal.coin} ${signal.action}: ${reason}`,
+            {
+              newSymbol,
+              newSide,
+              existingPositions: currentPositions.length,
+              maxCorrelation: correlation.maxCorrelation,
+            },
+            this.context
+          );
+          return { valid: false, reason };
+        }
+
+        // Legacy check: also prevent too many same-side positions as additional safeguard
         const targetSide = signal.action.toLowerCase() as 'long' | 'short';
         const sameSidePositions = currentPositions.filter(p => p.side === targetSide);
         if (sameSidePositions.length >= POSITION_SIZING.MAX_SAME_SIDE_POSITIONS) {

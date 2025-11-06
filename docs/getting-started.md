@@ -1,150 +1,140 @@
-# Getting Started
+# 快速开始
 
-Quick start guide for Quanta.
+Quanta 快速入门指南。
 
-## Installation
+## 安装
 
-**Prerequisites**: Node.js 18+ and npm
+**要求**: Node.js 18+ 和 npm
 
 ```bash
-# Clone and install
 git clone https://github.com/Algovate/Quanta.git
 cd Quanta
 npm install
 npm run build
 
-# Verify installation
+# 验证安装
 quanta --help
 ```
 
-## Quick Start
+## 运行第一个交易
 
-### 1. Test System
+### 1. 测试系统
 
 ```bash
-# Test with mock AI (no API key required)
+# 使用模拟 AI 测试（无需 API 密钥）
 quanta simulate cycle --coins BTC --verbose
 
-# Test AI integration
+# 测试 AI 集成
 quanta test ai --type mock --coin BTC
 
-# Test exchange connectivity
+# 测试交易所连接
 quanta test exchange --exchange simulator --coin BTC
 ```
 
-### 2. Configure API Keys (Optional)
+### 2. 配置 API 密钥（可选）
 
-For paper trading, API keys are optional. For live trading, they are required.
+**纸面交易**：API 密钥可选  
+**实盘交易**：需要 API 密钥
 
 ```bash
-# Set OpenRouter API key (for real AI)
+# OpenRouter API 密钥（用于真实 AI）
 export OPENROUTER_API_KEY=your_key_here
 
-# Set exchange API keys (for live trading)
+# 交易所 API 密钥（用于实盘交易）
 export OKX_API_KEY=your_key
 export OKX_API_SECRET=your_secret
 ```
 
-### 3. Run First Simulation
+### 3. 开始交易
 
 ```bash
-# Basic simulation (Mock AI, no API key)
-quanta simulate cycle --coins BTC --verbose
-
-# Multi-coin with real AI
-quanta simulate cycle --coins BTC,ETH,SOL --ai real --verbose
-```
-
-### 4. Start Trading
-
-```bash
-# Simulation mode (mock data, no risk)
+# 模拟模式（模拟数据，无风险）
 quanta trade start --env simulate --coins BTC,ETH
 
-# Paper trading (real data, simulated execution)
+# 纸面交易（真实数据，模拟执行）
 quanta trade start --env paper --coins BTC,ETH
 
-# Live trading (real money - use with caution!)
+# 实盘交易（真实资金 - 请谨慎使用！）
 quanta trade start --env live --coins BTC
 ```
 
-System runs trading cycles every 3 minutes. Press `Ctrl+C` to stop.
+系统每 3 分钟运行一个交易周期。按 `Ctrl+C` 停止。
 
-### 5. View Output
+### 4. 查看日志
 
 ```bash
-# View last 50 lines
+# 查看最后 50 行
 quanta log view
 
-# Follow in real-time
+# 实时跟踪
 quanta log view --follow
 
-# Filter by context
+# 按上下文筛选
 quanta log view --context Workflow --follow
 ```
 
-## Trading Modes
+## 交易模式
 
-| Mode         | Market Data | Execution | Risk | Best For            |
-| ------------ | ----------- | --------- | ---- | ------------------- |
-| **simulate** | Mock        | Simulated | None | Learning            |
-| **paper**    | Real        | Simulated | None | Strategy validation |
-| **live**     | Real        | Real      | High | Production          |
+| 模式 | 市场数据 | 执行方式 | 风险 | 适用场景 |
+|------|---------|---------|------|---------|
+| **simulate** | 模拟 | 模拟 | 无 | 学习测试 |
+| **paper** | 真实 | 模拟 | 无 | 策略验证 |
+| **live** | 真实 | 真实 | 高 | 实盘交易 |
 
-## Safety Guidelines
+## 安全建议
 
-✅ **Always test in simulation mode first**  
-✅ **Use paper trading to validate strategies**  
-✅ **Only use live mode after thorough testing**  
-❌ **Never trade with money you can't afford to lose**
+✅ **始终先在模拟模式测试**  
+✅ **使用纸面交易验证策略**  
+✅ **充分测试后再使用实盘模式**  
+❌ **不要使用无法承受损失的资金交易**
 
-## Recommended Workflow
+## 推荐流程
 
 ```
-1. Simulation Mode (Understand system)
+1. 模拟模式 → 了解系统
    ↓
-2. Paper Trading Mode (Validate with real data)
+2. 纸面交易 → 用真实数据验证
    ↓
-3. Small-scale Live Testing (Minimal risk)
+3. 小规模实盘测试 → 最小风险
    ↓
-4. Full Production (Scale up after proven)
+4. 正式生产 → 验证后可扩大规模
 ```
 
-## Next Steps
+## 下一步
 
-- **[Trading Guide](trading-guide.md)** - Complete trading operations
-- **[Configuration](configuration.md)** - Advanced configuration
-- **[Core Concepts](concepts.md)** - Deep dive into algorithms
-- **[Commands](commands.md)** - Complete command reference
+- [交易指南](trading-guide.md) - 完整交易操作
+- [配置指南](configuration.md) - 高级配置
+- [核心概念](concepts.md) - 算法详解
+- [命令参考](commands.md) - 完整命令列表
 
-## Troubleshooting
+## 常见问题
 
-### Installation Issues
+### 安装问题
 
 ```bash
-# Check Node.js version
-node --version  # Should be 18+
+# 检查 Node.js 版本
+node --version  # 应为 18+
 
-# Rebuild
+# 重新构建
 npm run build
 ```
 
-### Configuration Issues
+### 配置问题
 
 ```bash
-# Validate configuration
+# 验证配置
 quanta config validate
 
-# Show current configuration
+# 显示当前配置
 quanta config show
 ```
 
-### API Connection Issues
+### API 连接问题
 
 ```bash
-# Test exchange connectivity
+# 测试交易所连接
 quanta test exchange --exchange simulator --coin BTC
 
-# Test AI integration
+# 测试 AI 集成
 quanta test ai --type mock --coin BTC
 ```

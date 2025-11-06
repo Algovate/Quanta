@@ -18,6 +18,7 @@ import { EventBus } from './event-bus.js';
 import { UnifiedLogger as UnifiedLoggerClass } from '../logging/index.js';
 import { RiskSnapshotAggregator } from './risk-snapshot-aggregator.js';
 import { ExecutionSessionManager } from './execution-session-manager.js';
+import { StateService } from './state/index.js';
 
 export class TradingManager extends EventEmitter {
   private static instance: TradingManager;
@@ -42,6 +43,8 @@ export class TradingManager extends EventEmitter {
   private aiAgent?: OpenRouterClient;
   // Custom exit plans storage (position key -> exit plan)
   private customExitPlans: Map<string, { stopLoss?: number; takeProfit?: number }> = new Map();
+  // Centralized state service
+  private stateService: StateService;
 
   private constructor() {
     super();
@@ -50,16 +53,42 @@ export class TradingManager extends EventEmitter {
     this.logger = logger;
     this.context = 'TradingManager';
     this.riskAggregator = new RiskSnapshotAggregator(logger, this.context);
+
+    // Initialize centralized state service
+    this.stateService = StateService.getInstance();
+
+    // Subscribe to state changes to keep local state in sync
+    this.stateService.subscribe({
+      onStateChange: (_oldState, newState) => {
+        // Sync local state property with centralized state
+        this.state = {
+          isRunning: newState.isRunning,
+          cycleCount: newState.cycleCount,
+          startTime: newState.startTime,
+          lastUpdate: newState.lastUpdate,
+          totalSignals: newState.totalSignals,
+          totalTrades: newState.totalTrades,
+          totalPnl: newState.totalPnl,
+          winRate: newState.winRate,
+          actionTotals: newState.actionTotals || { LONG: 0, SHORT: 0, CLOSE: 0, HOLD: 0 },
+        };
+        // Emit state update events
+        this.emit('system:state', { ...this.state });
+      },
+    });
+
+    // Initialize local state from centralized state service
+    const centralState = this.stateService.getState();
     this.state = {
-      isRunning: false,
-      cycleCount: 0,
-      startTime: Date.now(),
-      lastUpdate: Date.now(),
-      totalSignals: 0,
-      totalTrades: 0,
-      totalPnl: 0,
-      winRate: 0,
-      actionTotals: { LONG: 0, SHORT: 0, CLOSE: 0, HOLD: 0 },
+      isRunning: centralState.isRunning,
+      cycleCount: centralState.cycleCount,
+      startTime: centralState.startTime,
+      lastUpdate: centralState.lastUpdate,
+      totalSignals: centralState.totalSignals,
+      totalTrades: centralState.totalTrades,
+      totalPnl: centralState.totalPnl,
+      winRate: centralState.winRate,
+      actionTotals: centralState.actionTotals || { LONG: 0, SHORT: 0, CLOSE: 0, HOLD: 0 },
     };
   }
 
@@ -76,26 +105,24 @@ export class TradingManager extends EventEmitter {
     EventBus.on('cycle:signals', payload => this.emit('cycle:signals', payload));
     EventBus.on('cycle:execution', payload => this.emit('cycle:execution', payload));
     EventBus.on('cycle:complete', payload => {
-      // update cumulative state from payload
-      this.state.cycleCount = payload.cycleCount;
-      this.state.lastUpdate = payload.timestamp;
-      this.state.totalSignals = payload.totalSignals;
-      this.state.totalTrades = payload.totalTrades;
-      this.state.totalPnl = payload.totalPnl;
+      // Update centralized state service
+      const actionTotals = this.state.actionTotals || { LONG: 0, SHORT: 0, CLOSE: 0, HOLD: 0 };
+      this.stateService.updateState({
+        cycleCount: payload.cycleCount,
+        lastUpdate: payload.timestamp,
+        totalSignals: payload.totalSignals,
+        totalTrades: payload.totalTrades,
+        totalPnl: payload.totalPnl,
+        actionTotals: {
+          LONG: actionTotals.LONG + (payload.actionCounts?.LONG ?? 0),
+          SHORT: actionTotals.SHORT + (payload.actionCounts?.SHORT ?? 0),
+          CLOSE: actionTotals.CLOSE + (payload.actionCounts?.CLOSE ?? 0),
+          HOLD: actionTotals.HOLD + (payload.actionCounts?.HOLD ?? 0),
+        },
+      });
 
-      // accumulate totals by action
-      if (!this.state.actionTotals) {
-        this.state.actionTotals = { LONG: 0, SHORT: 0, CLOSE: 0, HOLD: 0 };
-      }
-      const at = this.state.actionTotals;
-      at.LONG += payload.actionCounts?.LONG ?? 0;
-      at.SHORT += payload.actionCounts?.SHORT ?? 0;
-      at.CLOSE += payload.actionCounts?.CLOSE ?? 0;
-      at.HOLD += payload.actionCounts?.HOLD ?? 0;
-
-      // emit updates
+      // Emit updates (local state will be synced via observer)
       this.emit('cycle:complete', payload);
-      this.emit('system:state', { ...this.state });
     });
     EventBus.on('cycle:error', payload => this.emit('cycle:error', payload));
     EventBus.on('signal:buffer', payload =>
@@ -272,8 +299,9 @@ export class TradingManager extends EventEmitter {
         }
       });
 
-      this.state.isRunning = true;
-      this.state.startTime = Date.now();
+      // Update centralized state service
+      this.stateService.updateState({ isRunning: true, startTime: Date.now() });
+      // Local state will be synced via observer
       this.emit('system:state', { ...this.state });
     } catch (error) {
       // Release session if we failed after acquiring
@@ -322,7 +350,9 @@ export class TradingManager extends EventEmitter {
       );
     }
 
-    this.state.isRunning = false;
+    // Update centralized state service
+    this.stateService.updateState({ isRunning: false });
+    // Local state will be synced via observer
     this.emit('system:state', { ...this.state });
 
     // Release exclusive session

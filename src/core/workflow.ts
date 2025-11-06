@@ -4,7 +4,7 @@ import { OpenRouterClient } from '../ai/agent.js';
 import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
-import { Account, Position, TradingSignal } from '../types/index.js';
+import { Account, Position, TradingSignal, TechnicalIndicators } from '../types/index.js';
 import { EventBus, TypedEventBus, type EventKey, type EventPayloads } from './event-bus.js';
 import { BarScheduler, type BarTimeframe } from './scheduler.js';
 import { validateAccount } from '../utils/account-validation.js';
@@ -30,6 +30,8 @@ import {
 } from './workflow-stages/index.js';
 import { formatWithArenaPrefix } from './log-prefix-formatter.js';
 import { CycleEvents } from './cycle-events.js';
+import { StateService, type TradingSystemState } from './state/index.js';
+import { POSITION_SIZING } from '../execution/constants.js';
 
 /**
  * TradingWorkflow - Orchestrates the complete trading cycle
@@ -164,6 +166,8 @@ export class TradingWorkflow {
   private performanceMetricsCalculator: PerformanceMetricsCalculator;
   private cycleSummaryFormatter: CycleSummaryFormatter;
   private signalProcessor: SignalProcessor;
+  private stateService: StateService;
+  private stateUnsubscribe?: () => void;
 
   constructor(
     exchange: Exchange,
@@ -213,25 +217,98 @@ export class TradingWorkflow {
     this.cycleSummaryFormatter = new CycleSummaryFormatter();
     this.signalProcessor = new SignalProcessor();
 
-    this.state = {
-      isRunning: false,
-      cycleCount: 0,
-      startTime: Date.now(),
-      lastUpdate: Date.now(),
-      totalSignals: 0,
-      totalTrades: 0,
-      rejectedSignals: 0,
-      rejectedSignalsCycle: 0,
-      initialBalance: 0, // Will be set when trading starts
-      totalPnl: 0,
-      unrealizedPnl: 0,
-      winRate: 0,
-      previousEquity: 0,
-      cyclePnl: 0,
-      previousBalance: 0,
-      peakEquity: 0,
-      maxDrawdown: 0,
-      drawdownState: 'normal',
+    // Initialize centralized state service
+    this.stateService = StateService.getInstance();
+
+    // Subscribe to state changes to keep local state in sync
+    this.stateUnsubscribe = this.stateService.subscribe({
+      onStateChange: (_oldState, newState) => {
+        // Sync local state property with centralized state
+        this.state = this.mapTradingSystemStateToSystemState(newState);
+      },
+    });
+
+    // Initialize local state from centralized state service
+    const centralState = this.stateService.getState();
+    this.state = this.mapTradingSystemStateToSystemState(centralState);
+  }
+
+  /**
+   * Calculate ATR adjustment based on market regime
+   * Uses MarketRegimeAnalyzer from RiskManager to avoid duplicate instances
+   */
+  private calculateATRAdjustment(
+    atr14: number | undefined,
+    currentPrice: number,
+    indicators: TechnicalIndicators | undefined
+  ): number | undefined {
+    if (!atr14 || currentPrice <= 0 || !indicators) {
+      return undefined;
+    }
+
+    const marketRegimeAnalyzer = this.riskManager.getMarketRegimeAnalyzer();
+    const regime = marketRegimeAnalyzer.analyzeRegime(indicators, currentPrice);
+
+    if (regime.trend === 'strong_trending' || regime.trend === 'weak_trending') {
+      return POSITION_SIZING.TRENDING_STOP_MULTIPLIER;
+    } else if (regime.trend === 'ranging') {
+      return POSITION_SIZING.RANGING_STOP_MULTIPLIER;
+    } else {
+      return 1.0; // Neutral/default adjustment
+    }
+  }
+
+  /**
+   * Map TradingSystemState to SystemState (backward compatibility)
+   */
+  private mapTradingSystemStateToSystemState(centralState: TradingSystemState): SystemState {
+    return {
+      isRunning: centralState.isRunning,
+      cycleCount: centralState.cycleCount,
+      startTime: centralState.startTime,
+      lastUpdate: centralState.lastUpdate,
+      totalSignals: centralState.totalSignals,
+      totalTrades: centralState.totalTrades,
+      rejectedSignals: centralState.rejectedSignals,
+      rejectedSignalsCycle: centralState.rejectedSignalsCycle,
+      initialBalance: centralState.initialBalance,
+      totalPnl: centralState.totalPnl,
+      unrealizedPnl: centralState.unrealizedPnl,
+      winRate: centralState.winRate,
+      lastCountdownTime: centralState.lastCountdownTime,
+      previousEquity: centralState.previousEquity,
+      cyclePnl: centralState.cyclePnl,
+      previousBalance: centralState.previousBalance,
+      peakEquity: centralState.peakEquity,
+      maxDrawdown: centralState.maxDrawdown,
+      drawdownState: centralState.drawdownState,
+    };
+  }
+
+  /**
+   * Map SystemState to TradingSystemState
+   */
+  private mapSystemStateToTradingSystemState(state: SystemState): Partial<TradingSystemState> {
+    return {
+      isRunning: state.isRunning,
+      cycleCount: state.cycleCount,
+      startTime: state.startTime,
+      lastUpdate: state.lastUpdate,
+      totalSignals: state.totalSignals,
+      totalTrades: state.totalTrades,
+      rejectedSignals: state.rejectedSignals,
+      rejectedSignalsCycle: state.rejectedSignalsCycle,
+      initialBalance: state.initialBalance,
+      totalPnl: state.totalPnl,
+      unrealizedPnl: state.unrealizedPnl,
+      winRate: state.winRate,
+      lastCountdownTime: state.lastCountdownTime,
+      previousEquity: state.previousEquity,
+      cyclePnl: state.cyclePnl,
+      previousBalance: state.previousBalance,
+      peakEquity: state.peakEquity,
+      maxDrawdown: state.maxDrawdown,
+      drawdownState: state.drawdownState,
     };
   }
 
@@ -502,7 +579,10 @@ export class TradingWorkflow {
         performanceMetricsCalculator: this.performanceMetricsCalculator,
         getState: () => ({ ...this.state, tradesBefore: tradesBeforePipeline, cycleStartTime }),
         updateState: updates => {
+          // Update both local state (for backward compatibility) and centralized state
           this.state = { ...this.state, ...(updates as any) };
+          // Sync to centralized state service
+          this.stateService.updateState(this.mapSystemStateToTradingSystemState(this.state));
         },
         getCircuitBreakerStates: () => this.getCircuitBreakerStates(),
         getRecentOperationsSummary: () => this.getRecentOperationsSummary(),
@@ -887,15 +967,8 @@ export class TradingWorkflow {
         );
       }
 
-      // Calculate ATR adjustment for decision info
-      const atrAdjustment =
-        atr14 && currentPrice > 0
-          ? (this.riskManager as any).detectRegime?.(indicators, currentPrice) === 'trending'
-            ? 1.33
-            : (this.riskManager as any).detectRegime?.(indicators, currentPrice) === 'ranging'
-              ? 0.75
-              : 1.0
-          : undefined;
+      // Calculate ATR adjustment for decision info using MarketRegimeAnalyzer
+      const atrAdjustment = this.calculateATRAdjustment(atr14, currentPrice, indicators);
 
       // Return result for caller to know if positions should be refreshed
       return {
@@ -1055,7 +1128,10 @@ export class TradingWorkflow {
       account,
       aggregates
     );
+    // Update both local state (for backward compatibility) and centralized state
     this.state = pnlMetricsResult.updatedState;
+    // Sync to centralized state service
+    this.stateService.updateState(this.mapSystemStateToTradingSystemState(this.state));
     const pnlMetrics = pnlMetricsResult;
     const cycleMetricsData = this.cycleSummaryFormatter.calculateCycleMetrics(
       account,
@@ -1298,6 +1374,11 @@ export class TradingWorkflow {
    * Dispose resources and unsubscribe listeners to allow clean shutdown
    */
   dispose(): void {
+    // Unsubscribe from state service
+    if (this.stateUnsubscribe) {
+      this.stateUnsubscribe();
+      this.stateUnsubscribe = undefined;
+    }
     try {
       if (this.barUnsubscribe) {
         this.barUnsubscribe();

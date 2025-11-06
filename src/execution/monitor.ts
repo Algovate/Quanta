@@ -5,6 +5,11 @@ import { POSITION_MONITORING, ORDER_EXECUTION, RETRIES, TIMEOUTS } from './const
 import { UnifiedLogger } from '../logging/index.js';
 import { calculateUnrealizedPnl, aggregatePositionMetrics } from './position-utils.js';
 import { getValidPriceOrThrow } from '../utils/price-validation.js';
+import {
+  BreakevenPlusStrategy,
+  PyramidingStrategy,
+  AdaptiveTrailingStopStrategy,
+} from './exit-strategies.js';
 
 export interface PositionMonitor {
   checkStopLoss(position: Position, currentPrice: number): boolean;
@@ -28,13 +33,21 @@ export class PositionMonitorService implements PositionMonitor {
       tp3Done?: boolean;
       flatCycles?: number;
       breakevenApplied?: boolean;
+      breakevenPlusApplied?: boolean;
+      pyramidLevels?: number[];
     }
   > = new Map();
+  private breakevenPlusStrategy: BreakevenPlusStrategy;
+  private pyramidingStrategy: PyramidingStrategy;
+  private adaptiveTrailingStrategy: AdaptiveTrailingStopStrategy;
 
   constructor(riskManager: RiskManager, orderExecutor: OrderExecutor) {
     this.riskManager = riskManager;
     this.orderExecutor = orderExecutor;
     this.logger = UnifiedLogger.getInstance();
+    this.breakevenPlusStrategy = new BreakevenPlusStrategy(1.5, 0.005); // 1.5R threshold, 0.5% profit buffer
+    this.pyramidingStrategy = new PyramidingStrategy([1.5, 2.5], 0.25); // Add 25% at 1.5R and 2.5R
+    this.adaptiveTrailingStrategy = new AdaptiveTrailingStopStrategy();
   }
 
   checkStopLoss(position: Position, currentPrice: number): boolean {
@@ -329,6 +342,104 @@ export class PositionMonitorService implements PositionMonitor {
                 closePercent: 0.2,
                 remainingAfterTP2: 0.2,
                 orderSuccess: result.success,
+              },
+            });
+          }
+
+          // Apply breakeven plus strategy (if not already applied)
+          if (!st.breakevenPlusApplied && rMultiple >= 1.5) {
+            const breakevenPlusDecision = this.breakevenPlusStrategy.evaluate(
+              position,
+              validatedPrice,
+              rMultiple
+            );
+            if (
+              breakevenPlusDecision.action === 'move_stop' &&
+              breakevenPlusDecision.details?.newStopPrice
+            ) {
+              // Apply breakeven plus stop
+              this.logger.info(
+                `Breakeven plus applied for ${position.symbol}: ${breakevenPlusDecision.details.reason}`,
+                {
+                  newStopPrice: breakevenPlusDecision.details.newStopPrice,
+                  rMultiple,
+                  currentPrice: validatedPrice,
+                },
+                this.context
+              );
+              st.breakevenPlusApplied = true;
+              decisions.push({
+                type: 'breakeven',
+                action: 'move_stop',
+                reason: breakevenPlusDecision.details.reason || 'Breakeven plus applied',
+                details: {
+                  newStopPrice: breakevenPlusDecision.details.newStopPrice,
+                  rMultiple,
+                },
+              });
+            }
+          }
+
+          // Apply pyramiding strategy (add to winning positions)
+          // Note: indicators not available in monitor context, pass undefined
+          const pyramidingDecision = this.pyramidingStrategy.evaluate(
+            position,
+            validatedPrice,
+            rMultiple,
+            undefined // indicators not available in position monitoring context
+          );
+          if (
+            pyramidingDecision.action === 'add_to_position' &&
+            pyramidingDecision.details?.addSize
+          ) {
+            // Note: Pyramiding requires adding to position, which would need order executor support
+            // For now, log the decision
+            this.logger.info(
+              `Pyramiding opportunity for ${position.symbol}: ${pyramidingDecision.details.reason}`,
+              {
+                addSize: pyramidingDecision.details.addSize,
+                currentSize: position.size,
+                rMultiple,
+              },
+              this.context
+            );
+            decisions.push({
+              type: 'tp1', // Reuse type for now
+              action: 'add_to_position',
+              reason: pyramidingDecision.details.reason || 'Pyramiding opportunity',
+              details: {
+                addSize: pyramidingDecision.details.addSize,
+                rMultiple,
+              },
+            });
+          }
+
+          // Apply adaptive trailing stop
+          // Note: indicators not available in monitor context, pass undefined
+          const trailingDecision = this.adaptiveTrailingStrategy.evaluate(
+            position,
+            validatedPrice,
+            rMultiple,
+            undefined // indicators not available in position monitoring context
+          );
+          if (trailingDecision.action === 'move_stop' && trailingDecision.details?.newStopPrice) {
+            // Apply adaptive trailing stop
+            this.logger.debug(
+              `Adaptive trailing stop for ${position.symbol}: ${trailingDecision.details.reason}`,
+              {
+                newStopPrice: trailingDecision.details.newStopPrice,
+                rMultiple,
+                currentPrice: validatedPrice,
+              },
+              this.context
+            );
+            decisions.push({
+              type: 'take_profit', // Reuse type
+              action: 'move_stop',
+              reason: trailingDecision.details.reason || 'Adaptive trailing stop',
+              details: {
+                newStopPrice: trailingDecision.details.newStopPrice,
+                rMultiple,
               },
             });
           }

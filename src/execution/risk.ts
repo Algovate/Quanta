@@ -21,6 +21,8 @@ import {
 import { calculatePositionPnl } from '../utils/symbol-utils.js';
 import { SymbolPerformanceTracker } from './symbol-performance.js';
 import { SignalValidator } from './risk/signal-validator.js';
+import { KellyCriterionCalculator } from './kelly-criterion.js';
+import { MarketRegimeAnalyzer } from '../analytics/market-regime.js';
 
 export interface RiskParams {
   maxRiskPerTrade: number; // 0.05 = 5%
@@ -46,12 +48,16 @@ export class RiskManager {
   private readonly context = 'RiskManager';
   private performanceTracker: SymbolPerformanceTracker;
   private signalValidator: SignalValidator;
+  private kellyCalculator: KellyCriterionCalculator;
+  private marketRegimeAnalyzer: MarketRegimeAnalyzer;
 
   constructor(params: RiskParams) {
     this.params = params;
     this.logger = UnifiedLogger.getInstance();
     this.performanceTracker = new SymbolPerformanceTracker(50); // Track last 50 trades per symbol
     this.signalValidator = new SignalValidator(this.performanceTracker);
+    this.kellyCalculator = new KellyCriterionCalculator(this.performanceTracker);
+    this.marketRegimeAnalyzer = new MarketRegimeAnalyzer();
   }
 
   /**
@@ -60,6 +66,14 @@ export class RiskManager {
    */
   getSignalValidator(): SignalValidator {
     return this.signalValidator;
+  }
+
+  /**
+   * Get market regime analyzer instance
+   * Used for regime-based position sizing adjustments
+   */
+  getMarketRegimeAnalyzer(): MarketRegimeAnalyzer {
+    return this.marketRegimeAnalyzer;
   }
 
   /**
@@ -218,20 +232,55 @@ export class RiskManager {
       const stopLoss = signal.stop_loss || this.params.defaultStopLoss;
       const riskAmount = safePercentage(account.equity, this.params.maxRiskPerTrade).toNumber(); // Maximum $ loss
 
-      // Detect market regime (trending vs ranging) for adaptive stop loss
-      const regime = this.detectRegime(indicators, entryPrice);
-      if (regime !== 'unknown') {
-        this.logger.debug(
-          'Market regime detected',
-          {
-            coin: signal.coin,
-            regime,
-            ema20: indicators?.ema20,
-            ema50: indicators?.ema50,
-            bandwidth: indicators?.bollinger?.bandwidth,
-          },
-          this.context
-        );
+      // Enhanced market regime detection for adaptive stop loss and position sizing
+      let regime: 'trending' | 'ranging' | 'unknown' = 'unknown';
+      let regimeMultiplier = 1.0;
+
+      if (indicators && entryPrice > 0) {
+        // Use enhanced regime analyzer
+        const marketRegime = this.marketRegimeAnalyzer.analyzeRegime(indicators, entryPrice);
+        regime =
+          marketRegime.trend === 'strong_trending' || marketRegime.trend === 'weak_trending'
+            ? 'trending'
+            : marketRegime.trend === 'ranging'
+              ? 'ranging'
+              : 'unknown';
+
+        // Get regime-based adjustments
+        regimeMultiplier =
+          this.marketRegimeAnalyzer.getRegimePositionSizingAdjustment(marketRegime);
+
+        // Detect regime transitions
+        const symbol = `${signal.coin}/USDT`;
+        const transition = this.marketRegimeAnalyzer.detectTransition(symbol, marketRegime);
+        if (transition?.warning) {
+          this.logger.warn(
+            `Market regime transition detected for ${signal.coin}`,
+            {
+              from: transition.from.trend,
+              to: transition.to.trend,
+              volatility: transition.to.volatility,
+              confidence: transition.confidence,
+            },
+            this.context
+          );
+        }
+
+        if (regime !== 'unknown') {
+          this.logger.debug(
+            'Market regime detected',
+            {
+              coin: signal.coin,
+              regime,
+              trend: marketRegime.trend,
+              volatility: marketRegime.volatility,
+              microstructure: marketRegime.microstructure,
+              confidence: marketRegime.confidence,
+              regimeMultiplier: regimeMultiplier.toFixed(2),
+            },
+            this.context
+          );
+        }
       }
 
       // Calculate ATR-based stop loss if ATR is available
@@ -407,6 +456,23 @@ export class RiskManager {
       // Apply volatility scaling
       riskBasedPositionValue = safeMultiply(riskBasedPositionValue, volatilityScale).toNumber();
 
+      // Apply regime-based position sizing adjustment
+      if (regimeMultiplier !== 1.0) {
+        const beforeRegime = riskBasedPositionValue;
+        riskBasedPositionValue = safeMultiply(riskBasedPositionValue, regimeMultiplier).toNumber();
+        this.logger.debug(
+          'Regime-based position sizing adjustment applied',
+          {
+            coin: signal.coin,
+            regime,
+            regimeMultiplier: regimeMultiplier.toFixed(2),
+            beforeRegime: beforeRegime.toFixed(2),
+            afterRegime: riskBasedPositionValue.toFixed(2),
+          },
+          this.context
+        );
+      }
+
       // Step 2: Limit position size to avoid over-leveraging using precision-safe arithmetic
       // Use max 30% of available capital per trade to ensure we can open multiple positions
       // But ensure we leave at least 40% available for other trades
@@ -494,10 +560,26 @@ export class RiskManager {
       const cappedPositionValue = Math.min(adjustedPositionValue, maxPositionValue);
 
       // Apply drawdown multiplier to position size
-      const drawdownAdjustedValue = safeMultiply(
-        cappedPositionValue,
-        drawdownMultiplier
-      ).toNumber();
+      let drawdownAdjustedValue = safeMultiply(cappedPositionValue, drawdownMultiplier).toNumber();
+
+      // Step 5.5: Apply Kelly Criterion multiplier if available
+      const symbol = `${signal.coin}/USDT`;
+      const kellyMultiplier = this.kellyCalculator.getPositionSizeMultiplier(symbol);
+      if (kellyMultiplier !== 1.0) {
+        const beforeKelly = drawdownAdjustedValue;
+        drawdownAdjustedValue = safeMultiply(drawdownAdjustedValue, kellyMultiplier).toNumber();
+        this.logger.debug(
+          'Kelly Criterion applied to position sizing',
+          {
+            coin: signal.coin,
+            kellyMultiplier: kellyMultiplier.toFixed(2),
+            beforeKelly: beforeKelly.toFixed(2),
+            afterKelly: drawdownAdjustedValue.toFixed(2),
+          },
+          this.context
+        );
+      }
+
       const cappedSize = safeDivide(drawdownAdjustedValue, pricePerUnit, 8).toNumber();
 
       // Step 6: Determine dynamic leverage based on confidence and risk
@@ -937,51 +1019,6 @@ export class RiskManager {
 
     // Otherwise use regular stop loss
     return this.checkStopLoss(position, currentPrice);
-  }
-
-  /**
-   * Detect market regime (trending vs ranging) based on indicators
-   * Uses Bollinger bandwidth, EMA alignment, and price consolidation
-   */
-  private detectRegime(
-    indicators?: TechnicalIndicators,
-    currentPrice?: number
-  ): 'trending' | 'ranging' | 'unknown' {
-    if (!indicators || !currentPrice) return 'unknown';
-
-    let trendScore = 0;
-
-    // 1. Bollinger Bandwidth: narrow = ranging, wide = trending
-    if (indicators.bollinger?.bandwidth !== undefined) {
-      if (indicators.bollinger.bandwidth < POSITION_SIZING.RANGING_BANDWIDTH_THRESHOLD) {
-        trendScore -= 1; // Narrow bands suggest ranging
-      } else {
-        trendScore += 1; // Wide bands suggest trending
-      }
-    }
-
-    // 2. EMA alignment strength (distance between EMA20 and EMA50)
-    if (indicators.ema20 && indicators.ema50 && indicators.ema20 > 0 && indicators.ema50 > 0) {
-      const emaSpread = Math.abs(indicators.ema20 - indicators.ema50) / currentPrice;
-      if (emaSpread > POSITION_SIZING.TREND_REGIME_THRESHOLD) {
-        trendScore += 1; // Strong separation = trending
-      } else if (emaSpread < POSITION_SIZING.TREND_REGIME_THRESHOLD * 0.5) {
-        trendScore -= 1; // Tight = ranging
-      }
-    }
-
-    // 3. MACD momentum (histogram strength indicates trending)
-    if (indicators.macd?.histogram !== undefined) {
-      const macdStrength = Math.abs(indicators.macd.histogram) / currentPrice;
-      if (macdStrength > 0.001) {
-        trendScore += 1; // Strong MACD momentum
-      }
-    }
-
-    // Determine regime
-    if (trendScore >= 2) return 'trending';
-    if (trendScore <= -1) return 'ranging';
-    return 'unknown';
   }
 
   /** Compute R-multiple given entry, current and stop distance percent (defaultStopLoss) */

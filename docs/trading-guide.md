@@ -1,311 +1,305 @@
-# Trading Guide
+# 交易指南
 
-Complete guide to trading with Quanta.
+Quanta 交易操作完整指南。
 
-## Trading Modes
+## 交易模式
 
-| Mode         | Market Data | Execution | Risk | Best For            |
-| ------------ | ----------- | --------- | ---- | ------------------- |
-| **simulate** | Mock        | Simulated | None | Learning            |
-| **paper**    | Real        | Simulated | None | Strategy validation |
-| **live**     | Real        | Real      | High | Production          |
+| 模式 | 市场数据 | 执行 | 风险 | 适用场景 |
+|------|---------|------|------|---------|
+| **simulate** | 模拟 | 模拟 | 无 | 学习 |
+| **paper** | 真实 | 模拟 | 无 | 策略验证 |
+| **live** | 真实 | 真实 | 高 | 生产 |
 
-### 1. Simulation Mode (Mock Data)
+### 模拟模式
 
-**Purpose**: Learning and initial testing with synthetic data
+**用途**: 使用合成数据学习和初始测试
 
 ```bash
 quanta trade start --env simulate --coins BTC,ETH,SOL
 ```
 
-**Features:**
+**特性:**
+- 使用内部模拟交易所（`simulator`）
+- 完全无风险环境
+- 可使用 Mock AI 或 Real AI
+- 不涉及真实资金
+- 无外部 API 依赖
 
-- Uses internal mock exchange (`simulator`)
-- Perfect risk-free environment
-- Can use Mock AI or Real AI
-- No real money involved
-- No external API dependencies
+**适用场景:**
+- 学习系统工作原理
+- 测试新功能
+- 理解算法
+- 初始 AI 提示词测试
 
-**Use Cases:**
+### 纸面交易模式
 
-- Learning how the system works
-- Testing new features
-- Understanding algorithms
-- Initial AI prompt testing
-
-### 2. Paper Trading Mode (Real Data, Simulated Execution)
-
-**Purpose**: Strategy validation with real market conditions without financial risk
+**用途**: 用真实市场条件验证策略，无财务风险
 
 ```bash
 quanta trade start --env paper --coins BTC,ETH,SOL
 ```
 
-**Features:**
+**特性:**
+- 获取**真实市场数据**（来自实际交易所）
+- 模拟订单执行和持仓管理
+- 基于实时价格变动跟踪真实 P&L
+- 使用真实市场波动、趋势和模式
+- **API 密钥可选**（无需凭据即可获取公共市场数据）
 
-- Fetches **real market data** from actual exchanges
-- Simulates order execution and position management
-- Tracks realistic P&L based on live price movements
-- Uses real market volatility, trends, and patterns
-- **API keys optional** (can fetch public market data without credentials)
+**适用场景:**
+- 用真实市场条件验证策略
+- 在实时数据上测试 AI 性能
+- 了解策略在波动市场中的表现
+- 在实际交易前完善风险参数
 
-**Use Cases:**
+### 实盘模式
 
-- Validating strategies with real market conditions
-- Testing AI performance on live data
-- Understanding how strategies perform in volatile markets
-- Refining risk parameters before going live
-
-### 3. Live Mode (Real Trading)
-
-**Purpose**: Execute real trades with actual capital
+**用途**: 使用实际资金执行真实交易
 
 ```bash
 quanta trade start --env live --coins BTC
 ```
 
-**Requirements:**
+**要求:**
+- 具有交易权限的有效 API 密钥
+- 正确的风险管理配置
+- 在模拟和纸面交易中充分测试
 
-- Valid API keys with trading permissions
-- Proper risk management configuration
-- Thorough testing in simulation and paper trading first
+**⚠️ 重要警告:**
+- **真实资金面临风险** - 损失是永久的
+- 始终先在模拟/纸面模式测试
+- 从小仓位大小开始
+- 主动监控持仓
+- 了解交易所费用结构
+- 注意滑点和执行质量
+- 知道如何立即停止交易（`Ctrl+C`）
 
-**⚠️ Critical Warnings:**
+## 交易生命周期
 
-- **Real money is at risk** - losses are permanent
-- Always test in simulation/paper mode first
-- Start with small position sizes
-- Monitor positions actively
-- Understand exchange fee structures
-- Be aware of slippage and execution quality
-- Know how to stop trading immediately if needed (`Ctrl+C`)
-
-## Trading Lifecycle
-
-### 1. Start Trading
+### 1. 开始交易
 
 ```bash
-# Simulation mode
+# 模拟模式
 quanta trade start --env simulate --coins BTC,ETH,SOL
 
-# Paper trading mode
+# 纸面交易模式
 quanta trade start --env paper --coins BTC,ETH,SOL
 
-# Live trading
+# 实盘交易
 quanta trade start --env live --coins BTC
 ```
 
-### 2. Monitor Output
+### 2. 监控输出
 
 ```bash
-# View detailed output in real-time
+# 实时查看详细输出
 quanta log view --follow
 
-# View with specific filters
+# 使用特定筛选器查看
 quanta log view --follow --context Workflow --level info
 ```
 
-### 3. Control Trading
+### 3. 控制交易
 
-Use `Ctrl+C` to stop the running trading process.
+使用 `Ctrl+C` 停止正在运行的交易进程。
 
-### 4. Review Results
+### 4. 查看结果
 
 ```bash
-# Run backtest with enhanced reporting
+# 运行带增强报告的回测
 quanta trade backtest --start 2024-01-01 --end 2024-12-31 --coins BTC,ETH --initial-balance 10000
 ```
 
-The backtest report includes:
+回测报告包括:
 
-- Signal statistics (generated, accepted, rejected)
-- Performance summary (returns, Sharpe ratio, drawdown)
-- Trade statistics (win rate, profit factor, best/worst trades)
-- Risk metrics (volatility, VaR, max drawdown)
-- Equity curve analysis
+- 信号统计（生成、接受、拒绝）
+- 性能摘要（收益、夏普比率、回撤）
+- 交易统计（胜率、盈亏比、最佳/最差交易）
+- 风险指标（波动性、VaR、最大回撤）
+- 权益曲线分析
 
-## Trading Workflow
+## 交易工作流
 
 ```
-🔄 Cycle Trigger (3 minutes)
+🔄 周期触发（3 分钟）
     ↓
-📊 Market Data Collection
+📊 市场数据收集
     ↓
-🤖 AI Analysis
+🤖 AI 分析
     ↓
-🛡️ Risk Validation
+🛡️ 风险验证
     ↓
-⚡ Order Execution
+⚡ 订单执行
     ↓
-🔍 Position Monitoring
+🔍 持仓监控
 ```
 
-### Instruments and Pricing
+### 工具和定价
 
-- **OKX instruments**: Quanta uses `BASE/USDT:USDT` (e.g., `ETH/USDT:USDT`) for perpetuals
-- **Entry pricing**: Execution references real-time mid price (best bid/ask average), not candle close
-- **Exposure shown**: Sum of absolute position values (size × mark price), without leverage multiplication
+- **OKX 工具**: Quanta 对永续合约使用 `BASE/USDT:USDT`（例如 `ETH/USDT:USDT`）
+- **入场定价**: 执行参考实时中间价（最佳买卖价平均值），而非 K 线收盘价
+- **显示的风险敞口**: 绝对持仓价值之和（大小 × 标记价格），不含杠杆乘数
 
-### Market Types
+### 市场类型
 
-| Type               | Leverage | Funding | Shorting | Risk Level |
-| ------------------ | -------- | ------- | -------- | ---------- |
-| **Spot**           | 1x only  | No      | No       | Lower      |
-| **Swap/Perpetual** | 3x-10x   | Yes     | Yes      | Higher     |
+| 类型 | 杠杆 | 资金费率 | 做空 | 风险水平 |
+|------|------|---------|------|---------|
+| **现货** | 仅 1x | 无 | 否 | 较低 |
+| **合约/永续** | 3x-10x | 是 | 是 | 较高 |
 
-**Recommended profiles:**
+**推荐配置:**
 
-- **Spot**: leverage [1,1], stopLoss 3–7%, maxRisk 3–5%, maxPositions 6–10
-- **Swap/Perp**: leverage [3,10], stopLoss 1–2%, maxRisk 1–2%, maxPositions 1–4
+- **现货**: 杠杆 [1,1]，止损 3–7%，最大风险 3–5%，最大持仓 6–10
+- **合约/永续**: 杠杆 [3,10]，止损 1–2%，最大风险 1–2%，最大持仓 1–4
 
-## Risk Management
+## 风险管理
 
-Quanta automatically implements risk controls:
+Quanta 自动实施风险控制:
 
-### Position Sizing
+### 仓位大小
 
-- **Maximum risk per trade**: 5% of account equity
-- **Capital allocation**: 30% of available trading capital per position
-- **Minimum position**: 1% of equity or $200 (whichever is greater)
-- **Capital reserve**: Maintains 40% reserve for additional positions
+- **每笔交易最大风险**: 账户权益的 5%
+- **资本配置**: 每个持仓可用交易资本的 30%
+- **最小仓位**: 权益的 1% 或 $200（取较大值）
+- **资本储备**: 保留 40% 作为额外持仓储备
 
-### Stop Loss
+### 止损
 
-- **Default**: 5% (configurable)
-- **Types**: Percentage-based, ATR-based, or fixed dollar
-- **Placement**: Below entry for longs, above entry for shorts
+- **默认**: 5%（可配置）
+- **类型**: 基于百分比、基于 ATR 或固定金额
+- **设置**: 做多设在入场价下方，做空设在入场价上方
 
-### Take Profit
+### 止盈
 
-- **Default**: 6% (2x stop-loss)
-- **Strategies**: Fixed, trailing, or multiple levels
+- **默认**: 6%（止损的 2 倍）
+- **策略**: 固定、跟踪或多级
 
-### Portfolio Limits
+### 组合限制
 
-- **Max positions**: 6 concurrent positions (configurable)
-- **Max total risk**: 30% of account equity
-- **Confidence threshold**: 0.55 (55%) minimum signal confidence
+- **最大持仓**: 6 个并发持仓（可配置）
+- **总风险上限**: 账户权益的 30%
+- **置信度阈值**: 0.55（55%）最小信号置信度
 
-### Leverage
+### 杠杆
 
-- **Range**: 5x to 40x for derivatives, 1x for spot
-- **Safety**: Automatically clamped based on market type
+- **范围**: 衍生品 5x 到 40x，现货 1x
+- **安全**: 根据市场类型自动限制
 
-See [Core Concepts](concepts.md#risk-management) for detailed algorithms.
+详见 [核心概念](concepts.md#风险管理)。
 
-## Profit & Loss (PnL)
+## 盈亏（P&L）
 
-### Understanding PnL
+### 理解 P&L
 
-**Unrealized PnL**: Open position profit/loss (not yet closed)
+**未实现盈亏**: 持仓中的盈亏（尚未平仓）
 
 ```typescript
-// Long position
-Unrealized PnL = (Current Price - Entry Price) × Position Size
+// 做多持仓
+未实现盈亏 = (当前价格 - 开仓价格) × 持仓大小
 
-// Short position
-Unrealized PnL = (Entry Price - Current Price) × Position Size
+// 做空持仓
+未实现盈亏 = (开仓价格 - 当前价格) × 持仓大小
 ```
 
-**Realized PnL**: Closed position profit/loss (actual cash gained/lost)
+**已实现盈亏**: 平仓持仓的盈亏（实际现金获得/损失）
 
 ```typescript
-Realized PnL = calculated when position closes
-Account Balance += Realized PnL
+已实现盈亏 = 平仓时计算
+账户余额 += 已实现盈亏
 ```
 
-### Account Values
+### 账户价值
 
 ```typescript
-Balance = Initial Capital + All Realized PnL
-Equity = Balance + Unrealized PnL (from open positions)
-Available Margin = Equity - Used Margin
+余额 = 初始资金 + 所有已实现盈亏
+权益 = 余额 + 未实现盈亏（来自持仓）
+可用保证金 = 权益 - 已用保证金
 ```
 
-### Leverage Impact on PnL
+### 杠杆对 P&L 的影响
 
-With 10x leverage:
+使用 10x 杠杆:
 
-- Position value: $10,000 (10 BTC @ $1,000)
-- Required margin: $1,000 (10% of position)
-- 1% price move → $100 PnL (10% ROI on margin)
+- 仓位价值: $10,000（10 BTC @ $1,000）
+- 所需保证金: $1,000（仓位的 10%）
+- 1% 价格变动 → $100 P&L（保证金 ROI 10%）
 
-### Trade Tracking
+### 交易跟踪
 
-All completed trades are recorded with:
+所有完成的交易记录:
 
-- Entry/exit times and prices
-- Position size and side (long/short)
-- Realized PnL (absolute and percentage)
-- Holding period
-- Reason for closing (signal/stop-loss/take-profit)
+- 开仓/平仓时间和价格
+- 持仓大小和方向（做多/做空）
+- 已实现盈亏（绝对值和百分比）
+- 持有期
+- 平仓原因（信号/止损/止盈）
 
-## Best Practices
+## 最佳实践
 
-### ✅ DO
+### ✅ 应该做
 
-- Always test in simulation or paper trading mode first
-- Paper trading recommended for strategy validation with real data
-- Start with small position sizes
-- Monitor positions regularly
-- Use stop-losses
-- Diversify across coins
-- Understand risk management parameters
+- 始终先在模拟或纸面交易模式测试
+- 推荐纸面交易用于策略验证（真实数据）
+- 从小仓位大小开始
+- 定期监控持仓
+- 使用止损
+- 跨币种分散
+- 理解风险管理参数
 
-### ❌ DON'T
+### ❌ 不应该做
 
-- Don't trade with money you can't afford to lose
-- Don't disable risk controls
-- Don't ignore warnings
-- Don't over-leverage
-- Don't skip testing phases
+- 不要使用无法承受损失的资金交易
+- 不要禁用风险控制
+- 不要忽略警告
+- 不要过度杠杆
+- 不要跳过测试阶段
 
-## Troubleshooting
+## 常见问题
 
-### Trading Not Executing
+### 交易未执行
 
 ```bash
-# Check configuration
+# 检查配置
 quanta config show
 
-# Validate settings
+# 验证设置
 quanta config validate
 
-# Check status (via logs)
+# 检查状态（通过日志）
 quanta log view --context TradeStart --lines 100
 ```
 
-### API Errors
+### API 错误
 
 ```bash
-# Test exchange connectivity
+# 测试交易所连接
 quanta test exchange --exchange simulator --coin BTC
 
-# Test AI
+# 测试 AI
 quanta test ai --type mock --coin BTC
 
-# Check API keys
+# 检查 API 密钥
 quanta config show | grep -i api
 ```
 
-### Performance Issues
+### 性能问题
 
 ```bash
-# View detailed logs
+# 查看详细日志
 quanta log view --follow --context Workflow
 
-# Check for errors
+# 检查错误
 quanta log view --level error
 
-# Export logs for analysis
+# 导出日志进行分析
 quanta log export --output logs.json --format json
 ```
 
-## Advanced Topics
+## 高级主题
 
-For more advanced topics, refer to:
+更多高级主题，请参考:
 
-- **[Core Concepts](concepts.md)** - Complete trading concepts and algorithms
-- **[Configuration Guide](configuration.md)** - Advanced configuration options
-- **[Arena Guide](arena-guide.md)** - Multi-drone trading arena
-- **[Trading Cycle Price Usage](trading-cycle-price-usage.md)** - Detailed price source documentation
+- [核心概念](concepts.md) - 完整交易概念和算法
+- [配置指南](configuration.md) - 高级配置选项
+- [竞技场指南](arena-guide.md) - 多无人机交易竞技场
+- [交易周期价格使用](trading-cycle-price-usage.md) - 详细价格来源文档
