@@ -1,6 +1,6 @@
 /**
  * AI Strategy Implementation
- * Wraps AI agent as a strategy
+ * Wraps AI agent as a strategy with configuration-driven behavior
  */
 
 import {
@@ -9,40 +9,47 @@ import {
   type StrategyContext,
   type StrategyResult,
 } from './base-strategy.js';
-import type { OpenRouterClient } from '../ai/agent.js';
+import type { OpenRouterClient, AIContext } from '../ai/agent.js';
+import type { WorkflowConfig } from '../core/workflow.js';
 
 export class AIStrategy extends BaseStrategy {
   constructor(
     config: StrategyConfig,
-    private aiAgent: OpenRouterClient
+    private aiAgent: OpenRouterClient,
+    private workflowConfig: WorkflowConfig
   ) {
     super(config);
   }
 
   async generateSignals(context: StrategyContext): Promise<StrategyResult> {
-    const aiContext = {
+    // Build AI context from workflow configuration
+    const aiContext: AIContext = {
       startTime: context.timestamp,
       currentTime: context.timestamp,
       invokeCount: context.cycleCount,
       tradableCoins: context.marketData.map(md => md.coin),
-      maxPositions: 6,
-      maxRiskPerTrade: 0.05,
-      maxLeverage: 40,
-      minLeverage: 5,
-      defaultStopLoss: 0.05,
+      maxPositions: this.workflowConfig.maxPositions,
+      maxRiskPerTrade: this.workflowConfig.riskParams.maxRiskPerTrade,
+      maxLeverage: this.workflowConfig.riskParams.maxLeverage,
+      minLeverage: this.workflowConfig.riskParams.minLeverage,
+      defaultStopLoss: this.workflowConfig.riskParams.defaultStopLoss,
       promptOptions: {
-        candles3m: 10,
-        candles4h: 5,
+        candles3m: this.workflowConfig.ai?.prompt?.candles?.m3 ?? 10,
+        candles1h: this.workflowConfig.ai?.prompt?.candles?.h1 ?? 8,
+        candles4h: this.workflowConfig.ai?.prompt?.candles?.h4 ?? 5,
         sections: {
-          candlesTA: true,
-          sentiment: true,
-          technicalState: true,
+          candlesTA: this.workflowConfig.ai?.prompt?.sections?.candlesTA ?? true,
+          sentiment: this.workflowConfig.ai?.prompt?.sections?.sentiment ?? true,
+          technicalState: this.workflowConfig.ai?.prompt?.sections?.technicalState ?? true,
         },
       },
-    } as any;
+    };
 
+    // Type compatibility: StrategyContext uses MarketData from types/index.ts,
+    // while generateTradingSignal expects MarketData from data/market.ts.
+    // Both types share the same core structure, so this cast is safe.
     const signals = await this.aiAgent.generateTradingSignal(
-      context.marketData as any, // MarketData type mismatch between types/index.ts and data/market.ts
+      context.marketData as Parameters<OpenRouterClient['generateTradingSignal']>[0],
       context.account,
       context.positions,
       aiContext

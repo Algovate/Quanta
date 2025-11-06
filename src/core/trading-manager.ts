@@ -207,7 +207,8 @@ export class TradingManager extends EventEmitter {
           enabled: true,
           params: {},
         },
-        aiAgent
+        aiAgent,
+        config
       );
 
       // Create workflow - both CLI and API server modes use structured logs only
