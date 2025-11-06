@@ -158,6 +158,10 @@ Options:
   --context <context>  Filter by context
   --level <level>      Filter by log level (info|warn|error|debug)
   --grep <pattern>     Search/filter pattern
+  --decision-path      Show decision path information
+  --days <n>           Show logs from last N days
+  --since <date>       Start date (YYYY-MM-DD)
+  --until <date>       End date (YYYY-MM-DD)
 ```
 
 **Examples:**
@@ -166,7 +170,60 @@ Options:
 quanta log view
 quanta log view --follow
 quanta log view --follow --context Workflow
+quanta log view --decision-path
+quanta log view --decision-path --context Workflow --lines 100
 ```
+
+### `log decisions` - View Trading Decision Analysis
+
+View detailed trading decision analysis including AI reasoning, validation, sizing, and execution steps.
+
+```bash
+quanta log decisions [options]
+
+Options:
+  --cycle-id <n>       Show decisions for specific cycle ID
+  --symbol <symbol>    Filter by symbol/coin
+  --since <date>       Start date (YYYY-MM-DD)
+  --until <date>       End date (YYYY-MM-DD)
+  --days <n>           Show decisions from last N days
+  --format <format>    Output format: structured, json, detailed (default: structured)
+  -f, --follow         Follow mode (real-time updates)
+  --verbose            Show detailed decision factors
+```
+
+**Examples:**
+
+```bash
+# View all recent decisions
+quanta log decisions
+
+# View decisions for a specific cycle
+quanta log decisions --cycle-id 42
+
+# View decisions for a specific symbol
+quanta log decisions --symbol BTC
+
+# View detailed decision analysis with factors
+quanta log decisions --verbose
+
+# Follow decisions in real-time
+quanta log decisions --follow
+
+# Export decisions as JSON
+quanta log decisions --format json > decisions.json
+```
+
+**Output Format:**
+
+The `log decisions` command displays:
+
+- **Cycle-based grouping**: Decisions grouped by trading cycle
+- **Signal information**: Symbol, action (LONG/SHORT/HOLD/CLOSE), confidence
+- **AI reasoning**: Full reasoning text from AI analysis
+- **Validation status**: Whether signals passed risk validation
+- **Sizing details**: Position sizing calculations (with `--verbose`)
+- **Execution status**: Order execution results (with `--verbose`)
 
 ### Other Log Commands
 
@@ -176,6 +233,27 @@ quanta log list [--format <format>] [--sort <field>]          # List log files
 quanta log stats [--days <n>] [--context <context>]           # Show statistics
 quanta log export --output <file> [--format <format>]         # Export logs
 ```
+
+## Decision Analysis
+
+### Understanding Decision Paths
+
+When viewing logs with `--decision-path` or using `log decisions`, you can see:
+
+1. **Signal Generation**: AI-generated trading signals with reasoning
+2. **Risk Validation**: Whether signals passed risk checks
+3. **Position Sizing**: Calculated position sizes and leverage
+4. **Order Execution**: Actual execution results and slippage
+
+### Decision Path Structure
+
+Each decision path contains:
+
+- **Step**: The decision stage (e.g., `signal_generation`, `execute_signals`)
+- **Decision**: The decision made (e.g., "Accepted: 2 (LONG: BTC, ETH)")
+- **Reason**: Why the decision was made
+- **Confidence**: AI confidence level (0-1)
+- **Factors**: Detailed breakdown (signals, validation, sizing, execution)
 
 ## Prompts Commands
 

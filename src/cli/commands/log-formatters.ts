@@ -115,14 +115,14 @@ export function formatStatsAsJson(stats: {
  */
 export function formatStatsAsTable(
   stats: {
-  total: number;
-  byLevel: Record<string, number>;
-  byContext: Record<string, number>;
-  errors: number;
-  warnings: number;
-  errorRate: number;
-  warningRate: number;
-  timeRange: { earliest: number; latest: number };
+    total: number;
+    byLevel: Record<string, number>;
+    byContext: Record<string, number>;
+    errors: number;
+    warnings: number;
+    errorRate: number;
+    warningRate: number;
+    timeRange: { earliest: number; latest: number };
   },
   showAllContexts: boolean = false
 ): string {
@@ -144,14 +144,16 @@ export function formatStatsAsTable(
   lines.push(chalk.bold(`\nBy Context:`));
   const sortedContexts = Object.entries(stats.byContext).sort((a, b) => b[1] - a[1]);
   const contextsToShow = showAllContexts ? sortedContexts : sortedContexts.slice(0, 10);
-  
+
   for (const [context, count] of contextsToShow) {
     const percentage = ((count / stats.total) * 100).toFixed(1);
     lines.push(`  ${context.padEnd(20)} ${count.toString().padStart(8)} (${percentage}%)`);
   }
-  
+
   if (!showAllContexts && sortedContexts.length > 10) {
-    lines.push(chalk.dim(`  ... and ${sortedContexts.length - 10} more (use --all-contexts to show all)`));
+    lines.push(
+      chalk.dim(`  ... and ${sortedContexts.length - 10} more (use --all-contexts to show all)`)
+    );
   }
 
   lines.push(chalk.bold(`\nError Rate: ${stats.errorRate.toFixed(2)}% (${stats.errors} errors)`));
@@ -411,3 +413,234 @@ export function formatLogsAsJson(logs: TextLog[]): string {
   return transformedLogs.map(log => JSON.stringify(log)).join('\n');
 }
 
+/**
+ * Format decision path for display
+ */
+export function formatDecisionPath(decisionPath: {
+  choices: Array<{
+    step: string;
+    decision: string;
+    reason: string;
+    confidence?: number;
+    factors?: Record<string, any>;
+  }>;
+}): string {
+  const lines: string[] = [];
+  lines.push(chalk.blue('\n📊 Decision Path\n'));
+
+  for (let i = 0; i < decisionPath.choices.length; i++) {
+    const choice = decisionPath.choices[i];
+    const stepNum = i + 1;
+
+    lines.push(chalk.bold(`Step ${stepNum}: ${choice.step}`));
+    lines.push(`  ${chalk.dim('Decision:')} ${choice.decision}`);
+    lines.push(`  ${chalk.dim('Reason:')} ${choice.reason}`);
+
+    if (choice.confidence !== undefined) {
+      lines.push(`  ${chalk.dim('Confidence:')} ${(choice.confidence * 100).toFixed(1)}%`);
+    }
+
+    if (choice.factors && Object.keys(choice.factors).length > 0) {
+      lines.push(`  ${chalk.dim('Factors:')}`);
+      const factorsStr = JSON.stringify(choice.factors, null, 4)
+        .split('\n')
+        .map((line, idx) => (idx === 0 ? line : '    ' + line))
+        .join('\n');
+      lines.push('    ' + factorsStr);
+    }
+
+    if (i < decisionPath.choices.length - 1) {
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format decision factors (validation, sizing, execution summaries)
+ */
+export function formatDecisionFactors(
+  factors: Record<string, any>,
+  verbose: boolean = false
+): string {
+  const lines: string[] = [];
+
+  if (factors.summary) {
+    lines.push(chalk.bold('\n📈 Signal Summary:'));
+    lines.push(`  Total: ${factors.summary.total || 0}`);
+    lines.push(`  Accepted: ${chalk.green(factors.summary.accepted || 0)}`);
+    lines.push(`  Rejected (validation): ${chalk.red(factors.summary.rejectedValidation || 0)}`);
+    lines.push(`  Rejected (sizing): ${chalk.yellow(factors.summary.rejectedSizing || 0)}`);
+    lines.push(`  Executed: ${chalk.cyan(factors.summary.executed || 0)}`);
+  }
+
+  if (factors.validationSummary && verbose) {
+    lines.push(chalk.bold('\n🛡️  Validation Summary:'));
+    lines.push(`  Passed: ${chalk.green(factors.validationSummary.passed || 0)}`);
+    lines.push(`  Failed: ${chalk.red(factors.validationSummary.failed || 0)}`);
+
+    if (factors.validationSummary.reasons && factors.validationSummary.reasons.length > 0) {
+      lines.push('  Reasons:');
+      for (const reason of factors.validationSummary.reasons) {
+        lines.push(`    - ${reason.coin}: ${reason.reason || 'Unknown'}`);
+      }
+    }
+  }
+
+  if (factors.sizingSummary && verbose) {
+    lines.push(chalk.bold('\n💰 Sizing Summary:'));
+    lines.push(`  Passed: ${chalk.green(factors.sizingSummary.passed || 0)}`);
+    lines.push(`  Failed: ${chalk.red(factors.sizingSummary.failed || 0)}`);
+
+    if (factors.sizingSummary.details && factors.sizingSummary.details.length > 0) {
+      lines.push('  Details:');
+      for (const detail of factors.sizingSummary.details) {
+        const parts: string[] = [];
+        parts.push(detail.coin);
+        if (detail.leverage !== undefined) parts.push(`leverage: ${detail.leverage}x`);
+        if (detail.size !== undefined) parts.push(`size: ${detail.size.toFixed(4)}`);
+        if (detail.riskAmount !== undefined) parts.push(`risk: $${detail.riskAmount.toFixed(2)}`);
+        lines.push(`    - ${parts.join(', ')}`);
+      }
+    }
+  }
+
+  if (factors.executionSummary && verbose) {
+    lines.push(chalk.bold('\n⚡ Execution Summary:'));
+    lines.push(`  Executed: ${chalk.cyan(factors.executionSummary.executed || 0)}`);
+
+    if (factors.executionSummary.details && factors.executionSummary.details.length > 0) {
+      lines.push('  Details:');
+      for (const detail of factors.executionSummary.details) {
+        const parts: string[] = [];
+        parts.push(detail.coin);
+        if (detail.expectedPrice !== undefined)
+          parts.push(`expected: $${detail.expectedPrice.toFixed(2)}`);
+        if (detail.actualPrice !== undefined)
+          parts.push(`actual: $${detail.actualPrice.toFixed(2)}`);
+        if (detail.slippage !== undefined)
+          parts.push(`slippage: ${(detail.slippage * 100).toFixed(3)}%`);
+        if (detail.orderId) parts.push(`order: ${detail.orderId}`);
+        lines.push(`    - ${parts.join(', ')}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format AI signal reasoning
+ */
+export function formatSignalReasoning(reasoning: string, maxLength: number = 200): string {
+  if (!reasoning) {
+    return chalk.dim('(No reasoning provided)');
+  }
+
+  if (reasoning.length <= maxLength) {
+    return reasoning;
+  }
+
+  // Try to cut at sentence boundary
+  const truncated = reasoning.substring(0, maxLength);
+  const lastPeriod = truncated.lastIndexOf('.');
+  const lastNewline = truncated.lastIndexOf('\n');
+
+  const cutPoint = Math.max(lastPeriod, lastNewline);
+  if (cutPoint > maxLength * 0.5) {
+    return reasoning.substring(0, cutPoint + 1) + chalk.dim('...');
+  }
+
+  return truncated + chalk.dim('...');
+}
+
+/**
+ * Format decision summary for a cycle
+ */
+export function formatDecisionSummary(
+  cycleId: number,
+  decisions: Array<{
+    symbol?: string;
+    action?: string;
+    reasoning?: string;
+    confidence?: number;
+    validation?: { passed: boolean; reason?: string };
+    sizing?: { passed: boolean };
+    execution?: { orderId?: string };
+  }>,
+  verbose: boolean = false
+): string {
+  const lines: string[] = [];
+  const separator = '━'.repeat(80);
+  lines.push(chalk.blue(`\n${separator}`));
+  lines.push(chalk.bold(`Cycle #${cycleId} - Decision Analysis`));
+  lines.push(chalk.blue(separator));
+
+  if (decisions.length === 0) {
+    lines.push(chalk.dim('  No decisions found for this cycle'));
+    return lines.join('\n');
+  }
+
+  for (const decision of decisions) {
+    lines.push('');
+
+    // Symbol and action
+    if (decision.symbol) {
+      const actionColor =
+        decision.action === 'LONG'
+          ? chalk.green
+          : decision.action === 'SHORT'
+            ? chalk.red
+            : decision.action === 'CLOSE'
+              ? chalk.yellow
+              : chalk.gray;
+
+      const actionLabel = decision.action || 'HOLD';
+      lines.push(`  ${chalk.bold(decision.symbol)} ${actionColor(actionLabel)}`);
+    }
+
+    // Confidence
+    if (decision.confidence !== undefined) {
+      lines.push(`  ${chalk.dim('Confidence:')} ${(decision.confidence * 100).toFixed(1)}%`);
+    }
+
+    // Reasoning
+    if (decision.reasoning) {
+      lines.push(
+        `  ${chalk.dim('Reasoning:')} ${formatSignalReasoning(decision.reasoning, verbose ? 500 : 150)}`
+      );
+    }
+
+    // Validation status
+    if (decision.validation) {
+      const statusColor = decision.validation.passed ? chalk.green : chalk.red;
+      const status = decision.validation.passed ? '✓ Passed' : '✗ Failed';
+      lines.push(`  ${chalk.dim('Validation:')} ${statusColor(status)}`);
+      if (decision.validation.reason && verbose) {
+        lines.push(`    ${chalk.dim(decision.validation.reason)}`);
+      }
+    }
+
+    // Sizing status
+    if (decision.sizing) {
+      const statusColor = decision.sizing.passed ? chalk.green : chalk.red;
+      const status = decision.sizing.passed ? '✓ Passed' : '✗ Failed';
+      lines.push(`  ${chalk.dim('Sizing:')} ${statusColor(status)}`);
+    }
+
+    // Execution status
+    if (decision.execution) {
+      if (decision.execution.orderId) {
+        lines.push(
+          `  ${chalk.dim('Execution:')} ${chalk.cyan('✓ Executed')} (Order: ${decision.execution.orderId})`
+        );
+      } else {
+        lines.push(`  ${chalk.dim('Execution:')} ${chalk.yellow('Pending')}`);
+      }
+    }
+  }
+
+  lines.push(chalk.blue(separator));
+  return lines.join('\n');
+}

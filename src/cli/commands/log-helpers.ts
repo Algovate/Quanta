@@ -154,3 +154,225 @@ export function parseLogLevel(level?: string): 'info' | 'warn' | 'error' | 'debu
   }
   return undefined;
 }
+
+/**
+ * Decision information extracted from logs
+ */
+export interface DecisionInfo {
+  cycleId?: number;
+  timestamp: number;
+  symbol?: string;
+  reasoning?: string;
+  confidence?: number;
+  action?: string;
+  validation?: {
+    passed: boolean;
+    reason?: string;
+  };
+  sizing?: {
+    passed: boolean;
+    leverage?: number;
+    size?: number;
+    riskAmount?: number;
+  };
+  execution?: {
+    orderId?: string;
+    expectedPrice?: number;
+    actualPrice?: number;
+    slippage?: number;
+  };
+  metadata?: Record<string, any>;
+}
+
+/**
+ * Extract decision information from text logs
+ */
+export function extractDecisionInfo(
+  logs: Array<{ message: string; metadata?: Record<string, any>; timestamp: number }>
+): DecisionInfo[] {
+  const decisions: DecisionInfo[] = [];
+
+  for (const log of logs) {
+    const decision: DecisionInfo = {
+      timestamp: log.timestamp,
+    };
+
+    // Extract cycle ID
+    if (log.metadata?.cycleId !== undefined) {
+      decision.cycleId = log.metadata.cycleId;
+    }
+
+    // Extract symbol/coin from message or metadata
+    const coinMatch = log.message.match(/\b([A-Z]{2,10})\/(?:USDT|USD)\b/i);
+    if (coinMatch) {
+      decision.symbol = coinMatch[1];
+    } else if (log.metadata?.coin) {
+      decision.symbol = log.metadata.coin;
+    } else if (log.metadata?.symbol) {
+      decision.symbol = log.metadata.symbol;
+    }
+
+    // Extract reasoning
+    if (log.metadata?.reasoning) {
+      decision.reasoning = log.metadata.reasoning;
+    } else if (log.message.includes('Reasoning:')) {
+      const reasoningMatch = log.message.match(/Reasoning:\s*(.+)/i);
+      if (reasoningMatch) {
+        decision.reasoning = reasoningMatch[1].trim();
+      }
+    }
+
+    // Extract confidence
+    if (log.metadata?.confidence !== undefined) {
+      decision.confidence = log.metadata.confidence;
+    } else {
+      const confidenceMatch = log.message.match(/confidence[:\s]+([\d.]+)/i);
+      if (confidenceMatch) {
+        decision.confidence = parseFloat(confidenceMatch[1]);
+      }
+    }
+
+    // Extract action (LONG/SHORT/HOLD/CLOSE)
+    if (log.metadata?.action) {
+      decision.action = log.metadata.action;
+    } else {
+      const actionMatch = log.message.match(/\b(LONG|SHORT|HOLD|CLOSE)\b/i);
+      if (actionMatch) {
+        decision.action = actionMatch[1].toUpperCase();
+      }
+    }
+
+    // Extract validation info
+    if (log.metadata?.validation) {
+      decision.validation = {
+        passed: log.metadata.validation.passed === true,
+        reason: log.metadata.validation.reason,
+      };
+    } else if (log.message.includes('validation') || log.message.includes('Validation')) {
+      const validationMatch = log.message.match(/validation[:\s]+(passed|failed)/i);
+      if (validationMatch) {
+        decision.validation = {
+          passed: validationMatch[1].toLowerCase() === 'passed',
+        };
+      }
+    }
+
+    // Extract sizing info
+    if (log.metadata?.sizing) {
+      decision.sizing = {
+        passed: log.metadata.sizing.passed === true,
+        leverage: log.metadata.sizing.leverage,
+        size: log.metadata.sizing.size || log.metadata.sizing.suggestedSize,
+        riskAmount: log.metadata.sizing.riskAmount,
+      };
+    }
+
+    // Extract execution info
+    if (log.metadata?.execution) {
+      decision.execution = {
+        orderId: log.metadata.execution.orderId,
+        expectedPrice: log.metadata.execution.expectedPrice,
+        actualPrice: log.metadata.execution.actualPrice,
+        slippage: log.metadata.execution.slippage,
+      };
+    } else if (log.message.includes('orderId') || log.message.includes('Order ID')) {
+      const orderIdMatch = log.message.match(/orderId[:\s]+([\w-]+)/i);
+      if (orderIdMatch) {
+        decision.execution = {
+          orderId: orderIdMatch[1],
+        };
+      }
+    }
+
+    // Store other metadata
+    if (log.metadata && Object.keys(log.metadata).length > 0) {
+      decision.metadata = log.metadata;
+    }
+
+    // Only add if we have meaningful decision data
+    if (
+      decision.symbol ||
+      decision.reasoning ||
+      decision.action ||
+      decision.cycleId !== undefined
+    ) {
+      decisions.push(decision);
+    }
+  }
+
+  return decisions;
+}
+
+/**
+ * Parse decision path from structured data
+ */
+export function parseDecisionPath(data: any): {
+  choices: Array<{
+    step: string;
+    decision: string;
+    reason: string;
+    confidence?: number;
+    factors?: Record<string, any>;
+  }>;
+} | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  // If it's already a DecisionPath structure
+  if (data.choices && Array.isArray(data.choices)) {
+    return {
+      choices: data.choices.map((choice: any) => ({
+        step: choice.step || '',
+        decision: choice.decision || '',
+        reason: choice.reason || '',
+        confidence: choice.confidence,
+        factors: choice.factors,
+      })),
+    };
+  }
+
+  // Try to extract from factors structure
+  if (data.factors) {
+    const choices: Array<{
+      step: string;
+      decision: string;
+      reason: string;
+      confidence?: number;
+      factors?: Record<string, any>;
+    }> = [];
+
+    if (data.factors.signals) {
+      choices.push({
+        step: 'signal_generation',
+        decision: data.decision || 'Signals generated',
+        reason: data.reason || 'AI analysis completed',
+        factors: data.factors,
+      });
+    }
+
+    if (choices.length > 0) {
+      return { choices };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Group decisions by cycle ID
+ */
+export function groupDecisionsByCycle(decisions: DecisionInfo[]): Map<number, DecisionInfo[]> {
+  const grouped = new Map<number, DecisionInfo[]>();
+
+  for (const decision of decisions) {
+    if (decision.cycleId !== undefined) {
+      if (!grouped.has(decision.cycleId)) {
+        grouped.set(decision.cycleId, []);
+      }
+      grouped.get(decision.cycleId)!.push(decision);
+    }
+  }
+
+  return grouped;
+}

@@ -24,8 +24,11 @@ import {
   formatStatsAsTable,
   formatLogsAsStructured,
   formatLogsAsJson,
+  formatDecisionFactors,
+  formatDecisionSummary,
 } from './log-formatters.js';
 import type { TextLog } from '../../logging/types.js';
+import { extractDecisionInfo, groupDecisionsByCycle, type DecisionInfo } from './log-helpers.js';
 
 // Type definitions for command options
 interface ViewOptions {
@@ -38,6 +41,18 @@ interface ViewOptions {
   days?: number;
   since?: string;
   until?: string;
+  decisionPath?: boolean;
+}
+
+interface DecisionsOptions {
+  cycleId?: number;
+  symbol?: string;
+  since?: string;
+  until?: string;
+  days?: number;
+  format?: string;
+  follow?: boolean;
+  verbose?: boolean;
 }
 
 interface CleanOptions {
@@ -94,10 +109,29 @@ export class LogCommands {
       .option('--days <n>', 'Show logs from last N days', parseInt)
       .option('--since <date>', 'Start date (YYYY-MM-DD)')
       .option('--until <date>', 'End date (YYYY-MM-DD)')
+      .option('--decision-path', 'Show decision path information', false)
       .action(
         safeAction(async options => {
           await LogCommands.showConsoleOutput(options);
         }, 'LogCommands.view')
+      );
+
+    // Show trading decisions
+    program
+      .command('decisions')
+      .description('View trading decision analysis')
+      .option('--cycle-id <n>', 'Show decisions for specific cycle ID', parseInt)
+      .option('--symbol <symbol>', 'Filter by symbol/coin')
+      .option('--since <date>', 'Start date (YYYY-MM-DD)')
+      .option('--until <date>', 'End date (YYYY-MM-DD)')
+      .option('--days <n>', 'Show decisions from last N days', parseInt)
+      .option('--format <format>', 'Output format: structured, json, detailed', 'structured')
+      .option('-f, --follow', 'Follow mode (real-time updates)', false)
+      .option('--verbose', 'Show detailed decision factors', false)
+      .action(
+        safeAction(async options => {
+          await LogCommands.showDecisions(options);
+        }, 'LogCommands.decisions')
       );
 
     // Clean old log files
@@ -212,6 +246,39 @@ export class LogCommands {
 
       // Display initial logs (sorted chronologically)
       this.displayLogs(logs, options.format);
+
+      // Show decision path if requested
+      if (options.decisionPath) {
+        const decisions = extractDecisionInfo(logs);
+        if (decisions.length > 0) {
+          logger.info(chalk.blue('\n📊 Decision Path Information:\n'), {}, context);
+
+          // Group by cycle if available
+          const grouped = groupDecisionsByCycle(decisions);
+          if (grouped.size > 0) {
+            for (const [cycleId, cycleDecisions] of Array.from(grouped.entries()).sort(
+              (a, b) => b[0] - a[0]
+            )) {
+              const summary = formatDecisionSummary(cycleId, cycleDecisions, false);
+              logger.info(summary, {}, context);
+            }
+          } else {
+            // Show individual decisions if no cycle grouping
+            for (const decision of decisions) {
+              const parts: string[] = [];
+              if (decision.symbol) parts.push(`Symbol: ${decision.symbol}`);
+              if (decision.action) parts.push(`Action: ${decision.action}`);
+              if (decision.reasoning)
+                parts.push(`Reasoning: ${decision.reasoning.substring(0, 100)}...`);
+              if (parts.length > 0) {
+                logger.info(`  ${parts.join(' | ')}`, {}, context);
+              }
+            }
+          }
+        } else {
+          logger.info(chalk.dim('  No decision path information found in logs'), {}, context);
+        }
+      }
 
       // Show info message for non-follow mode
       if (!options.follow) {
@@ -568,5 +635,254 @@ export class LogCommands {
       format === 'json' ? formatStatsAsJson(stats) : formatStatsAsTable(stats, options.allContexts);
 
     logger.info(output, {}, context);
+  }
+
+  /**
+   * Filter decisions by options (cycle ID, symbol)
+   */
+  private static filterDecisions(
+    decisions: DecisionInfo[],
+    options: { cycleId?: number; symbol?: string }
+  ): DecisionInfo[] {
+    let filtered = decisions;
+
+    if (options.cycleId !== undefined) {
+      filtered = filtered.filter(d => d.cycleId === options.cycleId);
+    }
+
+    if (options.symbol) {
+      const symbolUpper = options.symbol.toUpperCase();
+      filtered = filtered.filter(
+        d =>
+          d.symbol?.toUpperCase() === symbolUpper || d.symbol?.toUpperCase().startsWith(symbolUpper)
+      );
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Format decisions as JSON output
+   */
+  private static formatDecisionsAsJson(decisions: DecisionInfo[]): string {
+    return JSON.stringify(
+      decisions.map(d => ({
+        cycleId: d.cycleId,
+        timestamp: d.timestamp,
+        timestampISO: new Date(d.timestamp).toISOString(),
+        symbol: d.symbol,
+        action: d.action,
+        reasoning: d.reasoning,
+        confidence: d.confidence,
+        validation: d.validation,
+        sizing: d.sizing,
+        execution: d.execution,
+        metadata: d.metadata,
+      })),
+      null,
+      2
+    );
+  }
+
+  /**
+   * Format decisions as structured output
+   */
+  private static formatDecisionsAsStructured(decisions: DecisionInfo[], verbose: boolean): string {
+    const grouped = groupDecisionsByCycle(decisions);
+    const lines: string[] = [];
+
+    if (grouped.size > 0) {
+      // Show cycles in descending order (newest first)
+      const sortedCycles = Array.from(grouped.entries()).sort((a, b) => b[0] - a[0]);
+
+      for (const [cycleId, cycleDecisions] of sortedCycles) {
+        lines.push(formatDecisionSummary(cycleId, cycleDecisions, verbose));
+
+        // Show detailed factors if verbose
+        if (verbose) {
+          for (const decision of cycleDecisions) {
+            if (decision.metadata?.factors) {
+              const factorsStr = formatDecisionFactors(decision.metadata.factors, true);
+              if (factorsStr) {
+                lines.push(factorsStr);
+              }
+            }
+          }
+        }
+      }
+    } else {
+      // No cycle grouping - show individual decisions
+      lines.push(chalk.blue('\n📊 Trading Decisions\n'));
+      for (const decision of decisions) {
+        const parts: string[] = [];
+        if (decision.symbol) parts.push(chalk.bold(decision.symbol));
+        if (decision.action) {
+          const actionColor =
+            decision.action === 'LONG'
+              ? chalk.green
+              : decision.action === 'SHORT'
+                ? chalk.red
+                : decision.action === 'CLOSE'
+                  ? chalk.yellow
+                  : chalk.gray;
+          parts.push(actionColor(decision.action));
+        }
+        if (decision.confidence !== undefined) {
+          parts.push(`Confidence: ${(decision.confidence * 100).toFixed(1)}%`);
+        }
+        if (decision.reasoning) {
+          const reasoning = verbose
+            ? decision.reasoning
+            : decision.reasoning.substring(0, 150) + '...';
+          parts.push(`Reasoning: ${reasoning}`);
+        }
+        lines.push(`  ${parts.join(' | ')}`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Display decisions based on format
+   */
+  private static displayDecisions(decisions: DecisionInfo[], options: DecisionsOptions): void {
+    const logger = UnifiedLogger.getInstance();
+    const context = 'LogCommands';
+    const format = options.format || 'structured';
+    const verbose = options.verbose || false;
+
+    if (format === 'json') {
+      const jsonOutput = this.formatDecisionsAsJson(decisions);
+      logger.info(jsonOutput, {}, context);
+    } else {
+      const structuredOutput = this.formatDecisionsAsStructured(decisions, verbose);
+      logger.info(structuredOutput, {}, context);
+    }
+  }
+
+  /**
+   * Start follow mode for decisions
+   */
+  private static async startDecisionsFollowMode(
+    options: DecisionsOptions,
+    initialTimestamp: number
+  ): Promise<void> {
+    const query = QueryInterface.getInstance();
+    const logger = UnifiedLogger.getInstance();
+    const context = 'LogCommands';
+    const verbose = options.verbose || false;
+
+    logger.info(chalk.gray('\n--- Following decisions (press Ctrl+C to stop) ---\n'), {}, context);
+
+    let pollInterval: NodeJS.Timeout | undefined;
+    let lastTimestamp = initialTimestamp;
+    const seenDecisions = new Set<string>();
+
+    try {
+      pollInterval = setInterval(async () => {
+        try {
+          const newResult = await query.queryTextLogs({
+            context: 'Workflow',
+            since: lastTimestamp + 1,
+            limit: 100,
+          });
+
+          const newDecisions = extractDecisionInfo(newResult.logs);
+          const filtered = this.filterDecisions(newDecisions, options);
+
+          // Display new decisions
+          for (const decision of filtered) {
+            const decisionKey = `${decision.cycleId}-${decision.symbol}-${decision.action}-${decision.timestamp}`;
+            if (!seenDecisions.has(decisionKey)) {
+              seenDecisions.add(decisionKey);
+              const summary = formatDecisionSummary(decision.cycleId || 0, [decision], verbose);
+              logger.info(summary, {}, context);
+              lastTimestamp = Math.max(lastTimestamp, decision.timestamp);
+            }
+          }
+        } catch (error) {
+          logger.error(chalk.red('Error polling decisions:'), error, context);
+        }
+      }, FOLLOW_MODE_POLL_INTERVAL);
+
+      // Handle Ctrl+C
+      const sigintHandler = () => {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+        }
+        this.cleanupResources();
+        logger.info(chalk.yellow('\n\nStopped following decisions.'));
+        process.exitCode = 0;
+      };
+      process.on('SIGINT', sigintHandler);
+
+      // Keep process alive
+      await new Promise(() => {
+        // Never resolves, keeps process alive until SIGINT or error
+      });
+    } catch (error) {
+      logger.error(chalk.red('Error in follow mode:'), error);
+      throw error;
+    } finally {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+      this.cleanupResources();
+    }
+  }
+
+  /**
+   * Show trading decisions analysis
+   */
+  private static async showDecisions(options: DecisionsOptions): Promise<void> {
+    const query = QueryInterface.getInstance();
+    const logger = UnifiedLogger.getInstance();
+    const context = 'LogCommands';
+
+    // Parse time range
+    const timeRange = this.parseTimeRange(options);
+    if ('error' in timeRange) {
+      logger.error(chalk.red(`✗ ${timeRange.error}`), undefined, context);
+      return;
+    }
+
+    try {
+      // Query text logs - focus on workflow and signal-related contexts
+      const result = await query.queryTextLogs({
+        context: 'Workflow', // Focus on workflow logs which contain decision info
+        since: timeRange.since,
+        until: timeRange.until,
+        limit: 1000, // Get more logs for decision analysis
+        offset: 0,
+      });
+
+      // Extract and filter decision information
+      const allDecisions = extractDecisionInfo(result.logs);
+      const decisions = this.filterDecisions(allDecisions, options);
+
+      if (decisions.length === 0) {
+        logger.info(
+          chalk.yellow('⚠️  No trading decisions found matching the criteria'),
+          {},
+          context
+        );
+        return;
+      }
+
+      // Display decisions
+      this.displayDecisions(decisions, options);
+
+      // Follow mode for decisions
+      if (options.follow) {
+        const latestTimestamp =
+          decisions.length > 0 ? Math.max(...decisions.map(d => d.timestamp)) : Date.now();
+        await this.startDecisionsFollowMode(options, latestTimestamp);
+      }
+    } finally {
+      if (!options.follow) {
+        this.cleanupResources();
+      }
+    }
   }
 }
