@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeMode, normalizeEnvironment } from '../src/types/index.js';
+import { normalizeMode, normalizeEnvironment, ValidationError } from '../src/types/index.js';
 
 describe('Mode/Environment normalization', () => {
   it('normalizes mode values', () => {
@@ -9,12 +9,22 @@ describe('Mode/Environment normalization', () => {
     // Case insensitive
     expect(normalizeMode('SINGLE')).toBe('single');
     expect(normalizeMode('ARENA')).toBe('arena');
-    // Unknown values default to 'single' (no aliases supported)
+    // Null/undefined default to 'single' for convenience
     expect(normalizeMode(undefined)).toBe('single');
-    expect(normalizeMode('unknown')).toBe('single');
-    expect(normalizeMode('strategy')).toBe('single'); // Treated as unknown, defaults to 'single'
-    expect(normalizeMode('solo')).toBe('single'); // Treated as unknown, defaults to 'single'
-    expect(normalizeMode('dashboard')).toBe('single'); // Treated as unknown, defaults to 'single'
+    expect(normalizeMode(null)).toBe('single');
+  });
+
+  it('throws ValidationError for invalid mode values', () => {
+    // Invalid values should throw
+    expect(() => normalizeMode('unknown')).toThrow(ValidationError);
+    expect(() => normalizeMode('strategy')).toThrow(ValidationError);
+    expect(() => normalizeMode('solo')).toThrow(ValidationError);
+    expect(() => normalizeMode('dashboard')).toThrow(ValidationError);
+    expect(() => normalizeMode('invalid')).toThrow(ValidationError);
+
+    // Verify error messages
+    expect(() => normalizeMode('strategy')).toThrow('Invalid mode value: "strategy"');
+    expect(() => normalizeMode('unknown')).toThrow('Invalid mode value: "unknown"');
   });
 
   it('normalizes environment values', () => {

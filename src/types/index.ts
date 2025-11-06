@@ -12,17 +12,28 @@ export type RuntimeEnvironment = 'live' | 'paper' | 'simulate';
 /**
  * Normalize user-provided mode values to canonical ExecutionMode.
  * Only accepts canonical values: 'single' or 'arena'.
- * Unknown values default to 'single'.
+ * Throws ValidationError for invalid non-empty string values.
+ * Null/undefined values default to 'single' for convenience (e.g., when env vars aren't set).
  *
  * @param value - Mode value to normalize
  * @returns Normalized ExecutionMode
+ * @throws ValidationError if value is a non-empty string that is not 'arena' or 'single'
  */
 export function normalizeMode(value: string | null | undefined): ExecutionMode {
-  const v = (value || '').toLowerCase();
+  // Allow null/undefined to default to 'single' for convenience
+  if (value === null || value === undefined) {
+    return 'single';
+  }
+
+  const v = value.toLowerCase();
   if (v === 'arena') return 'arena';
   if (v === 'single') return 'single';
-  // Unknown values default to 'single'
-  return 'single';
+
+  // Invalid value - throw error
+  throw new ValidationError(
+    `Invalid mode value: "${value}". Must be 'arena' or 'single'.`,
+    { receivedValue: value }
+  );
 }
 
 /**
