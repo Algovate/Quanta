@@ -33,6 +33,7 @@ import { formatWithArenaPrefix } from './log-prefix-formatter.js';
 import { CycleEvents } from './cycle-events.js';
 import { StateService, type TradingSystemState } from './state/index.js';
 import { POSITION_SIZING } from '../execution/constants.js';
+import { toError } from '../utils/error-handler.js';
 
 /**
  * TradingWorkflow - Orchestrates the complete trading cycle
@@ -410,8 +411,12 @@ export class TradingWorkflow {
   }
 
   private async executeCycle(): Promise<void> {
-    if (!this.state.isRunning) return;
-    if (this.isCycleRunning) return; // prevent overlap
+    // Atomic check-and-set to prevent race conditions
+    // Check both conditions and set flag atomically to prevent concurrent cycles
+    if (!this.state.isRunning || this.isCycleRunning) {
+      return;
+    }
+    // Set flag immediately after check to prevent race condition window
     this.isCycleRunning = true;
 
     const cycleStartTime = Date.now();
@@ -591,8 +596,9 @@ export class TradingWorkflow {
         },
         getCircuitBreakerStates: () => this.getCircuitBreakerStates(),
         getRecentOperationsSummary: () => this.getRecentOperationsSummary(),
-        logCycleSummary: (acc, poss, sigs, aggs, cycleMetrics) =>
-          this.logCycleSummary(acc, poss, sigs, aggs, cycleMetrics),
+        logCycleSummary: (acc, poss, sigs, aggs, cycleMetrics) => {
+          this.logCycleSummary(acc, poss, sigs, aggs, cycleMetrics);
+        },
       };
       const initialIO: CycleIO = {
         account,
@@ -632,7 +638,7 @@ export class TradingWorkflow {
 
       return;
     } catch (error) {
-      const cycleError = error instanceof Error ? error : new Error(String(error));
+      const cycleError = toError(error);
       this.emitLog('error', `Error in trading cycle: ${error}`);
 
       // Record error in unified logger
@@ -707,8 +713,6 @@ export class TradingWorkflow {
     };
   }> {
     try {
-      const symbol = `${signal.coin}/USDT`;
-
       // Validate signal before execution
       const validationResult = this.riskManager.validateSignal(signal, account, positions);
 
@@ -730,13 +734,13 @@ export class TradingWorkflow {
         return {
           success: false,
           error: validationResult.reason || 'Signal validation failed',
-          decisionInfo: {
-            coin: signal.coin,
-            action: signal.action,
-            validation: { passed: false, reason: validationResult.reason },
-            sizing: { passed: false },
-            execution: { expectedPrice: currentPrice },
-          },
+          decisionInfo: this.buildRejectionDecisionInfo(
+            signal,
+            currentPrice,
+            false,
+            false,
+            validationResult.reason
+          ),
         };
       }
 
@@ -751,13 +755,7 @@ export class TradingWorkflow {
         );
         return {
           success: true,
-          decisionInfo: {
-            coin: signal.coin,
-            action: signal.action,
-            validation: { passed: true },
-            sizing: { passed: true },
-            execution: { expectedPrice: currentPrice },
-          },
+          decisionInfo: this.buildRejectionDecisionInfo(signal, currentPrice, true, true),
         };
       }
 
@@ -773,13 +771,13 @@ export class TradingWorkflow {
         return {
           success: false,
           error: 'Trading paused due to drawdown',
-          decisionInfo: {
-            coin: signal.coin,
-            action: signal.action,
-            validation: { passed: true },
-            sizing: { passed: false },
-            execution: { expectedPrice: currentPrice },
-          },
+          decisionInfo: this.buildRejectionDecisionInfo(
+            signal,
+            currentPrice,
+            true,
+            false,
+            'Trading paused due to drawdown'
+          ),
         };
       }
 
@@ -830,13 +828,13 @@ export class TradingWorkflow {
         return {
           success: false,
           error: 'Position sizing calculation failed',
-          decisionInfo: {
-            coin: signal.coin,
-            action: signal.action,
-            validation: { passed: true },
-            sizing: { passed: false },
-            execution: { expectedPrice: currentPrice },
-          },
+          decisionInfo: this.buildRejectionDecisionInfo(
+            signal,
+            currentPrice,
+            true,
+            false,
+            'Risk limit or max positions reached'
+          ),
         };
       }
 
@@ -850,127 +848,10 @@ export class TradingWorkflow {
 
       if (result.success && result.order) {
         this.state.totalTrades++;
-
-        // Use actual order execution price, not estimated ticker price
-        // For market orders, order.price may be 0 or undefined - use currentPrice as fallback
-        // For limit orders, order.price should be the execution price
-        const actualPrice =
-          result.order.price && result.order.price > 0 ? result.order.price : currentPrice;
-
-        // Calculate slippage (only if we have valid prices)
-        const slippage =
-          currentPrice > 0 && actualPrice > 0
-            ? ((actualPrice - currentPrice) / currentPrice) * 100
-            : 0;
-        const slippageAbs = Math.abs(slippage);
-
-        // Record execution details to stage for direct queryability
-        this.unifiedLogger.recordExecutionDetails(cycleOperationId, 'execute_signals', {
-          orderId: result.order.id,
-          expectedPrice: currentPrice,
-          actualPrice,
-          slippage,
-          slippageAbs,
-          realizedPnl: result.realizedPnl,
-          fees: result.fees,
-          sizing: sizing
-            ? {
-                suggestedSize: sizing.suggestedSize,
-                leverage: sizing.leverage,
-                riskAmount: sizing.riskAmount,
-              }
-            : undefined,
-        });
-
-        // Also record execution validation check for validation logic
-        this.unifiedLogger.recordValidationCheck(cycleOperationId, 'execute_signals', {
-          name: 'execution_price_validation',
-          passed: slippageAbs <= 5, // 5% tolerance
-          reason:
-            slippageAbs > 5 ? `Significant price deviation: ${slippage.toFixed(2)}%` : undefined,
-          threshold: 5,
-          actual: slippageAbs,
-          details: {
-            expectedPrice: currentPrice,
-            actualPrice,
-            slippage,
-            slippageAbs,
-            orderId: result.order.id,
-            realizedPnl: result.realizedPnl,
-            fees: result.fees,
-            sizing: sizing
-              ? {
-                  suggestedSize: sizing.suggestedSize,
-                  leverage: sizing.leverage,
-                  riskAmount: sizing.riskAmount,
-                }
-              : undefined,
-          },
-        });
-
-        // Guard: warn if execution price deviates significantly from current ticker (possible symbol mismatch)
-        // Only warn if we got an actual fill price from the exchange (not the fallback)
-        // and the deviation is very significant (>10%) to avoid false positives from normal slippage
-        try {
-          const hasActualFillPrice = result.order.price && result.order.price > 0;
-          if (hasActualFillPrice) {
-            const ref = currentPrice;
-            const relDiff = ref ? Math.abs(actualPrice - ref) / ref : 0;
-            // Use 10% threshold (increased from 5%) to allow for normal market order slippage
-            // Only warn on very significant deviations that might indicate a symbol mismatch
-            if (relDiff > 0.1) {
-              this.unifiedLogger.warn(
-                'Symbol/price mismatch suspected',
-                {
-                  coin: signal.coin,
-                  symbol,
-                  executionPrice: actualPrice,
-                  tickerPrice: ref,
-                  relativeDiff: relDiff,
-                },
-                this.loggerContext
-              );
-            }
-          }
-        } catch {
-          // Non-critical
-        }
-
-        if (signal.action === 'CLOSE') {
-          // For CLOSE, avoid leverage/margin estimates (misleading for exits)
-          const detailMsg = this.cycleDisplay.formatExecutionMessage({
-            action: 'CLOSE',
-            coin: signal.coin,
-            price: actualPrice,
-            realizedPnl: result.realizedPnl,
-            fees: result.fees,
-          });
-          this.emitLog('success', detailMsg);
-        } else {
-          const leverage = sizing.leverage || 1;
-          // Calculate estimates for display (actual values will be in position data)
-          // Note: Notional and Position Value are both UNLEVERED (size * price) to match account status terminology
-          // Margin = notional / leverage, consistent with standard trading definitions
-          const estimatedPositionValue = sizing.suggestedSize * actualPrice;
-          const estimatedMargin = estimatedPositionValue / leverage;
-          const estimatedNotional = estimatedPositionValue; // Notional is unlevered (matches aggregates.totalNotional)
-
-          const detailMsg = this.cycleDisplay.formatExecutionMessage({
-            action: signal.action,
-            coin: signal.coin,
-            price: actualPrice,
-            leverage,
-            notional: estimatedNotional,
-            margin: estimatedMargin,
-          });
-          this.emitLog('success', detailMsg);
-        }
-      } else if (!result.success) {
-        this.emitLog(
-          'error',
-          `❌ Failed to execute ${signal.action} signal for ${signal.coin}: ${result.error}`
-        );
       }
+
+      // Process execution result (logging, validation, warnings)
+      this.processExecutionResult(cycleOperationId, signal, currentPrice, sizing, result);
 
       // Calculate ATR adjustment for decision info using MarketRegimeAnalyzer
       const atrAdjustment = this.calculateATRAdjustment(atr14, currentPrice, indicators);
@@ -980,41 +861,14 @@ export class TradingWorkflow {
         success: result.success,
         order: result.order,
         error: result.error,
-        decisionInfo: {
-          coin: signal.coin,
-          action: signal.action,
-          validation: { passed: true },
-          sizing: {
-            passed: true,
-            leverage: sizing.leverage,
-            suggestedSize: sizing.suggestedSize,
-            riskAmount: sizing.riskAmount,
-            regime: regime !== 'unknown' ? regime : undefined,
-            atrAdjustment,
-          },
-          execution: {
-            expectedPrice: currentPrice,
-            actualPrice:
-              result.success && result.order && result.order.price && result.order.price > 0
-                ? result.order.price
-                : result.success && result.order
-                  ? currentPrice // Market order or price not available - use expected price
-                  : undefined,
-            slippage:
-              result.success && result.order && currentPrice > 0
-                ? result.order.price && result.order.price > 0
-                  ? ((result.order.price - currentPrice) / currentPrice) * 100
-                  : 0 // Market order - no slippage calculated (price not available from exchange)
-                : undefined,
-            slippageAbs:
-              result.success && result.order
-                ? currentPrice > 0
-                  ? Math.abs(((result.order.price || currentPrice) - currentPrice) / currentPrice)
-                  : undefined
-                : undefined,
-            orderId: result.success && result.order ? result.order.id : undefined,
-          },
-        },
+        decisionInfo: this.buildExecutionDecisionInfo(
+          signal,
+          currentPrice,
+          sizing,
+          regime,
+          atrAdjustment,
+          result
+        ),
       };
     } catch (error) {
       this.emitLog('error', `Error executing signal for ${signal.coin}: ${error}`);
@@ -1022,6 +876,227 @@ export class TradingWorkflow {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       };
+    }
+  }
+
+  /**
+   * Build decision info for rejected signals
+   */
+  private buildRejectionDecisionInfo(
+    signal: TradingSignal,
+    currentPrice: number,
+    validationPassed: boolean,
+    sizingPassed: boolean,
+    reason?: string
+  ): import('./cycle-summary-formatter.js').SignalDecisionInfo {
+    return {
+      coin: signal.coin,
+      action: signal.action,
+      validation: { passed: validationPassed, reason: validationPassed ? undefined : reason },
+      sizing: { passed: sizingPassed },
+      execution: { expectedPrice: currentPrice },
+    };
+  }
+
+  /**
+   * Calculate slippage from expected and actual prices
+   */
+  private calculateSlippage(
+    expectedPrice: number,
+    actualPrice: number | undefined
+  ): { slippage: number | undefined; slippageAbs: number | undefined } {
+    if (!actualPrice || expectedPrice <= 0) {
+      return { slippage: undefined, slippageAbs: undefined };
+    }
+    const slippage = ((actualPrice - expectedPrice) / expectedPrice) * 100;
+    const slippageAbs = Math.abs(slippage);
+    return { slippage, slippageAbs };
+  }
+
+  /**
+   * Build execution decision info from execution result
+   */
+  private buildExecutionDecisionInfo(
+    signal: TradingSignal,
+    currentPrice: number,
+    sizing: import('../execution/risk.js').PositionSizing,
+    regime: 'trending' | 'ranging' | 'unknown',
+    atrAdjustment: number | undefined,
+    result: { success: boolean; order?: { id: string; price?: number } }
+  ): import('./cycle-summary-formatter.js').SignalDecisionInfo {
+    const actualPrice =
+      result.success && result.order && result.order.price && result.order.price > 0
+        ? result.order.price
+        : result.success && result.order
+          ? currentPrice // Market order or price not available - use expected price
+          : undefined;
+
+    const { slippage, slippageAbs } = this.calculateSlippage(currentPrice, actualPrice);
+
+    return {
+      coin: signal.coin,
+      action: signal.action,
+      validation: { passed: true },
+      sizing: {
+        passed: true,
+        leverage: sizing.leverage,
+        suggestedSize: sizing.suggestedSize,
+        riskAmount: sizing.riskAmount,
+        regime: regime !== 'unknown' ? regime : undefined,
+        atrAdjustment,
+      },
+      execution: {
+        expectedPrice: currentPrice,
+        actualPrice,
+        slippage,
+        slippageAbs,
+        orderId: result.success && result.order ? result.order.id : undefined,
+      },
+    };
+  }
+
+  /**
+   * Process execution result and log details
+   */
+  private processExecutionResult(
+    cycleOperationId: string,
+    signal: TradingSignal,
+    currentPrice: number,
+    sizing: import('../execution/risk.js').PositionSizing,
+    result: {
+      success: boolean;
+      order?: { id: string; price?: number };
+      error?: string;
+      realizedPnl?: number;
+      fees?: number;
+    }
+  ): void {
+    if (result.success && result.order) {
+      const actualPrice =
+        result.order.price && result.order.price > 0 ? result.order.price : currentPrice;
+      const { slippage, slippageAbs } = this.calculateSlippage(currentPrice, actualPrice);
+
+      // Record execution details
+      this.unifiedLogger.recordExecutionDetails(cycleOperationId, 'execute_signals', {
+        orderId: result.order.id,
+        expectedPrice: currentPrice,
+        actualPrice,
+        slippage,
+        slippageAbs,
+        realizedPnl: result.realizedPnl,
+        fees: result.fees,
+        sizing: {
+          suggestedSize: sizing.suggestedSize,
+          leverage: sizing.leverage,
+          riskAmount: sizing.riskAmount,
+        },
+      });
+
+      // Record execution validation check
+      this.unifiedLogger.recordValidationCheck(cycleOperationId, 'execute_signals', {
+        name: 'execution_price_validation',
+        passed: (slippageAbs ?? 0) <= 5, // 5% tolerance
+        reason:
+          (slippageAbs ?? 0) > 5
+            ? `Significant price deviation: ${(slippage ?? 0).toFixed(2)}%`
+            : undefined,
+        threshold: 5,
+        actual: slippageAbs ?? 0,
+        details: {
+          expectedPrice: currentPrice,
+          actualPrice,
+          slippage,
+          slippageAbs,
+          orderId: result.order.id,
+          realizedPnl: result.realizedPnl,
+          fees: result.fees,
+          sizing: {
+            suggestedSize: sizing.suggestedSize,
+            leverage: sizing.leverage,
+            riskAmount: sizing.riskAmount,
+          },
+        },
+      });
+
+      // Warn if execution price deviates significantly
+      this.warnOnPriceDeviation(signal.coin, currentPrice, actualPrice, result.order.price);
+
+      // Log execution message
+      this.logExecutionMessage(signal, sizing, actualPrice, result);
+    } else if (!result.success) {
+      this.emitLog(
+        'error',
+        `❌ Failed to execute ${signal.action} signal for ${signal.coin}: ${result.error}`
+      );
+    }
+  }
+
+  /**
+   * Warn if execution price deviates significantly from expected
+   */
+  private warnOnPriceDeviation(
+    coin: string,
+    expectedPrice: number,
+    actualPrice: number,
+    orderPrice?: number
+  ): void {
+    try {
+      const hasActualFillPrice = orderPrice && orderPrice > 0;
+      if (hasActualFillPrice && expectedPrice > 0) {
+        const relDiff = Math.abs(actualPrice - expectedPrice) / expectedPrice;
+        // Use 10% threshold to allow for normal market order slippage
+        if (relDiff > 0.1) {
+          this.unifiedLogger.warn(
+            'Symbol/price mismatch suspected',
+            {
+              coin,
+              symbol: `${coin}/USDT`,
+              executionPrice: actualPrice,
+              tickerPrice: expectedPrice,
+              relativeDiff: relDiff,
+            },
+            this.loggerContext
+          );
+        }
+      }
+    } catch {
+      // Non-critical
+    }
+  }
+
+  /**
+   * Log execution message based on signal action
+   */
+  private logExecutionMessage(
+    signal: TradingSignal,
+    sizing: import('../execution/risk.js').PositionSizing,
+    actualPrice: number,
+    result: { realizedPnl?: number; fees?: number }
+  ): void {
+    if (signal.action === 'CLOSE') {
+      const detailMsg = this.cycleDisplay.formatExecutionMessage({
+        action: 'CLOSE',
+        coin: signal.coin,
+        price: actualPrice,
+        realizedPnl: result.realizedPnl,
+        fees: result.fees,
+      });
+      this.emitLog('success', detailMsg);
+    } else {
+      const leverage = sizing.leverage || 1;
+      const estimatedPositionValue = sizing.suggestedSize * actualPrice;
+      const estimatedMargin = estimatedPositionValue / leverage;
+      const estimatedNotional = estimatedPositionValue;
+
+      const detailMsg = this.cycleDisplay.formatExecutionMessage({
+        action: signal.action,
+        coin: signal.coin,
+        price: actualPrice,
+        leverage,
+        notional: estimatedNotional,
+        margin: estimatedMargin,
+      });
+      this.emitLog('success', detailMsg);
     }
   }
 

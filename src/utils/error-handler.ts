@@ -1,6 +1,18 @@
 import { QuantaError, ExchangeError, AIError, ValidationError } from '../types/index.js';
 import { UnifiedLogger } from '../logging/index.js';
 
+/**
+ * Normalize unknown error to Error instance
+ * Converts any error-like value to a proper Error object
+ * This is useful for error handling where we need to ensure we have an Error instance
+ */
+export function toError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
 export class ErrorHandler {
   static handle(error: unknown, context?: string): QuantaError {
     if (error instanceof QuantaError) {

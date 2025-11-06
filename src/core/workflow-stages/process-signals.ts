@@ -1,4 +1,5 @@
 import type { CycleIO, StageResult, WorkflowContext, WorkflowStage } from '../workflow-types.js';
+import { toError } from '../../utils/error-handler.js';
 
 export class ProcessSignalsStage implements WorkflowStage {
   name = 'process_signals';
@@ -26,7 +27,7 @@ export class ProcessSignalsStage implements WorkflowStage {
       unifiedLogger.completeStage(operationId, this.name, { processed: signals.length });
       return { ioDelta: {} };
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
+      const err = toError(error);
       unifiedLogger.recordError(err, {
         cycleId: (ctx as any)?.getState?.()?.cycleCount ?? 0,
         operationId,

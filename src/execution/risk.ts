@@ -211,7 +211,16 @@ export class RiskManager {
 
       // Check if we can open new positions
       if (currentPositions.length >= this.params.maxPositions) {
-        // Silent rejection
+        this.logger.debug(
+          'Position sizing rejected: maximum positions limit reached',
+          {
+            coin: signal.coin,
+            currentPositions: currentPositions.length,
+            maxPositions: this.params.maxPositions,
+            reason: 'max_positions_reached',
+          },
+          this.context
+        );
         return null;
       }
 
@@ -223,7 +232,18 @@ export class RiskManager {
         6
       ).toNumber();
       if (currentMarginUsage >= this.params.maxTotalRisk) {
-        // Silent rejection - margin limit reached
+        this.logger.debug(
+          'Position sizing rejected: margin limit reached',
+          {
+            coin: signal.coin,
+            currentMarginUsage,
+            maxTotalRisk: this.params.maxTotalRisk,
+            totalMarginUsed: aggregates.totalMarginUsed,
+            accountEquity: account.equity,
+            reason: 'margin_limit_reached',
+          },
+          this.context
+        );
         return null;
       }
 
@@ -659,7 +679,7 @@ export class RiskManager {
 
     // Start with base leverage using precision-safe arithmetic
     const leverageRange = safeSubtract(this.params.maxLeverage, this.params.minLeverage).toNumber();
-    let leverage = safeAdd(this.params.minLeverage, 0);
+    let leverage = safeAdd(this.params.minLeverage, 0).toNumber();
 
     // Factor 1: Signal confidence boost (additive) using precision
     // Scale confidence from 0.55-1.0 to 0-1 range
@@ -670,7 +690,7 @@ export class RiskManager {
       leverageRange,
       safeMultiply(confidenceBoost, 0.5)
     ).toNumber();
-    leverage = safeAdd(leverage, confidenceAdjustment);
+    leverage = safeAdd(leverage, confidenceAdjustment).toNumber();
 
     // Factor 2: Margin usage penalty (additive reduction) using precision
     // Reduce leverage when margin usage is high
@@ -685,7 +705,7 @@ export class RiskManager {
       leverageRange,
       safeMultiply(marginPenalty, 0.3)
     ).toNumber();
-    leverage = safeSubtract(leverage, marginAdjustment);
+    leverage = safeSubtract(leverage, marginAdjustment).toNumber();
 
     // Factor 3: Position count penalty (additive reduction) using precision
     // Reduce leverage as portfolio fills up
@@ -694,7 +714,7 @@ export class RiskManager {
       leverageRange,
       safeMultiply(positionPenalty, 0.2)
     ).toNumber();
-    leverage = safeSubtract(leverage, positionAdjustment);
+    leverage = safeSubtract(leverage, positionAdjustment).toNumber();
 
     // Factor 4: Symbol performance adjustment (adaptive)
     // Adjust leverage based on historical performance of this symbol
@@ -715,7 +735,7 @@ export class RiskManager {
     }
 
     // Ensure leverage stays within bounds
-    let leverageNum = leverage.toNumber();
+    let leverageNum = leverage;
     leverageNum = Math.max(this.params.minLeverage, Math.min(this.params.maxLeverage, leverageNum));
 
     // Round to nearest 0.5 for cleaner display

@@ -266,7 +266,7 @@ export class CycleSummaryFormatter {
         countdown,
         previousEquity,
       });
-    } catch (error) {
+    } catch {
       // Return undefined if formatting fails - caller should handle error logging
       return undefined;
     }

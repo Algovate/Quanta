@@ -2,6 +2,7 @@ import type { Exchange } from '../exchange/types.js';
 import type { Position, Account } from '../exchange/types.js';
 import type { UnifiedLogger } from '../logging/index.js';
 import type { RiskSnapshot } from './types/trading-manager.js';
+import { safeDivide } from '../utils/precision.js';
 
 /**
  * Aggregator for generating risk snapshots from exchange data
@@ -109,7 +110,10 @@ export class RiskSnapshotAggregator {
         totalExposure += value;
       }
 
-      const leverage = account.equity > 0 ? totalExposure / account.equity : 0;
+      // Use safeDivide for consistency with other financial calculations
+      // Even with zero check, using safeDivide provides better error handling
+      const leverage =
+        account.equity > 0 ? safeDivide(totalExposure, account.equity, 6).toNumber() : 0;
 
       const portfolioMetrics = this.calculatePortfolioMetrics(positions);
       const correlationScore = this.calculateCorrelationScore(positions);

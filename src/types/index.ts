@@ -30,10 +30,9 @@ export function normalizeMode(value: string | null | undefined): ExecutionMode {
   if (v === 'single') return 'single';
 
   // Invalid value - throw error
-  throw new ValidationError(
-    `Invalid mode value: "${value}". Must be 'arena' or 'single'.`,
-    { receivedValue: value }
-  );
+  throw new ValidationError(`Invalid mode value: "${value}". Must be 'arena' or 'single'.`, {
+    receivedValue: value,
+  });
 }
 
 /**

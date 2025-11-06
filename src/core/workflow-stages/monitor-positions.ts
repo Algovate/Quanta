@@ -1,4 +1,5 @@
 import type { CycleIO, StageResult, WorkflowContext, WorkflowStage } from '../workflow-types.js';
+import { toError } from '../../utils/error-handler.js';
 
 export class MonitorPositionsStage implements WorkflowStage {
   name = 'monitor_positions';
@@ -30,7 +31,7 @@ export class MonitorPositionsStage implements WorkflowStage {
       unifiedLogger.completeStage(operationId, this.name, { duration });
       return { ioDelta: {} };
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
+      const err = toError(error);
       unifiedLogger.recordError(err, {
         cycleId: (ctx as any)?.getState?.()?.cycleCount ?? 0,
         operationId,

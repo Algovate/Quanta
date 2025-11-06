@@ -4,6 +4,11 @@
  */
 
 import Decimal from 'decimal.js';
+import type { Decimal as DecimalNamespace } from 'decimal.js';
+
+// Type for numeric values that can be converted to Decimal
+// Decimal.js exports Decimal.Instance as the instance type
+type NumericValue = number | DecimalNamespace.Instance | { toNumber(): number };
 
 // Type assertion helper for Decimal constructor
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,8 +43,7 @@ export function getSymbolPrecision(symbol: string): number {
 /**
  * Round a value to a specific number of decimal places
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function roundToPrecision(value: number | any, decimals: number): number {
+export function roundToPrecision(value: NumericValue, decimals: number): number {
   // Check if value is already a Decimal by checking for toNumber method
 
   const decimal =
@@ -53,17 +57,20 @@ export function roundToPrecision(value: number | any, decimals: number): number 
 /**
  * Round a value to exchange-specific precision
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function roundToSymbolPrecision(value: number | any, symbol: string): number {
+export function roundToSymbolPrecision(value: NumericValue, symbol: string): number {
   const precision = getSymbolPrecision(symbol);
   return roundToPrecision(value, precision);
 }
 
 /**
  * Safe division with precision handling
+ * Returns Decimal instance for chaining, or number if decimals specified
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function safeDivide(a: number | any, b: number | any, decimals?: number): any {
+export function safeDivide(
+  a: NumericValue,
+  b: NumericValue,
+  decimals?: number
+): DecimalNamespace.Instance {
   // Check if values are already Decimal instances
 
   const decimalA =
@@ -87,16 +94,19 @@ export function safeDivide(a: number | any, b: number | any, decimals?: number):
 /**
  * Safe division returning number
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function safeDivideNum(a: number | any, b: number | any, decimals?: number): number {
+export function safeDivideNum(a: NumericValue, b: NumericValue, decimals?: number): number {
   return safeDivide(a, b, decimals).toNumber();
 }
 
 /**
  * Safe multiplication with precision handling
+ * Returns Decimal instance for chaining, or number if decimals specified
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function safeMultiply(a: number | any, b: number | any, decimals?: number): any {
+export function safeMultiply(
+  a: NumericValue,
+  b: NumericValue,
+  decimals?: number
+): DecimalNamespace.Instance {
   // Check if values are already Decimal instances
 
   const decimalA =
@@ -116,16 +126,19 @@ export function safeMultiply(a: number | any, b: number | any, decimals?: number
 /**
  * Safe multiplication returning number
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function safeMultiplyNum(a: number | any, b: number | any, decimals?: number): number {
+export function safeMultiplyNum(a: NumericValue, b: NumericValue, decimals?: number): number {
   return safeMultiply(a, b, decimals).toNumber();
 }
 
 /**
  * Safe addition with precision handling
+ * Returns Decimal instance for chaining, or number if decimals specified
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function safeAdd(a: number | any, b: number | any, decimals?: number): any {
+export function safeAdd(
+  a: NumericValue,
+  b: NumericValue,
+  decimals?: number
+): DecimalNamespace.Instance {
   // Check if values are already Decimal instances
 
   const decimalA =
@@ -145,16 +158,19 @@ export function safeAdd(a: number | any, b: number | any, decimals?: number): an
 /**
  * Safe addition returning number
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function safeAddNum(a: number | any, b: number | any, decimals?: number): number {
+export function safeAddNum(a: NumericValue, b: NumericValue, decimals?: number): number {
   return safeAdd(a, b, decimals).toNumber();
 }
 
 /**
  * Safe subtraction with precision handling
+ * Returns Decimal instance for chaining, or number if decimals specified
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function safeSubtract(a: number | any, b: number | any, decimals?: number): any {
+export function safeSubtract(
+  a: NumericValue,
+  b: NumericValue,
+  decimals?: number
+): DecimalNamespace.Instance {
   // Check if values are already Decimal instances
 
   const decimalA =
@@ -174,8 +190,7 @@ export function safeSubtract(a: number | any, b: number | any, decimals?: number
 /**
  * Safe subtraction returning number
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function safeSubtractNum(a: number | any, b: number | any, decimals?: number): number {
+export function safeSubtractNum(a: NumericValue, b: NumericValue, decimals?: number): number {
   return safeSubtract(a, b, decimals).toNumber();
 }
 
@@ -184,10 +199,10 @@ export function safeSubtractNum(a: number | any, b: number | any, decimals?: num
  */
 
 export function safePercentage(
-  value: number | any,
-  percentage: number | any,
+  value: NumericValue,
+  percentage: NumericValue,
   decimals?: number
-): any {
+): DecimalNamespace.Instance {
   const decimalValue =
     typeof value === 'object' && value !== null && 'toNumber' in value
       ? value
@@ -213,8 +228,8 @@ export function safePercentage(
  */
 
 export function safePercentageNum(
-  value: number | any,
-  percentage: number | any,
+  value: NumericValue,
+  percentage: NumericValue,
   decimals?: number
 ): number {
   return safePercentage(value, percentage, decimals).toNumber();
@@ -223,8 +238,7 @@ export function safePercentageNum(
 /**
  * Validate that a number is finite and valid
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function validateNumber(value: number | any): boolean {
+export function validateNumber(value: NumericValue): boolean {
   try {
     const decimal =
       typeof value === 'object' && value !== null && 'toNumber' in value
@@ -240,15 +254,20 @@ export function validateNumber(value: number | any): boolean {
 /**
  * Convert Decimal to number with validation
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function toNumber(value: any, decimals?: number): number {
+export function toNumber(value: NumericValue, decimals?: number): number {
   if (!validateNumber(value)) {
     throw new Error('Invalid number value');
   }
 
+  // Convert to Decimal instance if not already
+  const decimal =
+    typeof value === 'object' && value !== null && 'toNumber' in value
+      ? value
+      : new DecimalConstructor(value);
+
   if (decimals !== undefined) {
-    return value.toDecimalPlaces(decimals).toNumber();
+    return decimal.toDecimalPlaces(decimals).toNumber();
   }
 
-  return value.toNumber();
+  return decimal.toNumber();
 }

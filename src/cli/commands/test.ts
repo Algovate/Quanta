@@ -644,6 +644,7 @@ export class TestCommands {
       // This ensures cleanup happens even if there's an error
       UnifiedLogger.getInstance().shutdown();
       process.exitCode = 0;
+      // eslint-disable-next-line no-unsafe-finally
       return;
     }
   }

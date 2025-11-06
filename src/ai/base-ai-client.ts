@@ -138,7 +138,7 @@ export abstract class BaseAIClient implements IAIClient {
     if (!this.promptGroup) {
       try {
         this.promptGroup = loadPromptGroup(this.promptGroupName);
-      } catch (error) {
+      } catch {
         throw new Error(
           `Cannot load prompt group "${this.promptGroupName}". ` +
             `Please ensure the prompt configuration file exists at config/prompts/${this.promptGroupName}.json`

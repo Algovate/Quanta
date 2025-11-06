@@ -55,8 +55,8 @@ export class SmartExecutionManager {
   ): Promise<SmartExecutionResult> {
     const startTime = Date.now();
     const orders: Order[] = [];
-    let totalFilled = 0;
-    let totalValue = 0;
+    const totalFilled = 0;
+    const totalValue = 0;
 
     try {
       switch (config.strategy) {

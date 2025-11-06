@@ -8,10 +8,12 @@ import type { PositionMonitorService } from '../execution/monitor.js';
 import type { IAIClient } from '../ai/types.js';
 import type { MarketDataFetcher } from './market-data-fetcher.js';
 import type { SignalProcessor } from './signal-processor.js';
-import type { Account, Position, TradingSignal } from '../types/index.js';
+import type { Account, Position, TradingSignal, TechnicalIndicators } from '../types/index.js';
 import type { TypedEventBus } from './event-bus.js';
-import type { WorkflowConfig } from './workflow.js';
+import type { WorkflowConfig, SystemState } from './workflow.js';
 import type { IStrategy } from '../strategies/index.js';
+import type { SignalDecisionInfo } from './cycle-summary-formatter.js';
+import type { PositionAggregates } from '../execution/position-utils.js';
 
 export interface ExecuteSignalFn {
   (
@@ -22,12 +24,12 @@ export interface ExecuteSignalFn {
     tickerCache: Map<string, { price: number; timestamp: number }>,
     currentPrice: number,
     atr14?: number,
-    indicators?: any
+    indicators?: TechnicalIndicators
   ): Promise<{
     success: boolean;
     order?: { id: string };
     error?: string;
-    decisionInfo?: any;
+    decisionInfo?: SignalDecisionInfo;
   }>;
 }
 
@@ -50,19 +52,33 @@ export interface WorkflowContext {
   // Optional helpers for stages that need workflow-internal functionality
   executeSignalFn?: ExecuteSignalFn;
   emitLog?: (level: 'info' | 'warn' | 'error' | 'success', message: string) => void;
-  emitEvent?: (event: string, payload: any) => void;
-  cycleSummaryFormatter?: any;
-  performanceMetricsCalculator?: any;
-  getState?: () => any;
-  updateState?: (updates: Partial<any>) => void;
-  getCircuitBreakerStates?: () => any[];
-  getRecentOperationsSummary?: () => any[];
+  emitEvent?: (event: string, payload: unknown) => void;
+  cycleSummaryFormatter?: import('./cycle-summary-formatter.js').CycleSummaryFormatter;
+  performanceMetricsCalculator?: import('./performance-metrics-calculator.js').PerformanceMetricsCalculator;
+  getState?: () => SystemState & {
+    cycleStartTime?: number;
+    tradesBefore?: number;
+  };
+  updateState?: (updates: Partial<SystemState>) => void;
+  getCircuitBreakerStates?: () => Array<{
+    name: string;
+    state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+    failureCount: number;
+    lastFailure?: number;
+    lastSuccess?: number;
+  }>;
+  getRecentOperationsSummary?: () => Array<{
+    operationId: string;
+    type: string;
+    status: 'running' | 'completed' | 'failed' | 'cancelled';
+    duration: number;
+  }>;
   logCycleSummary?: (
     account: Account,
     positions: Position[],
     signals: TradingSignal[],
-    aggregates: any,
-    cycleMetrics: any
+    aggregates: PositionAggregates,
+    cycleMetrics: { rejectedSignalsCycle: number; tradeCountCycle: number }
   ) => void;
 }
 
@@ -70,7 +86,7 @@ export interface CycleIO {
   account: Account;
   positions: Position[];
   tickerCache: Map<string, { price: number; timestamp: number }>;
-  marketData?: any[]; // Intentionally broad to decouple; stage-specific types apply at call sites
+  marketData?: import('../data/market.js').MarketData[]; // Market data from data provider
   signals?: TradingSignal[];
   marketMeta?: {
     successCount: number;

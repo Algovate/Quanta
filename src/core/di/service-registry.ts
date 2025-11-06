@@ -3,6 +3,7 @@
  * Manages service registration and resolution
  */
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export type ServiceIdentifier = string | symbol | Function;
 
 export interface ServiceDescriptor {

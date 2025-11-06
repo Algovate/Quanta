@@ -33,8 +33,13 @@ export class JsonlWriter<T extends Record<string, unknown>> {
     if (this.currentDateKey !== dateKey) {
       this.rotateStream(dateKey);
       this.currentDateKey = dateKey;
-      // fire and forget cleanup
-      this.cleanupOldFiles().catch(() => {});
+      // fire and forget cleanup - errors are non-critical (log rotation failure
+      // doesn't block logging, and cleanup is best-effort)
+      this.cleanupOldFiles().catch(() => {
+        // Silently ignore cleanup errors - these are non-critical and shouldn't
+        // block the logging operation. Cleanup failures (e.g., permission issues
+        // or disk space) are logged separately by the cleanup method itself.
+      });
     }
     const line = JSON.stringify(entry) + '\n';
     await this.writeLine(line);

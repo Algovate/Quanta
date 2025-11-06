@@ -16,7 +16,7 @@ export class ExchangeSnapshotService {
   /**
    * Get atomic snapshot of account and positions
    * Prefers native exchange snapshot if available (ensures consistency)
-   * Fallback: fetches sequentially but warns about potential time drift
+   * Fallback: fetches in parallel (Promise.all) to minimize time drift
    *
    * IMPORTANT: For accurate PnL calculations, account equity should match
    * the sum of balance + sum of positions' unrealized PnL. Using getSnapshot()
@@ -49,27 +49,31 @@ export class ExchangeSnapshotService {
       return snapshot;
     }
 
-    // Fallback: fetch sequentially (potential time drift between calls)
-    // Log warning about potential inconsistency
+    // Fallback: fetch in parallel to minimize time drift between calls
+    // Note: Even with Promise.all, there's no guarantee of true atomicity,
+    // but parallel fetching reduces the time window for inconsistency
     this.logger.warn(
-      'Exchange does not support atomic getSnapshot() - fetching sequentially may cause time drift',
+      'Exchange does not support native atomic getSnapshot() - using parallel fetch fallback',
       {},
       this.context
     );
-    const account = await this.exchange.getAccount();
-    const positions = await this.exchange.getPositions();
+    const [account, positions] = await Promise.all([
+      this.exchange.getAccount(),
+      this.exchange.getPositions(),
+    ]);
 
-    // Verify consistency after sequential fetch
+    // Verify consistency after parallel fetch
     const calculatedEquity =
       account.balance + positions.reduce((sum, p) => sum + (p.unrealizedPnl || 0), 0);
     const equityDiff = Math.abs(account.equity - calculatedEquity);
     if (equityDiff > TOLERANCES.EQUITY_DRIFT) {
       this.logger.warn(
-        'Snapshot inconsistency after sequential fetch',
+        'Snapshot inconsistency detected after parallel fetch - data may be slightly stale',
         {
           equity: account.equity,
           calculated: calculatedEquity,
           diff: equityDiff,
+          threshold: TOLERANCES.EQUITY_DRIFT,
         },
         this.context
       );

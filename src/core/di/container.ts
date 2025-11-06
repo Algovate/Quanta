@@ -5,6 +5,7 @@
 
 import { ServiceRegistry } from './service-registry.js';
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export type ServiceIdentifier = string | symbol | Function;
 
 /**

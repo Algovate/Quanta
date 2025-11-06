@@ -1,6 +1,7 @@
 import type { CycleIO, StageResult, WorkflowContext, WorkflowStage } from '../workflow-types.js';
 import type { TradingSignal } from '../../types/index.js';
 import { AIClientError } from '../../ai/agent.js';
+import { toError } from '../../utils/error-handler.js';
 
 export class GenerateSignalsStage implements WorkflowStage {
   name = 'generate_signals';
@@ -86,7 +87,7 @@ export class GenerateSignalsStage implements WorkflowStage {
       }
       return { ioDelta: { signals } };
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
+      const err = toError(error);
 
       // If this is an AIClientError, propagate it to stop the workflow
       if (error instanceof AIClientError) {

@@ -37,12 +37,12 @@ export class ExecuteSignalsStage implements WorkflowStage {
 
     // Calculate signal quality scores and sort signals by quality
     const signalsWithQuality = signals.map(signal => {
-      const coinMarketData = marketData.find((md: any) => md.coin === signal.coin);
+      const coinMarketData = marketData.find(md => md.coin === signal.coin);
       const indicators = coinMarketData?.indicators;
 
       const coinMultiTimeframeData = marketData
-        .filter((md: any) => md.coin === signal.coin)
-        .map((md: any) => ({
+        .filter(md => md.coin === signal.coin)
+        .map(md => ({
           timeframe: md.timeframe,
           trend: md.trend,
           indicators: md.indicators,
