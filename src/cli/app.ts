@@ -11,6 +11,7 @@ import {
   LogCommands,
   PromptCommands,
   ArenaCommands,
+  registerNewsCommand,
 } from './commands/index.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { setupGracefulShutdown } from './shared/shutdown-handler.js';
@@ -77,6 +78,9 @@ export class CLIApplication {
 
     // Arena commands
     ArenaCommands.register(this.program);
+
+    // News command (top-level)
+    registerNewsCommand(this.program);
 
     // Help command
     HelpCommand.register(this.program);

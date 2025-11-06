@@ -110,6 +110,59 @@ const result = await technicalStrategy.generateSignals({
 });
 ```
 
+#### NewsAlphaStrategy
+
+**Purpose**: Generate trading signals from aggregated news events
+
+**Location**: `Quanta/src/strategies/news-alpha.ts`
+
+**Implementation**:
+
+- Aggregates news events from multiple sources (CryptoPanic, RSS feeds)
+- Scores events using sentiment, novelty, reliability, and volume shock
+- Applies topic-specific boosts (ETF, hack, regulatory, listing)
+- Applies time decay to prevent stale signals
+- Implements kill-switches for high-risk topics (hack, outage)
+
+**Configuration**:
+
+```json
+{
+  "alpha": {
+    "news": {
+      "weights": {
+        "sentiment": 0.5,
+        "novelty": 0.2,
+        "reliability": 0.2,
+        "volumeShock": 0.1
+      },
+      "topicBoosts": {
+        "hack": -0.5,
+        "regulatory": -0.2,
+        "etf": 0.6,
+        "listing": 0.4
+      },
+      "halflifeMinutesByTopic": {
+        "default": 30,
+        "hack": 60,
+        "etf": 120
+      }
+    }
+  }
+}
+```
+
+**Kill-Switches**:
+
+- **Hack**: Only sell signals, capped confidence (0.5 max)
+- **Outage**: Only sell signals, capped confidence (0.5 max)
+
+**Usage**:
+
+The strategy is automatically integrated into the trading workflow when news data is enabled. News events are fetched during each trading cycle and signals are generated based on aggregated scores.
+
+See [News Alpha Guide](news-alpha.md) for complete documentation.
+
 ## Architecture
 
 ### Current State

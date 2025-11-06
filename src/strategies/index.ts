@@ -13,4 +13,5 @@ export type {
 export { BaseStrategy } from './base-strategy.js';
 export { AIStrategy } from './ai-strategy.js';
 export { TechnicalStrategy } from './technical-strategy.js';
+export { NewsAlphaStrategy } from './news-alpha.js';
 export { StrategyManager } from './strategy-manager.js';

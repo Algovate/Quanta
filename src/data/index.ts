@@ -11,3 +11,7 @@ export {
   type StreamTimeframe,
   type GapInfo,
 } from './streaming.js';
+
+export type { NewsSource, UnifiedNewsEvent, NewsIngestionConfig } from './news/types.js';
+export { NewsStore } from './news/news-store.js';
+export { NewsIngestor } from './news/news-ingestor.js';

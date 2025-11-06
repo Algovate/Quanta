@@ -362,6 +362,62 @@ const ConfigSchema = z.object({
     .optional(),
   // Optional simulation settings (unified config)
   simulation: SimulationConfigSchema.optional(),
+  // Optional data pipeline configuration
+  data: z
+    .object({
+      news: z
+        .object({
+          enabled: z.boolean().default(false),
+          sources: z.array(z.string()).default([]),
+          pollIntervalMs: z.number().default(45000),
+          cycleWindowMinutes: z.number().default(3),
+          deliveryLagSeconds: z.number().default(10),
+        })
+        .default({
+          enabled: false,
+          sources: [],
+          pollIntervalMs: 45000,
+          cycleWindowMinutes: 3,
+          deliveryLagSeconds: 10,
+        }),
+    })
+    .optional(),
+  // Optional alpha configuration (signal components)
+  alpha: z
+    .object({
+      news: z
+        .object({
+          weights: z
+            .object({
+              sentiment: z.number().default(0.5),
+              novelty: z.number().default(0.2),
+              reliability: z.number().default(0.2),
+              volumeShock: z.number().default(0.1),
+            })
+            .default({ sentiment: 0.5, novelty: 0.2, reliability: 0.2, volumeShock: 0.1 }),
+          topicBoosts: z
+            .object({
+              hack: z.number().default(-0.5),
+              regulatory: z.number().default(-0.2),
+              etf: z.number().default(0.6),
+              listing: z.number().default(0.4),
+            })
+            .default({ hack: -0.5, regulatory: -0.2, etf: 0.6, listing: 0.4 }),
+          halflifeMinutesByTopic: z
+            .object({
+              default: z.number().default(30),
+              hack: z.number().default(60),
+              etf: z.number().default(120),
+            })
+            .default({ default: 30, hack: 60, etf: 120 }),
+        })
+        .default({
+          weights: { sentiment: 0.5, novelty: 0.2, reliability: 0.2, volumeShock: 0.1 },
+          topicBoosts: { hack: -0.5, regulatory: -0.2, etf: 0.6, listing: 0.4 },
+          halflifeMinutesByTopic: { default: 30, hack: 60, etf: 120 },
+        }),
+    })
+    .optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

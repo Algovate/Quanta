@@ -16,17 +16,17 @@
 
 ### 二、多Agent架构设计选项
 
-1) 专业化分工（垂直角色）
+1. 专业化分工（垂直角色）
 
 - MarketAnalystAgent（多周期技术面）、RiskAssessorAgent（仓位与限额）、EntrySpecialistAgent（入场）、ExitSpecialistAgent（出场）、PortfolioManagerAgent（组合约束）。
 - 适合将复杂 prompt 拆分为职责明确的小 prompt，降低单体复杂度。
 
-2) 并行分析 + 协调Agent（水平并发）
+2. 并行分析 + 协调Agent（水平并发）
 
 - TechnicalAgent / SentimentAgent / FundamentalAgent 并行产出"建议"，CoordinatorAgent 基于投票/加权规则形成"决策"。
 - 适合对抗单模型偏差，提升稳健性；天然适配 `EnsembleSignalAggregator`。
 
-3) 分层式代理（管线化）
+3. 分层式代理（管线化）
 
 - L1 数据收集 → L2 分析 → L3 决策 → L4 执行；明确边界与接口，便于扩展治理与缓存。
 - 适合规模化、治理成本可承受的场景。
@@ -79,10 +79,10 @@
 ### 五、落地文件与接口建议
 
 - 目录建议：
-
   - `Quanta/src/ai/multi-agent/`：`agent-coordinator.ts`、`agent-registry.ts`、`consensus.ts`、`types.ts`
   - `Quanta/src/ai/agents/`：`technical-advisor.ts`、`sentiment-advisor.ts`、`risk-advisor.ts`
   - 非侵入接入点：`GenerateSignalsStage` 内新增"多源融合/顾问注入"的可选路径开关（默认关闭）。
+
 - 数据契约（顾问Agent → 主Agent 示例）：
 
   ```json
@@ -100,8 +100,8 @@
     "summary": "short rationale"
   }
   ```
-- 共识策略（示例）：
 
+- 共识策略（示例）：
   - 行动优先级：REJECT > HOLD > CLOSE > LONG/SHORT 冲突以加权信心得分最大者定夺；
   - 保护规则：当冲突高/置信差距小于阈值时，偏向"Skip/谨慎减仓"。
 

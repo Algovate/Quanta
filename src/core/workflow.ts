@@ -170,6 +170,7 @@ export class TradingWorkflow {
   private stateUnsubscribe?: () => void;
 
   private strategy?: IStrategy;
+  private newsStore?: unknown;
 
   constructor(
     exchange: Exchange,
@@ -235,6 +236,10 @@ export class TradingWorkflow {
     // Initialize local state from centralized state service
     const centralState = this.stateService.getState();
     this.state = this.mapTradingSystemStateToSystemState(centralState);
+  }
+
+  setNewsStore(store: unknown): void {
+    this.newsStore = store;
   }
 
   /**
@@ -471,6 +476,10 @@ export class TradingWorkflow {
       this.state.lastUpdate = Date.now();
       this.state.rejectedSignalsCycle = 0; // Reset per-cycle counter at start of each cycle
 
+      // Immediately sync cycle count increment to centralized state to prevent overwrite
+      // This ensures the subscription doesn't overwrite the increment with stale state
+      this.stateService.updateState(this.mapSystemStateToTradingSystemState(this.state));
+
       // Guard: check if stopped mid-cycle
       if (!this.state.isRunning) {
         return;
@@ -599,7 +608,8 @@ export class TradingWorkflow {
         logCycleSummary: (acc, poss, sigs, aggs, cycleMetrics) => {
           this.logCycleSummary(acc, poss, sigs, aggs, cycleMetrics);
         },
-      };
+        newsStore: this.newsStore,
+      } as any;
       const initialIO: CycleIO = {
         account,
         positions,
@@ -608,6 +618,8 @@ export class TradingWorkflow {
       const pipelineResult = await runStages(cycleOperationId, ctx, initialIO, [
         new MonitorPositionsStage(),
         new FetchMarketDataStage(),
+        // Optional news stage; it's a no-op when disabled in config
+        new (await import('./workflow-stages/index.js')).FetchNewsDataStage(),
         new GenerateSignalsStage(),
         new ProcessSignalsStage(),
         new ExecuteSignalsStage(),

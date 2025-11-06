@@ -23,6 +23,7 @@ AI-powered quantitative trading system documentation.
 - **[Core Concepts](concepts.md)** - Architecture, algorithms, and terminology
 - **[Exchanges](exchanges.md)** - Supported exchanges and setup
 - **[Trading Cycle Price Usage](trading-cycle-price-usage.md)** - Price source documentation
+- **[News Alpha](news-alpha.md)** - News-based trading signals
 
 ## Key Concepts
 

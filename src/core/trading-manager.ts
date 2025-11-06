@@ -217,6 +217,56 @@ export class TradingManager extends EventEmitter {
       this.workflow = new TradingWorkflow(exchange, marketDataProvider, aiAgent, config, {
         strategy: aiStrategy,
       });
+      // Optionally attach news ingestion/store
+      try {
+        const newsCfg = (config as any)?.data?.news;
+        if (newsCfg?.enabled) {
+          const { NewsIngestor } = await import('../data/index.js');
+          const ingestor = new NewsIngestor({
+            enabled: true,
+            pollIntervalMs: newsCfg.pollIntervalMs ?? 45_000,
+            sources: newsCfg.sources ?? [],
+            cycleWindowMinutes: newsCfg.cycleWindowMinutes ?? 3,
+            deliveryLagSeconds: newsCfg.deliveryLagSeconds ?? 10,
+            llm: {
+              enabledLLM: (config as any)?.alpha?.news?.enabledLLM ?? false,
+              triggers: (config as any)?.alpha?.news?.triggers,
+              budget: (config as any)?.alpha?.news?.budget,
+              provider: (config as any)?.alpha?.news?.provider,
+            },
+          });
+          // Register adapters based on sources
+          for (const src of newsCfg.sources || []) {
+            if (typeof src !== 'string') continue;
+            if (src === 'cryptopanic') {
+              const { CryptoPanicAdapter } = await import('../data/news/cryptopanic-adapter.js');
+              ingestor.registerAdapter(new CryptoPanicAdapter(process.env.CRYPTOPANIC_API_KEY));
+            } else if (src.startsWith('rss:')) {
+              const feed = src.split(':')[1];
+              const url =
+                feed === 'coindesk'
+                  ? 'https://www.coindesk.com/arc/outboundfeeds/rss/'
+                  : feed === 'cointelegraph'
+                    ? 'https://cointelegraph.com/rss'
+                    : undefined;
+              if (url) {
+                const { RSSAdapter } = await import('../data/news/rss-adapter.js');
+                ingestor.registerAdapter(new RSSAdapter(url, feed));
+              }
+            }
+          }
+          ingestor.start();
+          this.workflow.setNewsStore(ingestor.getStore());
+          try {
+            const { registerShutdownTask } = await import('../cli/shared/shutdown-handler.js');
+            registerShutdownTask(() => ingestor.stop());
+          } catch {
+            // optional
+          }
+        }
+      } catch {
+        // ignore news wiring errors to keep core trading functional
+      }
       try {
         const { registerShutdownTask } = await import('../cli/shared/shutdown-handler.js');
         registerShutdownTask(() => this.workflow?.dispose());

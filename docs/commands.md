@@ -277,6 +277,43 @@ quanta prompts view --rendered
 quanta prompts view --group default
 ```
 
+## News Commands
+
+### `news` - View and Monitor News
+
+View recent cryptocurrency news events and monitor news ingestion.
+
+```bash
+quanta news [options]
+
+Options:
+  -m, --minutes <n>           Look back N minutes (default: 10)
+  -s, --symbols <symbols>     Filter by symbols (comma-separated, e.g., "BTC,ETH")
+  -w, --watch                 Watch mode (continuous polling)
+  -p, --poll <ms>             Poll interval in ms (default: 30000)
+  --llm                       Force LLM enrichment for CLI fetches
+  --llm-debug                 Show LLM usage status (used/skipped/cached)
+  --heartbeat                 Print heartbeat each poll when watching
+  --heartbeat-every <n>       Print heartbeat every N polls (default: 1)
+```
+
+**Examples:**
+```bash
+# View last 10 minutes of news
+quanta news
+
+# View news for BTC in last 30 minutes
+quanta news --minutes 30 --symbols BTC
+
+# Watch news with heartbeat
+quanta news --watch --heartbeat
+
+# Watch with LLM enrichment and debug
+quanta news --watch --llm --llm-debug
+```
+
+See [News Alpha Guide](news-alpha.md) for details.
+
 ## Arena Commands
 
 See [Arena Guide](arena-guide.md) for details.

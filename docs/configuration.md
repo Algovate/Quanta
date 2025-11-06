@@ -317,3 +317,88 @@ quanta config init      # Initialize from example
 **Invalid JSON**: Use `quanta config validate` to check syntax
 
 **Missing required fields**: Use `quanta config init` to create from example
+
+## News Alpha Configuration
+
+### Data Sources
+
+Configure news ingestion:
+
+```json
+{
+  "data": {
+    "news": {
+      "enabled": true,
+      "sources": ["cryptopanic", "rss:coindesk", "rss:cointelegraph"],
+      "pollIntervalMs": 45000,
+      "cycleWindowMinutes": 3,
+      "deliveryLagSeconds": 10
+    }
+  }
+}
+```
+
+**Sources:**
+- `cryptopanic`: CryptoPanic API (requires `CRYPTOPANIC_API_KEY` env var)
+- `rss:coindesk`: CoinDesk RSS feed
+- `rss:cointelegraph`: CoinTelegraph RSS feed
+
+**Settings:**
+- `pollIntervalMs`: Polling interval in milliseconds (default: 45000)
+- `cycleWindowMinutes`: Time window for news aggregation per cycle (default: 3)
+- `deliveryLagSeconds`: Safety lag for backtesting (default: 10)
+
+### Alpha Configuration
+
+Configure news alpha signal generation:
+
+```json
+{
+  "alpha": {
+    "news": {
+      "weights": {
+        "sentiment": 0.5,
+        "novelty": 0.2,
+        "reliability": 0.2,
+        "volumeShock": 0.1
+      },
+      "topicBoosts": {
+        "hack": -0.5,
+        "regulatory": -0.2,
+        "etf": 0.6,
+        "listing": 0.4
+      },
+      "halflifeMinutesByTopic": {
+        "default": 30,
+        "hack": 60,
+        "etf": 120
+      },
+      "llm": {
+        "enabledLLM": false,
+        "triggers": {
+          "minReliability": 0.6,
+          "topics": ["hack", "etf", "regulatory"]
+        },
+        "budget": {
+          "dailyUSD": 1.0,
+          "rpm": 10
+        },
+        "provider": {
+          "use": "openrouter",
+          "model": "deepseek/deepseek-chat-v3-0324"
+        }
+      }
+    }
+  }
+}
+```
+
+**Weights:** Feature weights (must sum to 1.0)
+
+**Topic Boosts:** Score adjustments per topic
+
+**Halflife:** Time decay rates per topic (minutes)
+
+**LLM:** Optional LLM enrichment configuration
+
+See [News Alpha Guide](news-alpha.md) for complete documentation.
