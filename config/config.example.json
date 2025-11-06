@@ -18,12 +18,60 @@
   },
 
   "ai": {
-    "apiKey": "",
-    "_comment_apiKey": "OpenRouter API key for AI signal generation",
-    "model": "deepseek/deepseek-chat-v3-0324",
-    "_comment_model": "AI model to use for trading signals",
+    "provider": "openrouter",
+    "_comment_provider": "AI provider to use: 'openrouter', 'openai', 'dashscope', or 'deepseek'",
     "temperature": 0.7,
-    "_comment_temperature": "AI creativity level (0.0-2.0, lower = more conservative)",
+    "_comment_temperature": "AI creativity level (0.0-2.0, lower = more conservative). Can be overridden per provider.",
+    "apiKey": "",
+    "_comment_apiKey": "Legacy field for backward compatibility (used when provider-specific config not set)",
+    "model": "deepseek/deepseek-chat-v3-0324",
+    "_comment_model": "Legacy field for backward compatibility (used when provider-specific config not set)",
+    "baseUrl": "",
+    "_comment_baseUrl": "Legacy field for backward compatibility (used when provider-specific config not set)",
+    "openrouter": {
+      "_comment": "OpenRouter provider configuration",
+      "apiKey": "",
+      "_comment_apiKey": "OpenRouter API key (get from https://openrouter.ai)",
+      "model": "deepseek/deepseek-chat-v3-0324",
+      "_comment_model": "Model identifier (e.g., 'deepseek/deepseek-chat-v3-0324', 'openai/gpt-4o', etc.)",
+      "baseUrl": "",
+      "_comment_baseUrl": "Optional base URL (defaults to https://openrouter.ai/api/v1)",
+      "temperature": 0.7,
+      "_comment_temperature": "Optional temperature override (uses ai.temperature if not set)"
+    },
+    "openai": {
+      "_comment": "OpenAI provider configuration",
+      "apiKey": "",
+      "_comment_apiKey": "OpenAI API key (get from https://platform.openai.com/api-keys)",
+      "model": "gpt-4",
+      "_comment_model": "OpenAI model (e.g., 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', etc.)",
+      "baseUrl": "",
+      "_comment_baseUrl": "Optional base URL (defaults to https://api.openai.com/v1)",
+      "temperature": 0.7,
+      "_comment_temperature": "Optional temperature override (uses ai.temperature if not set)"
+    },
+    "dashscope": {
+      "_comment": "DashScope provider configuration (阿里云通义千问)",
+      "apiKey": "",
+      "_comment_apiKey": "DashScope API key (get from https://dashscope.console.aliyun.com/)",
+      "model": "qwen-max",
+      "_comment_model": "Qwen model (e.g., 'qwen-max', 'qwen-plus', 'qwen-turbo', etc.)",
+      "baseUrl": "",
+      "_comment_baseUrl": "Optional base URL (defaults to https://dashscope.aliyuncs.com/api/v1)",
+      "temperature": 0.7,
+      "_comment_temperature": "Optional temperature override (uses ai.temperature if not set)"
+    },
+    "deepseek": {
+      "_comment": "Deepseek official provider configuration",
+      "apiKey": "",
+      "_comment_apiKey": "Deepseek API key (get from https://platform.deepseek.com/)",
+      "model": "deepseek-chat",
+      "_comment_model": "Deepseek model (e.g., 'deepseek-chat', 'deepseek-coder', etc.)",
+      "baseUrl": "",
+      "_comment_baseUrl": "Optional base URL (defaults to https://api.deepseek.com/v1)",
+      "temperature": 0.7,
+      "_comment_temperature": "Optional temperature override (uses ai.temperature if not set)"
+    },
     "tracing": {
       "langsmith": {
         "enabled": false,

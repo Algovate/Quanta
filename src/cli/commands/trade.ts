@@ -3,7 +3,6 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { getConfig } from '../../config/settings.js';
 import { MarketDataProvider } from '../../data/index.js';
-import { OpenRouterClient } from '../../ai/index.js';
 import { TradingManager } from '../../core/index.js';
 import { handleAsync } from '../../utils/index.js';
 import { safeAction } from '../shared/command-utils.js';
@@ -254,12 +253,14 @@ export class TradeCommands {
     unifiedLogger.info('', {}, 'TradeStart');
 
     const marketProvider = new MarketDataProvider(exchange);
-    const aiClient = new OpenRouterClient(
-      updatedConfig.ai.apiKey,
-      updatedConfig.ai.model,
-      updatedConfig.ai.temperature,
-      undefined, // promptGroupName - will use config default
-      updatedConfig.ai.baseUrl
+    const { createAIClient } = await import('../../ai/factory.js');
+    const { getAIProviderInfo } = await import('../../config/ai-config-utils.js');
+    const aiClient = createAIClient(updatedConfig);
+    const aiInfo = getAIProviderInfo(updatedConfig);
+    unifiedLogger.info(
+      chalk.gray(`   AI Provider: ${aiInfo.provider} | Model: ${aiInfo.model}`),
+      {},
+      'TradeStart'
     );
     const workflowConfig = this.buildWorkflowConfig(config, coins);
     const manager = TradingManager.getInstance();

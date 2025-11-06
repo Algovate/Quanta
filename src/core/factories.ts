@@ -1,5 +1,6 @@
 import { MarketDataProvider } from '../data/market.js';
-import { OpenRouterClient } from '../ai/agent.js';
+import { createAIClient } from '../ai/factory.js';
+import type { IAIClient } from '../ai/types.js';
 import { Exchange } from '../exchange/types.js';
 import { UnifiedLogger } from '../logging/index.js';
 import type { Config } from '../config/settings.js';
@@ -11,29 +12,13 @@ export function createWorkflowDeps(
   coins: string[]
 ): {
   marketProvider: MarketDataProvider;
-  aiClient: OpenRouterClient;
+  aiClient: IAIClient;
   workflowConfig: WorkflowConfig;
 } {
   const marketProvider = new MarketDataProvider(exchange);
-  // Validate OpenRouter config before creating client
-  try {
-    OpenRouterClient.validateConfig(config.ai.apiKey, config.ai.model, config.ai.baseUrl);
-  } catch (error) {
-    const logger = UnifiedLogger.getInstance();
-    logger.error(
-      'OpenRouter configuration validation failed',
-      error instanceof Error ? error : new Error(String(error)),
-      'createWorkflowDeps'
-    );
-    throw error;
-  }
-  const aiClient = new OpenRouterClient(
-    config.ai.apiKey,
-    config.ai.model,
-    config.ai.temperature,
-    undefined, // promptGroupName - will use config default
-    config.ai.baseUrl
-  );
+  // Create AI client using factory
+  const aiClient = createAIClient(config);
+  // Log will be emitted by factory
   // Derive guard bands from market type
   const mt = (config.exchange?.marketType || '').toLowerCase();
   const bands =

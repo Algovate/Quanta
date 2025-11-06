@@ -1,10 +1,10 @@
-# 快速开始
+# Getting Started
 
-Quanta 快速入门指南。
+Quick start guide for Quanta.
 
-## 安装
+## Installation
 
-**要求**: Node.js 18+ 和 npm
+**Requirements**: Node.js 18+ and npm
 
 ```bash
 git clone https://github.com/Algovate/Quanta.git
@@ -12,129 +12,129 @@ cd Quanta
 npm install
 npm run build
 
-# 验证安装
+# Verify installation
 quanta --help
 ```
 
-## 运行第一个交易
+## Run Your First Trade
 
-### 1. 测试系统
+### 1. Test the System
 
 ```bash
-# 使用模拟 AI 测试（无需 API 密钥）
+# Test with simulated AI (no API keys needed)
 quanta simulate cycle --coins BTC --verbose
 
-# 测试 AI 集成
+# Test AI integration
 quanta test ai --type mock --coin BTC
 
-# 测试交易所连接
+# Test exchange connection
 quanta test exchange --exchange simulator --coin BTC
 ```
 
-### 2. 配置 API 密钥（可选）
+### 2. Configure API Keys (Optional)
 
-**纸面交易**：API 密钥可选  
-**实盘交易**：需要 API 密钥
+**Paper Trading**: API keys optional  
+**Live Trading**: API keys required
 
 ```bash
-# OpenRouter API 密钥（用于真实 AI）
+# OpenRouter API key (for real AI)
 export OPENROUTER_API_KEY=your_key_here
 
-# 交易所 API 密钥（用于实盘交易）
+# Exchange API keys (for live trading)
 export OKX_API_KEY=your_key
 export OKX_API_SECRET=your_secret
 ```
 
-### 3. 开始交易
+### 3. Start Trading
 
 ```bash
-# 模拟模式（模拟数据，无风险）
+# Simulate mode (synthetic data, no risk)
 quanta trade start --env simulate --coins BTC,ETH
 
-# 纸面交易（真实数据，模拟执行）
+# Paper trading (real data, simulated execution)
 quanta trade start --env paper --coins BTC,ETH
 
-# 实盘交易（真实资金 - 请谨慎使用！）
+# Live trading (real funds - use with caution!)
 quanta trade start --env live --coins BTC
 ```
 
-系统每 3 分钟运行一个交易周期。按 `Ctrl+C` 停止。
+The system runs a trading cycle every 3 minutes. Press `Ctrl+C` to stop.
 
-### 4. 查看日志
+### 4. View Logs
 
 ```bash
-# 查看最后 50 行
+# View last 50 lines
 quanta log view
 
-# 实时跟踪
+# Follow in real-time
 quanta log view --follow
 
-# 按上下文筛选
+# Filter by context
 quanta log view --context Workflow --follow
 ```
 
-## 交易模式
+## Trading Modes
 
-| 模式         | 市场数据 | 执行方式 | 风险 | 适用场景 |
-| ------------ | -------- | -------- | ---- | -------- |
-| **simulate** | 模拟     | 模拟     | 无   | 学习测试 |
-| **paper**    | 真实     | 模拟     | 无   | 策略验证 |
-| **live**     | 真实     | 真实     | 高   | 实盘交易 |
+| Mode         | Market Data | Execution | Risk | Use Case      |
+| ------------ | ----------- | --------- | ---- | ------------- |
+| **simulate** | Synthetic   | Simulated | None | Learning      |
+| **paper**    | Real        | Simulated | None | Strategy test |
+| **live**     | Real        | Real      | High | Production    |
 
-## 安全建议
+## Security Recommendations
 
-✅ **始终先在模拟模式测试**  
-✅ **使用纸面交易验证策略**  
-✅ **充分测试后再使用实盘模式**  
-❌ **不要使用无法承受损失的资金交易**
+✅ **Always test in simulate mode first**  
+✅ **Use paper trading to validate strategies**  
+✅ **Test thoroughly before using live mode**  
+❌ **Don't trade with funds you can't afford to lose**
 
-## 推荐流程
+## Recommended Workflow
 
 ```
-1. 模拟模式 → 了解系统
+1. Simulate mode → Learn the system
    ↓
-2. 纸面交易 → 用真实数据验证
+2. Paper trading → Validate with real data
    ↓
-3. 小规模实盘测试 → 最小风险
+3. Small live test → Minimal risk
    ↓
-4. 正式生产 → 验证后可扩大规模
+4. Full production → Scale after validation
 ```
 
-## 下一步
+## Next Steps
 
-- [交易指南](trading-guide.md) - 完整交易操作
-- [配置指南](configuration.md) - 高级配置
-- [核心概念](concepts.md) - 算法详解
-- [命令参考](commands.md) - 完整命令列表
+- [Trading Guide](trading-guide.md) - Complete trading operations
+- [Configuration Guide](configuration.md) - Advanced configuration
+- [Core Concepts](concepts.md) - Algorithm details
+- [Commands Reference](commands.md) - Complete command list
 
-## 常见问题
+## Troubleshooting
 
-### 安装问题
+### Installation Issues
 
 ```bash
-# 检查 Node.js 版本
-node --version  # 应为 18+
+# Check Node.js version
+node --version  # Should be 18+
 
-# 重新构建
+# Rebuild
 npm run build
 ```
 
-### 配置问题
+### Configuration Issues
 
 ```bash
-# 验证配置
+# Validate configuration
 quanta config validate
 
-# 显示当前配置
+# Show current configuration
 quanta config show
 ```
 
-### API 连接问题
+### API Connection Issues
 
 ```bash
-# 测试交易所连接
+# Test exchange connection
 quanta test exchange --exchange simulator --coin BTC
 
-# 测试 AI 集成
+# Test AI integration
 quanta test ai --type mock --coin BTC
 ```

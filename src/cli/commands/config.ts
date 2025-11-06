@@ -9,6 +9,7 @@ import {
   getConfigExamplePath,
   validateConfig,
 } from '../../config/settings.js';
+import { getAIProviderInfo } from '../../config/ai-config-utils.js';
 import { handleAsync } from '../../utils/error-handler.js';
 import { safeAction } from '../shared/command-utils.js';
 import { UnifiedLogger } from '../../logging/index.js';
@@ -115,8 +116,10 @@ export class ConfigCommands {
       logger.info('', {}, context);
 
       logger.info(chalk.blue('🤖 AI Settings:'));
-      logger.info(`   Model: ${config.ai.model}`, {}, context);
-      logger.info(`   Temperature: ${config.ai.temperature}`, {}, context);
+      const aiInfo = getAIProviderInfo(config);
+      logger.info(`   Provider: ${aiInfo.provider}`, {}, context);
+      logger.info(`   Model: ${aiInfo.model}`, {}, context);
+      logger.info(`   Temperature: ${aiInfo.temperature}`, {}, context);
       logger.info('', {}, context);
 
       logger.info(chalk.blue('📊 Trading Settings:'));

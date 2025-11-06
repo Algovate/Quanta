@@ -13,6 +13,7 @@ export class JsonlWriter<T extends Record<string, unknown>> {
   private readonly retentionDays: number;
   private currentDateKey: string | null = null;
   private currentFileStream: fs.WriteStream | null = null;
+  private closed: boolean = false;
 
   constructor(options: JsonlWriterOptions) {
     this.directory = options.directory;
@@ -24,6 +25,10 @@ export class JsonlWriter<T extends Record<string, unknown>> {
   }
 
   async append(entry: T): Promise<void> {
+    // Silently ignore writes after close to avoid errors during shutdown
+    if (this.closed) {
+      return;
+    }
     const dateKey = this.getDateKey();
     if (this.currentDateKey !== dateKey) {
       this.rotateStream(dateKey);
@@ -36,6 +41,7 @@ export class JsonlWriter<T extends Record<string, unknown>> {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     await new Promise<void>(resolve => {
       if (this.currentFileStream) {
         this.currentFileStream.end(() => resolve());

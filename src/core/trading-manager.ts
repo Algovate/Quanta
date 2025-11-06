@@ -5,7 +5,7 @@ import { isTimeframe, timeframeToMs, type Timeframe } from '../utils/timeframe.j
 import { StreamingIngestion, type StreamingConfig } from '../data/index.js';
 import type { Exchange } from '../exchange/types.js';
 import type { MarketDataProvider } from '../data/market.js';
-import type { OpenRouterClient } from '../ai/agent.js';
+import type { IAIClient } from '../ai/types.js';
 import type { UnifiedLogger } from '../logging/index.js';
 import type {
   OrderEvent,
@@ -40,7 +40,7 @@ export class TradingManager extends EventEmitter {
   // Health check dependencies
   private exchange?: Exchange;
   private marketDataProvider?: MarketDataProvider;
-  private aiAgent?: OpenRouterClient;
+  private aiAgent?: IAIClient;
   // Custom exit plans storage (position key -> exit plan)
   private customExitPlans: Map<string, { stopLoss?: number; takeProfit?: number }> = new Map();
   // Centralized state service
@@ -143,7 +143,7 @@ export class TradingManager extends EventEmitter {
   async start(
     exchange: Exchange,
     marketDataProvider: MarketDataProvider,
-    aiAgent: OpenRouterClient,
+    aiAgent: IAIClient,
     config: {
       coins: string[];
       cyclePeriod: number;
@@ -484,7 +484,7 @@ export class TradingManager extends EventEmitter {
     return this.marketDataProvider;
   }
 
-  getAIAgent(): OpenRouterClient | undefined {
+  getAIAgent(): IAIClient | undefined {
     return this.aiAgent;
   }
 

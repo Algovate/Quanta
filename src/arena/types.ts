@@ -22,6 +22,7 @@ export interface DroneRiskParams {
  * AI configuration for a drone
  */
 export interface DroneAIConfig {
+  provider?: 'openrouter' | 'openai' | 'dashscope' | 'deepseek';
   model?: string;
   temperature?: number;
 }

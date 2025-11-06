@@ -5,7 +5,7 @@ import type { ExchangeSnapshotService } from './exchange-snapshot.js';
 import type { RiskManager } from '../execution/risk.js';
 import type { OrderExecutor } from '../execution/orders.js';
 import type { PositionMonitorService } from '../execution/monitor.js';
-import type { OpenRouterClient } from '../ai/agent.js';
+import type { IAIClient } from '../ai/types.js';
 import type { MarketDataFetcher } from './market-data-fetcher.js';
 import type { SignalProcessor } from './signal-processor.js';
 import type { Account, Position, TradingSignal } from '../types/index.js';
@@ -39,7 +39,7 @@ export interface WorkflowContext {
   riskManager: RiskManager;
   orderExecutor: OrderExecutor;
   positionMonitor: PositionMonitorService;
-  aiAgent: OpenRouterClient; // Required for fallback when strategy is not provided
+  aiAgent: IAIClient; // Required for fallback when strategy is not provided
   strategy?: IStrategy; // Optional strategy instance (preferred over direct aiAgent calls)
   marketDataFetcher: MarketDataFetcher;
   signalProcessor: SignalProcessor;

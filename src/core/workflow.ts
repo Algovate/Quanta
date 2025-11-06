@@ -1,6 +1,6 @@
 import { Exchange } from '../exchange/types.js';
 import { MarketDataProvider } from '../data/market.js';
-import { OpenRouterClient } from '../ai/agent.js';
+import type { IAIClient } from '../ai/types.js';
 import { RiskManager } from '../execution/risk.js';
 import { OrderExecutor } from '../execution/orders.js';
 import { PositionMonitorService } from '../execution/monitor.js';
@@ -135,7 +135,7 @@ export interface WorkflowConfig {
 export class TradingWorkflow {
   private exchange: Exchange;
   private marketDataProvider: MarketDataProvider;
-  private aiAgent: OpenRouterClient;
+  private aiAgent: IAIClient;
   private riskManager: RiskManager;
   private orderExecutor: OrderExecutor;
   private positionMonitor: PositionMonitorService;
@@ -173,7 +173,7 @@ export class TradingWorkflow {
   constructor(
     exchange: Exchange,
     marketDataProvider: MarketDataProvider,
-    aiAgent: OpenRouterClient,
+    aiAgent: IAIClient,
     config: WorkflowConfig,
     options?: {
       eventBus?: TypedEventBus;

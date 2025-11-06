@@ -9,13 +9,14 @@ import {
   type StrategyContext,
   type StrategyResult,
 } from './base-strategy.js';
-import type { OpenRouterClient, AIContext } from '../ai/agent.js';
+import type { IAIClient } from '../ai/types.js';
+import type { AIContext } from '../ai/types.js';
 import type { WorkflowConfig } from '../core/workflow.js';
 
 export class AIStrategy extends BaseStrategy {
   constructor(
     config: StrategyConfig,
-    private aiAgent: OpenRouterClient,
+    private aiAgent: IAIClient,
     private workflowConfig: WorkflowConfig
   ) {
     super(config);
@@ -49,7 +50,7 @@ export class AIStrategy extends BaseStrategy {
     // while generateTradingSignal expects MarketData from data/market.ts.
     // Both types share the same core structure, so this cast is safe.
     const signals = await this.aiAgent.generateTradingSignal(
-      context.marketData as Parameters<OpenRouterClient['generateTradingSignal']>[0],
+      context.marketData as Parameters<IAIClient['generateTradingSignal']>[0],
       context.account,
       context.positions,
       aiContext

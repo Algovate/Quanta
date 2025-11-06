@@ -27,6 +27,7 @@ import type { Exchange } from '../exchange/types.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { getConfig, getExchangeConfig } from '../config/settings.js';
 import { ExecutionSessionManager } from '../core/execution-session-manager.js';
+import { createAIClient } from '../ai/factory.js';
 
 export class DroneInstance extends EventEmitter {
   private workflow: TradingWorkflow;
@@ -98,16 +99,74 @@ export class DroneInstance extends EventEmitter {
       this.exchange = new SimulatorExchange(config.initialBalance);
     }
 
-    // Create drone-specific AI agent with queue
-    this.aiAgent = new DroneAIAgent(
-      apiKey,
-      config.aiConfig?.model || 'deepseek/deepseek-chat',
-      config.aiConfig?.temperature || 0.7,
-      config.id,
-      this.aiCallQueue,
-      config.promptPack,
-      globalConfig.ai.baseUrl
-    );
+    // Create AI client using factory, then wrap with DroneAIAgent for cost tracking
+    // Create a temporary config for this drone's AI provider
+    const droneConfig = {
+      ...globalConfig,
+      ai: {
+        ...globalConfig.ai,
+        provider: config.aiConfig?.provider || globalConfig.ai.provider || 'openrouter',
+        openrouter:
+          config.aiConfig?.provider === 'openrouter' || !config.aiConfig?.provider
+            ? {
+                apiKey:
+                  apiKey || globalConfig.ai.openrouter?.apiKey || globalConfig.ai.apiKey || '',
+                model:
+                  config.aiConfig?.model ||
+                  globalConfig.ai.openrouter?.model ||
+                  globalConfig.ai.model ||
+                  'deepseek/deepseek-chat-v3-0324',
+                temperature:
+                  config.aiConfig?.temperature ??
+                  globalConfig.ai.openrouter?.temperature ??
+                  globalConfig.ai.temperature ??
+                  0.7,
+                baseUrl: globalConfig.ai.openrouter?.baseUrl || globalConfig.ai.baseUrl,
+              }
+            : globalConfig.ai.openrouter,
+        openai:
+          config.aiConfig?.provider === 'openai'
+            ? {
+                apiKey: apiKey || globalConfig.ai.openai?.apiKey || '',
+                model: config.aiConfig?.model || globalConfig.ai.openai?.model || 'gpt-4',
+                temperature:
+                  config.aiConfig?.temperature ??
+                  globalConfig.ai.openai?.temperature ??
+                  globalConfig.ai.temperature ??
+                  0.7,
+                baseUrl: globalConfig.ai.openai?.baseUrl,
+              }
+            : globalConfig.ai.openai,
+        dashscope:
+          config.aiConfig?.provider === 'dashscope'
+            ? {
+                apiKey: apiKey || globalConfig.ai.dashscope?.apiKey || '',
+                model: config.aiConfig?.model || globalConfig.ai.dashscope?.model || 'qwen-max',
+                temperature:
+                  config.aiConfig?.temperature ??
+                  globalConfig.ai.dashscope?.temperature ??
+                  globalConfig.ai.temperature ??
+                  0.7,
+                baseUrl: globalConfig.ai.dashscope?.baseUrl,
+              }
+            : globalConfig.ai.dashscope,
+        deepseek:
+          config.aiConfig?.provider === 'deepseek'
+            ? {
+                apiKey: apiKey || globalConfig.ai.deepseek?.apiKey || '',
+                model: config.aiConfig?.model || globalConfig.ai.deepseek?.model || 'deepseek-chat',
+                temperature:
+                  config.aiConfig?.temperature ??
+                  globalConfig.ai.deepseek?.temperature ??
+                  globalConfig.ai.temperature ??
+                  0.7,
+                baseUrl: globalConfig.ai.deepseek?.baseUrl,
+              }
+            : globalConfig.ai.deepseek,
+      },
+    };
+    const aiClient = createAIClient(droneConfig);
+    this.aiAgent = new DroneAIAgent(aiClient, config.id, this.aiCallQueue);
 
     // Create market provider
     this.marketProvider = new MarketDataProvider(this.exchange);
@@ -116,7 +175,7 @@ export class DroneInstance extends EventEmitter {
     const workflowConfig = this.buildWorkflowConfig();
 
     // Create workflow with event isolation
-    // Type cast because DroneAIAgent has same interface as OpenRouterClient
+    // DroneAIAgent implements IAIClient interface
     this.workflow = new TradingWorkflow(
       this.exchange,
       this.marketProvider,

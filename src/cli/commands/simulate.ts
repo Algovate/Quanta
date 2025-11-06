@@ -5,7 +5,6 @@ import { getConfig } from '../../config/settings.js';
 import { SimulatorExchange } from '../../exchange/simulator.js';
 import { MarketDataProvider } from '../../data/market.js';
 import { MockAIAgent } from '../../ai/mock-agent.js';
-import { OpenRouterClient } from '../../ai/agent.js';
 import { RiskManager } from '../../execution/risk.js';
 import { OrderExecutor } from '../../execution/orders.js';
 import { PositionMonitorService } from '../../execution/monitor.js';
@@ -161,9 +160,14 @@ export class SimulateCommands {
       loggerContext
     );
     logger.info(`Max Positions: ${maxPositions}`, {}, loggerContext);
-    logger.info(`AI Type: ${useRealAI ? 'Real AI (OpenRouter)' : 'Mock AI'}`, {}, loggerContext);
-    if (useRealAI && simulateConfig.ai?.real?.model) {
-      logger.info(`AI Model: ${simulateConfig.ai.real.model}`, {}, loggerContext);
+    if (useRealAI) {
+      const { getAIProviderInfo } = await import('../../config/ai-config-utils.js');
+      const globalConfig = getConfig();
+      const aiInfo = getAIProviderInfo(globalConfig);
+      logger.info(`AI Type: Real AI (${aiInfo.provider})`, {}, loggerContext);
+      logger.info(`AI Model: ${aiInfo.model}`, {}, loggerContext);
+    } else {
+      logger.info(`AI Type: Mock AI`, {}, loggerContext);
     }
     logger.info(`Cycles: ${cycles} | Interval: ${intervalMs} ms`, {}, loggerContext);
     logger.info('', {}, loggerContext);
@@ -178,30 +182,33 @@ export class SimulateCommands {
       // Initialize AI agent based on selection
       let aiAgent;
       if (useRealAI) {
-        // Try environment variable first, then simulation config
-        const apiKey = process.env.OPENROUTER_API_KEY || simulateConfig.ai?.real?.apiKey;
-        const model =
-          process.env.OPENROUTER_MODEL ||
-          process.env.AI_MODEL ||
-          simulateConfig.ai?.real?.model ||
-          'deepseek/deepseek-chat';
-        const temperature = simulateConfig.ai?.real?.temperature || 0.7;
-        const baseUrl = process.env.OPENROUTER_BASE_URL || undefined;
-        if (!apiKey) {
-          spinner.fail('Real AI requires OPENROUTER_API_KEY');
-          logger.error('\n❌ Error: Real AI mode requires API key', undefined, loggerContext);
+        try {
+          // Use factory function to create AI client based on config
+          const { createAIClient } = await import('../../ai/factory.js');
+          const { getAIProviderInfo } = await import('../../config/ai-config-utils.js');
+          const globalConfig = getConfig();
+          aiAgent = createAIClient(globalConfig);
+          const aiInfo = getAIProviderInfo(globalConfig);
+          logger.info(
+            chalk.green(`✓ Real AI initialized: ${aiInfo.provider} (${aiInfo.model})`),
+            {},
+            loggerContext
+          );
+        } catch (error) {
+          spinner.fail('Real AI initialization failed');
+          logger.error(
+            '\n❌ Error: Failed to initialize AI client',
+            error instanceof Error ? error : undefined,
+            loggerContext
+          );
           logger.info('\n💡 To use real AI:', {}, loggerContext);
-          logger.info('  1. Get API key from https://openrouter.ai', {}, loggerContext);
-          logger.info('  2. Set environment variable or update config.json:', {}, loggerContext);
-          logger.info('     export OPENROUTER_API_KEY="your_api_key_here"', {}, loggerContext);
-          logger.info('     or edit config.json: simulation.ai.real.apiKey', {}, loggerContext);
-          logger.info('  3. Or use Mock AI (default):', {}, loggerContext);
+          logger.info('  1. Configure AI provider in config.json:', {}, loggerContext);
+          logger.info('     Set ai.provider and ai.{provider}.apiKey', {}, loggerContext);
+          logger.info('  2. Or use Mock AI (default):', {}, loggerContext);
           logger.info('     quanta simulate cycle --coins BTC --ai mock', {}, loggerContext);
           process.exitCode = 1;
           return;
         }
-        aiAgent = new OpenRouterClient(apiKey, model, temperature, undefined, baseUrl);
-        logger.info(chalk.green('✓ Real AI initialized'), {}, loggerContext);
       } else {
         aiAgent = new MockAIAgent();
         logger.info(chalk.green('✓ Mock AI initialized'), {}, loggerContext);

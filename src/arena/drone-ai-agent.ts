@@ -1,14 +1,14 @@
 /**
- * Drone AI Agent - Wrapper for OpenRouterClient with cost tracking and queue support
+ * Drone AI Agent - Wrapper for AI client with cost tracking and queue support
  *
- * Uses composition to wrap OpenRouterClient and add:
+ * Uses composition to wrap AI client and add:
  * - Cost tracking per drone
  * - Token usage tracking
  * - Integration with AICallQueue for rate limiting
  */
 
-import { OpenRouterClient } from '../ai/agent.js';
-import type { AIContext, EnrichedPositionInfo } from '../ai/agent.js';
+import type { IAIClient } from '../ai/types.js';
+import type { AIContext, EnrichedPositionInfo } from '../ai/types.js';
 import type { MarketData } from '../data/market.js';
 import type { Account, Position, TradingSignal } from '../types/index.js';
 import { AICallQueue } from './ai-call-queue.js';
@@ -51,8 +51,8 @@ function estimateCost(model: string, inputTokens: number, outputTokens: number):
   return inputCost + outputCost;
 }
 
-export class DroneAIAgent {
-  private client: OpenRouterClient;
+export class DroneAIAgent implements IAIClient {
+  private client: IAIClient;
   private costTracker: CostMetrics = {
     totalCost: 0,
     totalTokens: 0,
@@ -63,15 +63,11 @@ export class DroneAIAgent {
   private readonly context: string;
 
   constructor(
-    apiKey: string,
-    model: string,
-    temperature: number,
+    client: IAIClient,
     private droneId: string,
-    private aiCallQueue: AICallQueue,
-    promptGroupName?: string,
-    baseUrl?: string
+    private aiCallQueue: AICallQueue
   ) {
-    this.client = new OpenRouterClient(apiKey, model, temperature, promptGroupName, baseUrl);
+    this.client = client;
     this.context = `DroneAIAgent:${droneId}`;
     this.logger.info(`DroneAIAgent initialized for drone ${droneId}`, { droneId }, this.context);
   }

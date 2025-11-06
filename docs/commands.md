@@ -1,20 +1,20 @@
-# 命令参考
+# Commands Reference
 
-所有 Quanta 命令的完整参考。
+Complete reference for all Quanta commands.
 
-## 交易命令
+## Trading Commands
 
-### `trade start` - 启动交易系统
+### `trade start` - Start Trading System
 
 ```bash
 quanta trade start [options]
 
-选项:
-  -e, --env <env>      环境: simulate, paper, live (默认: "simulate")
-  -c, --coins <coins>  币种列表，逗号分隔 (默认: "BTC,ETH,SOL")
+Options:
+  -e, --env <env>      Environment: simulate, paper, live (default: "simulate")
+  -c, --coins <coins>  Comma-separated coin list (default: "BTC,ETH,SOL")
 ```
 
-**示例:**
+**Examples:**
 
 ```bash
 quanta trade start --env simulate --coins BTC,ETH,SOL
@@ -22,26 +22,26 @@ quanta trade start --env paper --coins BTC,ETH,SOL
 quanta trade start --env live --coins BTC
 ```
 
-> **注意**: 多无人机竞技场交易请使用 `arena` 命令。
+> **Note**: For multi-drone arena trading, use `arena` commands.
 
-### `trade backtest` - 运行回测
+### `trade backtest` - Run Backtest
 
 ```bash
 quanta trade backtest [options]
 
-选项:
-  -c, --coins <coins>           币种列表，逗号分隔
-  -s, --start <date>            开始日期 (YYYY-MM-DD)
-  -e, --end <date>              结束日期 (YYYY-MM-DD)
-  --initial-balance <amount>    初始余额 (默认: "10000")
-  --seed <number>               随机种子
-  --verbose                     详细输出
-  --quiet                       最小输出
-  --json                        输出 JSON
-  --summary-only                仅显示摘要
+Options:
+  -c, --coins <coins>            Comma-separated coin list
+  -s, --start <date>             Start date (YYYY-MM-DD)
+  -e, --end <date>               End date (YYYY-MM-DD)
+  --initial-balance <amount>     Initial balance (default: "10000")
+  --seed <number>                Random seed
+  --verbose                      Verbose output
+  --quiet                        Minimal output
+  --json                         JSON output
+  --summary-only                 Summary only
 ```
 
-**示例:**
+**Examples:**
 
 ```bash
 quanta trade backtest
@@ -49,41 +49,41 @@ quanta trade backtest --start 2024-06-01 --end 2024-10-01
 quanta trade backtest --seed 42 --summary-only
 ```
 
-> **默认**: 未指定日期时，默认使用最近 4 个月的数据。
+> **Default**: Uses last 4 months of data when dates not specified.
 
-## 测试命令
+## Test Commands
 
-### `test ai` - 测试 AI 集成
+### `test ai` - Test AI Integration
 
 ```bash
 quanta test ai [options]
 
-选项:
-  -t, --type <type>  AI 类型: mock, real, both (默认: "both")
-  -c, --coin <coin>  测试币种 (默认: "BTC")
-  -v, --verbose      详细输出
+Options:
+  -t, --type <type>  AI type: mock, real, both (default: "both")
+  -c, --coin <coin>  Test coin (default: "BTC")
+  -v, --verbose      Verbose output
 ```
 
-**示例:**
+**Examples:**
 
 ```bash
 quanta test ai --type mock --coin BTC
 quanta test ai --type real --coin BTC
 ```
 
-### `test exchange` - 测试交易所数据
+### `test exchange` - Test Exchange Data
 
 ```bash
 quanta test exchange [options]
 
-选项:
-  -e, --exchange <exchange>  交易所名称 (默认: "simulator")
-  -a, --all                  测试所有支持的交易所
-  -c, --coin <coin>           测试币种 (默认: "BTC")
-  -v, --verbose               详细输出
+Options:
+  -e, --exchange <exchange>  Exchange name (default: "simulator")
+  -a, --all                 Test all supported exchanges
+  -c, --coin <coin>         Test coin (default: "BTC")
+  -v, --verbose             Verbose output
 ```
 
-**示例:**
+**Examples:**
 
 ```bash
 quanta test exchange --exchange okx --coin BTC
@@ -91,91 +91,76 @@ quanta test exchange --all --coin BTC
 quanta test exchange --exchange bin --coin BTC
 ```
 
-**支持的交易所**: simulator, binance/bin, okx, coinbase/cb, hyperliquid/hliq
+**Supported Exchanges**: simulator, binance/bin, okx, coinbase/cb, hyperliquid/hliq
 
-## 模拟命令
+## Simulation Commands
 
-### `simulate cycle` - 模拟交易周期
+### `simulate cycle` - Simulate Trading Cycle
 
 ```bash
 quanta simulate cycle [options]
 
-选项:
-  -c, --coins <coins>           币种列表，逗号分隔
-  -b, --initial-balance <amount> 初始余额（美元）
-  -v, --verbose                 详细日志
-  --cycles <number>             运行周期数
-  -a, --ai <type>               AI 类型: mock 或 real
+Options:
+  -c, --coins <coins>            Comma-separated coin list
+  -b, --initial-balance <amount> Initial balance (USD)
+  -v, --verbose                  Verbose logs
+  --cycles <number>              Number of cycles to run
+  -a, --ai <type>               AI type: mock or real
 ```
 
-**示例:**
+**Examples:**
 
 ```bash
 quanta simulate cycle --coins BTC --verbose
 quanta simulate cycle --coins BTC,ETH --cycles 5 --verbose
 ```
 
-> **注意**: `simulate cycle` 用于单次或少量周期。持续交易请使用 `quanta trade start --env simulate`。
+> **Note**: `simulate cycle` is for single or few cycles. For continuous trading, use `quanta trade start --env simulate`.
 
-## 服务器命令
-
-### `server start` - 启动 API 服务器
+## Server Commands
 
 ```bash
-quanta server start [options]
-
-选项:
-  -p, --port <port>  监听端口 (默认: "3001")
+quanta server start [options]  # Start API server (-p, --port <port>)
+quanta server stop              # Stop API server
+quanta server status            # Check server status
 ```
 
-### `server stop` - 停止 API 服务器
+## Configuration Commands
 
 ```bash
-quanta server stop
+quanta config show              # Show current configuration
+quanta config set <key> <value> # Set configuration value
+quanta config validate          # Validate configuration
+quanta config save              # Save configuration to file
+quanta config reset             # Reset to defaults
+quanta config init              # Initialize from example
 ```
 
-### `server status` - 检查服务器状态
-
-```bash
-quanta server status
-```
-
-## 配置命令
-
-```bash
-quanta config show          # 显示当前配置
-quanta config set <key> <value>  # 设置配置值
-quanta config validate      # 验证配置
-quanta config save          # 保存配置到文件
-quanta config reset         # 重置为默认值
-quanta config init          # 从示例初始化
-```
-
-**示例:**
+**Examples:**
 
 ```bash
 quanta config set ai.model deepseek/deepseek-chat-v3-0324
 quanta config set ai.temperature 0.7
 ```
 
-## 日志命令
+## Log Commands
 
-### `log view` - 查看控制台输出
+### `log view` - View Console Output
 
-查看 `trade start` 和 `server start` 期间捕获的控制台日志。
+View console logs captured during `trade start` and `server start`.
 
 ```bash
 quanta log view [options]
 
-选项:
-  --lines <n>          显示最后 N 行 (默认: 50)
-  -f, --follow        跟随模式（实时更新）
-  --context <context> 按上下文筛选
-  --level <level>     按日志级别筛选 (info|warn|error|debug)
-  --grep <pattern>     搜索/筛选模式
+Options:
+  --lines <n>           Show last N lines (default: 50)
+  -f, --follow         Follow mode (real-time updates)
+  --context <context>  Filter by context
+  --level <level>      Filter by log level (info|warn|error|debug)
+  --grep <pattern>     Search/filter pattern
 ```
 
-**示例:**
+**Examples:**
 
 ```bash
 quanta log view
@@ -183,38 +168,30 @@ quanta log view --follow
 quanta log view --follow --context Workflow
 ```
 
-### 其他日志命令
+### Other Log Commands
 
 ```bash
-quanta log clean [--all] [--days <n>] [--force] [--dry-run]  # 清理旧日志
-quanta log list [--format <format>] [--sort <field>]          # 列出日志文件
-quanta log stats [--days <n>] [--context <context>]           # 显示统计信息
-quanta log export --output <file> [--format <format>]         # 导出日志
+quanta log clean [--all] [--days <n>] [--force] [--dry-run]  # Clean old logs
+quanta log list [--format <format>] [--sort <field>]          # List log files
+quanta log stats [--days <n>] [--context <context>]           # Show statistics
+quanta log export --output <file> [--format <format>]         # Export logs
 ```
 
-## 提示词命令
-
-### `prompts list` - 列出提示词组
+## Prompts Commands
 
 ```bash
-quanta prompts list
+quanta prompts list                                    # List prompt groups
+quanta prompts view [options]                         # View prompt group content
+  -g, --group <name>        Prompt group name
+  -r, --rendered            Show rendered prompts (with example values)
+  -s, --system-only         System prompts only
+  -u, --user-only           User prompts only
+  --context <path.json>     Render using values from JSON file
+  --vars                    Show template variables
+quanta prompts diff -g <left> --with <right> [options] # Compare prompt groups
 ```
 
-### `prompts view` - 查看提示词组内容
-
-```bash
-quanta prompts view [options]
-
-选项:
-  -g, --group <name>       提示词组名称
-  -r, --rendered           显示渲染后的提示词（含示例值）
-  -s, --system-only        仅显示系统提示词
-  -u, --user-only          仅显示用户提示词
-  --context <path.json>    使用 JSON 文件中的值渲染
-  --vars                   显示模板变量
-```
-
-**示例:**
+**Examples:**
 
 ```bash
 quanta prompts view
@@ -222,41 +199,30 @@ quanta prompts view --rendered
 quanta prompts view --group default
 ```
 
-### `prompts diff` - 比较提示词组
+## Arena Commands
+
+See [Arena Guide](arena-guide.md) for details.
 
 ```bash
-quanta prompts diff -g <left> --with <right> [options]
-
-选项:
-  -r, --rendered     渲染后比较
-  -s, --system-only  仅比较系统提示词
-  -u, --user-only    仅比较用户提示词
+quanta arena configs                    # List arena configurations
+quanta arena start --config <name>      # Start arena
+quanta arena status <arenaId>           # Check status
+quanta arena list                       # List all arenas
+quanta arena stop <arenaId>             # Stop arena
 ```
 
-## 竞技场命令
-
-详见 [竞技场指南](arena-guide.md)。
+## Quick Reference
 
 ```bash
-quanta arena configs          # 列出竞技场配置
-quanta arena start --config <name>  # 启动竞技场
-quanta arena status <arenaId> # 检查状态
-quanta arena list             # 列出所有竞技场
-quanta arena stop <arenaId>   # 停止竞技场
-```
-
-## 常用命令速查
-
-```bash
-# 快速测试
+# Quick test
 quanta test ai --type mock --coin BTC
 
-# 运行模拟
+# Run simulation
 quanta simulate cycle --coins BTC,ETH,SOL --verbose
 
-# 开始交易
+# Start trading
 quanta trade start --env simulate --coins BTC,ETH,SOL
 
-# 查看详细输出
+# View detailed output
 quanta log view --follow
 ```

@@ -1,23 +1,23 @@
-# Quanta 竞技场 - 多无人机交易系统
+# Arena Guide
 
-同时运行多个交易工作流（"无人机"）以比较策略、提示词组和风险参数。
+Multi-drone trading system for running multiple trading workflows simultaneously to compare strategies, prompt groups, and risk parameters.
 
-> **注意**: 当 API 服务器运行时，只能有一个执行会话处于活动状态（竞技场或策略）。竞技场仅支持纸面模式（真实市场数据，模拟执行）。
+> **Note**: Only one execution session can be active when the API server is running (arena or strategy). Arena only supports paper mode (real market data, simulated execution).
 
-## 快速开始
+## Quick Start
 
-### 1. 创建竞技场配置
+### 1. Create Arena Configuration
 
-在 `config/arena/` 中创建 JSON 文件:
+Create a JSON file in `config/arena/`:
 
 ```json
 {
-  "name": "我的竞技场",
+  "name": "My Arena",
   "mode": "paper",
   "drones": [
     {
       "id": "drone-1",
-      "name": "保守",
+      "name": "Conservative",
       "coins": ["BTC", "ETH"],
       "promptPack": "conservative",
       "initialBalance": 10000,
@@ -32,7 +32,7 @@
     },
     {
       "id": "drone-2",
-      "name": "激进",
+      "name": "Aggressive",
       "coins": ["BTC", "ETH"],
       "promptPack": "aggressive",
       "initialBalance": 10000,
@@ -52,65 +52,65 @@
 }
 ```
 
-### 2. 启动竞技场
+### 2. Start Arena
 
 ```bash
-# 列出可用配置
+# List available configurations
 quanta arena configs
 
-# 启动竞技场
+# Start arena
 quanta arena start --config my-arena
 
-# 带持续时间限制启动（分钟）
+# Start with duration limit (minutes)
 quanta arena start --config my-arena --duration 30
 ```
 
-### 3. 监控和比较
+### 3. Monitor and Compare
 
 ```bash
-# 检查状态
+# Check status
 quanta arena status <arenaId>
 
-# 列出所有竞技场
+# List all arenas
 quanta arena list
 
-# 比较结果
+# Compare results
 quanta arena compare <arenaId>
 
-# 停止竞技场
+# Stop arena
 quanta arena stop <arenaId>
 ```
 
-### 4. 查看日志
+### 4. View Logs
 
 ```bash
-# 查看竞技场日志
+# View arena logs
 quanta log view --context ArenaManager --follow
 
-# 查看特定无人机日志
+# View specific drone logs
 quanta log view --grep "arena-XXXX" --lines 100
 ```
 
-**日志上下文**: `ArenaManager`, `ArenaStorage`, `ArenaOrchestrator:{arenaId}`, `Arena:{arenaId}:Drone:{droneId}`
+**Log Contexts**: `ArenaManager`, `ArenaStorage`, `ArenaOrchestrator:{arenaId}`, `Arena:{arenaId}:Drone:{droneId}`
 
-## 配置
+## Configuration
 
-### 竞技场配置
+### Arena Configuration
 
 ```typescript
 {
   name: string;
-  mode: 'paper';  // 始终为 paper
+  mode: 'paper';  // Always paper
   drones: DroneConfig[];
   settings?: {
-    maxConcurrentAICalls?: number;  // 默认: 2
-    cyclePeriod?: number;          // 周期持续时间（毫秒）
-    maxDuration?: number;          // 最大运行时间（毫秒）
+    maxConcurrentAICalls?: number;  // Default: 2
+    cyclePeriod?: number;          // Cycle duration (ms)
+    maxDuration?: number;          // Max runtime (ms)
   }
 }
 ```
 
-### 无人机配置
+### Drone Configuration
 
 ```typescript
 {
@@ -136,68 +136,68 @@ quanta log view --grep "arena-XXXX" --lines 100
 
 ## Web API
 
-### 端点
+### Endpoints
 
-- `POST /api/arena/start` - 启动竞技场
-- `POST /api/arena/stop/:arenaId` - 停止竞技场
-- `GET /api/arena/status/:arenaId` - 获取状态
-- `GET /api/arena/list` - 列出所有竞技场
-- `GET /api/arena/:arenaId/drones` - 获取无人机详情
-- `GET /api/arena/:arenaId/comparison` - 获取比较
-- `GET /api/arena/:arenaId/ai-analysis` - 获取 AI 分析
+- `POST /api/arena/start` - Start arena
+- `POST /api/arena/stop/:arenaId` - Stop arena
+- `GET /api/arena/status/:arenaId` - Get status
+- `GET /api/arena/list` - List all arenas
+- `GET /api/arena/:arenaId/drones` - Get drone details
+- `GET /api/arena/:arenaId/comparison` - Get comparison
+- `GET /api/arena/:arenaId/ai-analysis` - Get AI analysis
 
-### WebSocket 事件
+### WebSocket Events
 
-连接到 `ws://localhost:3001`:
+Connect to `ws://localhost:3001`:
 
-- `arena:started` - 竞技场已启动
-- `arena:stopped` - 竞技场已停止
-- `arena:update` - 定期指标更新
+- `arena:started` - Arena started
+- `arena:stopped` - Arena stopped
+- `arena:update` - Periodic metrics update
 
-详见 [命令参考](commands.md#竞技场命令) 获取完整 API 文档。
+See [Commands Reference](commands.md#arena-commands) for complete API documentation.
 
-## 配置示例
+## Configuration Examples
 
-查看 `config/arena/` 中的示例:
+See examples in `config/arena/`:
 
-- `example-arena.json` - 基本比较
-- `ppc.json` - 提示词组比较
-- `risk-sweep.json` - 风险参数扫描
-- `coin-strategy.json` - 币种选择比较
+- `example-arena.json` - Basic comparison
+- `ppc.json` - Prompt pack comparison
+- `risk-sweep.json` - Risk parameter sweep
+- `coin-strategy.json` - Coin selection comparison
 
-## 存储
+## Storage
 
-竞技场结果存储在 `logs/arena.db`:
+Arena results stored in `logs/arena.db`:
 
-- `arena_runs` - 竞技场元数据
-- `drone_results` - 最终指标
-- `drone_snapshots` - 历史权益曲线
+- `arena_runs` - Arena metadata
+- `drone_results` - Final metrics
+- `drone_snapshots` - Historical equity curves
 
-查询: `quanta arena compare <arenaId>`
+Query: `quanta arena compare <arenaId>`
 
-## 最佳实践
+## Best Practices
 
-1. **从小开始**: 先用 2-3 个无人机测试
-2. **隔离变量**: 一次更改一个参数
-3. **监控成本**: 跟踪 AI API 成本（特别是使用多个无人机时）
-4. **设置持续时间限制**: 长时间运行时使用 `maxDuration`
-5. **审查相关性**: 检查无人机是否在分散
+1. **Start Small**: Test with 2-3 drones first
+2. **Isolate Variables**: Change one parameter at a time
+3. **Monitor Costs**: Track AI API costs (especially with multiple drones)
+4. **Set Duration Limits**: Use `maxDuration` for long-running tests
+5. **Review Correlation**: Check if drones are diverging
 
-## 常见问题
+## Troubleshooting
 
-**竞技场无法启动**: 检查 JSON 有效性，验证提示词组是否存在，确保 API 密钥已配置
+**Arena won't start**: Check JSON validity, verify prompt groups exist, ensure API keys configured
 
-**无人机没有差异**: 验证不同的提示词组/风险参数，检查币种列表
+**No drone differences**: Verify different prompt groups/risk parameters, check coin lists
 
-**API 成本高**: 减少 `maxConcurrentAICalls`，使用更少的无人机，增加 `cyclePeriod`
+**High API costs**: Reduce `maxConcurrentAICalls`, use fewer drones, increase `cyclePeriod`
 
-**查看日志**: 使用 `quanta log view --context ArenaManager` - 详见 [命令参考](commands.md#日志命令)
+**View logs**: Use `quanta log view --context ArenaManager` - see [Commands Reference](commands.md#log-commands)
 
-## 高级
+## Advanced
 
-### 自定义提示词组
+### Custom Prompt Groups
 
-在 `config/prompts/` 中创建并在无人机配置中引用:
+Create in `config/prompts/` and reference in drone config:
 
 ```json
 {
@@ -205,15 +205,15 @@ quanta log view --grep "arena-XXXX" --lines 100
 }
 ```
 
-### 事件订阅
+### Event Subscription
 
 ```typescript
 import { EventBus } from '@quanta/core/event-bus';
 
-EventBus.on('arena:started', payload => console.log('已启动:', payload));
-EventBus.on('drone:abc123:cycle:complete', payload => console.log('周期:', payload));
+EventBus.on('arena:started', payload => console.log('Started:', payload));
+EventBus.on('drone:abc123:cycle:complete', payload => console.log('Cycle:', payload));
 ```
 
 ---
 
-**相关**: [命令参考](commands.md#竞技场命令) | [配置指南](configuration.md)
+**Related**: [Commands Reference](commands.md#arena-commands) | [Configuration Guide](configuration.md)

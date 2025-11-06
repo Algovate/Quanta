@@ -1,62 +1,62 @@
-# 支持的交易所
+# Supported Exchanges
 
-Quanta 支持多个加密货币交易所，提供统一 API。
+Quanta supports multiple cryptocurrency exchanges with a unified API.
 
-## 可用交易所
+## Available Exchanges
 
-| 交易所      | 全名        | 缩写   | 状态    | 需要 API 密钥 |
-| ----------- | ----------- | ------ | ------- | ------------- |
-| Simulator   | Simulator   | -      | ✅ 内置 | 否            |
-| Binance     | Binance     | `bin`  | ✅ 支持 | 是（交易时）  |
-| OKX         | OKX         | -      | ✅ 支持 | 是（交易时）  |
-| Coinbase    | Coinbase    | `cb`   | ✅ 支持 | 是（交易时）  |
-| Hyperliquid | Hyperliquid | `hliq` | ✅ 支持 | 是（交易时）  |
+| Exchange    | Full Name   | Abbreviation | Status       | Requires API Key  |
+| ----------- | ----------- | ------------ | ------------ | ----------------- |
+| Simulator   | Simulator   | -            | ✅ Built-in  | No                |
+| Binance     | Binance     | `bin`        | ✅ Supported | Yes (for trading) |
+| OKX         | OKX         | -            | ✅ Supported | Yes (for trading) |
+| Coinbase    | Coinbase    | `cb`         | ✅ Supported | Yes (for trading) |
+| Hyperliquid | Hyperliquid | `hliq`       | ✅ Supported | Yes (for trading) |
 
-## 交易所详情
+## Exchange Details
 
 ### Simulator
 
-- **类型**: 内置模拟
-- **需要 API 密钥**: 否
-- **用途**: 测试、开发、学习
-- **特性**: 模拟市场数据、自动价格变动
+- **Type**: Built-in simulation
+- **Requires API Key**: No
+- **Use Case**: Testing, development, learning
+- **Features**: Simulated market data, automatic price movements
 
 ### Binance
 
-- **类型**: 中心化交易所（CEX）
-- **需要 API 密钥**: 是（交易时）
-- **用途**: 现货和期货交易
-- **API 密钥**: `BINANCE_API_KEY`, `BINANCE_API_SECRET`
-- **缩写**: `bin`
+- **Type**: Centralized Exchange (CEX)
+- **Requires API Key**: Yes (for trading)
+- **Use Case**: Spot and futures trading
+- **API Keys**: `BINANCE_API_KEY`, `BINANCE_API_SECRET`
+- **Abbreviation**: `bin`
 
 ### OKX
 
-- **类型**: 中心化交易所（CEX）
-- **需要 API 密钥**: 是（交易时）
-- **用途**: 现货、期货和期权交易
-- **API 密钥**: `OKX_API_KEY`, `OKX_API_SECRET`
-- **注意**: 衍生品使用 `BASE/USDT:USDT` 格式（例如 `ETH/USDT:USDT`）
+- **Type**: Centralized Exchange (CEX)
+- **Requires API Key**: Yes (for trading)
+- **Use Case**: Spot, futures, and options trading
+- **API Keys**: `OKX_API_KEY`, `OKX_API_SECRET`
+- **Note**: Derivatives use `BASE/USDT:USDT` format (e.g., `ETH/USDT:USDT`)
 
 ### Coinbase
 
-- **类型**: 中心化交易所（CEX）
-- **需要 API 密钥**: 是（交易时）
-- **用途**: 现货交易、机构
-- **API 密钥**: `COINBASE_API_KEY`, `COINBASE_API_SECRET`
-- **缩写**: `cb`
+- **Type**: Centralized Exchange (CEX)
+- **Requires API Key**: Yes (for trading)
+- **Use Case**: Spot trading, institutional
+- **API Keys**: `COINBASE_API_KEY`, `COINBASE_API_SECRET`
+- **Abbreviation**: `cb`
 
 ### Hyperliquid
 
-- **类型**: 去中心化交易所（DEX）
-- **需要 API 密钥**: 是（交易时）
-- **用途**: 链上永续期货交易
-- **API 密钥**: `HYPERLIQUID_API_KEY`, `HYPERLIQUID_API_SECRET`
-- **缩写**: `hliq`
-- **注意**: 使用 `/USDC:USDC` 符号格式（从 `/USDT` 自动转换）
+- **Type**: Decentralized Exchange (DEX)
+- **Requires API Key**: Yes (for trading)
+- **Use Case**: On-chain perpetual futures trading
+- **API Keys**: `HYPERLIQUID_API_KEY`, `HYPERLIQUID_API_SECRET`
+- **Abbreviation**: `hliq`
+- **Note**: Uses `/USDC:USDC` symbol format (auto-converted from `/USDT`)
 
-## 使用示例
+## Usage Examples
 
-### 使用全名
+### Using Full Name
 
 ```bash
 quanta test exchange --exchange binance --coin BTC
@@ -64,7 +64,7 @@ quanta test exchange --exchange coinbase --coin ETH
 quanta test exchange --exchange hyperliquid --coin SOL
 ```
 
-### 使用缩写
+### Using Abbreviation
 
 ```bash
 quanta test exchange --exchange bin --coin BTC
@@ -72,16 +72,16 @@ quanta test exchange --exchange cb --coin ETH
 quanta test exchange --exchange hliq --coin SOL
 ```
 
-### 测试所有交易所
+### Test All Exchanges
 
 ```bash
 quanta test exchange --all --coin BTC
 quanta test exchange --all --verbose --coin BTC
 ```
 
-## 环境变量
+## Environment Variables
 
-设置 API 凭据:
+Set API credentials:
 
 ```bash
 # Binance
@@ -101,7 +101,7 @@ export HYPERLIQUID_API_KEY=your_key
 export HYPERLIQUID_API_SECRET=your_secret
 ```
 
-或在 `config/config.json` 中配置:
+Or configure in `config/config.json`:
 
 ```json
 {
@@ -114,106 +114,106 @@ export HYPERLIQUID_API_SECRET=your_secret
 }
 ```
 
-## 符号格式
+## Symbol Format
 
-Quanta 对所有交易所使用标准 `/USDT` 符号格式。特殊处理:
+Quanta uses standard `/USDT` symbol format for all exchanges. Special handling:
 
-- **Hyperliquid**: 自动转换 `BTC/USDT` → `BTC/USDC:USDC`
-- **OKX**: 永续合约使用 `BASE/USDT:USDT` 格式（例如 `ETH/USDT:USDT`）
-- **其他交易所**: 使用提供的符号
+- **Hyperliquid**: Auto-converts `BTC/USDT` → `BTC/USDC:USDC`
+- **OKX**: Perpetual contracts use `BASE/USDT:USDT` format (e.g., `ETH/USDT:USDT`)
+- **Other exchanges**: Use provided symbol
 
-示例:
+**Examples:**
 
 ```bash
 quanta test exchange --exchange binance --coin BTC
-quanta test exchange --exchange hliq --coin BTC  # 自动转换符号
+quanta test exchange --exchange hliq --coin BTC  # Auto-converts symbol
 ```
 
-## 支持的功能
+## Supported Features
 
-所有交易所支持:
+All exchanges support:
 
-- ✅ 市场数据获取（K 线、行情）
-- ✅ 账户余额查询
-- ✅ 持仓管理
-- ✅ 下单（市价单）
-- ✅ 取消订单
+- ✅ Market data fetching (candles, tickers)
+- ✅ Account balance queries
+- ✅ Position management
+- ✅ Order placement (market orders)
+- ✅ Order cancellation
 
-## 市场类型
+## Market Types
 
-### 现货交易
+### Spot Trading
 
-- **杠杆**: 仅 1x（无杠杆）
-- **资金费率**: 无资金费率
-- **用途**: 低风险、积累
-- **推荐**: 适合初学者和保守策略
+- **Leverage**: 1x only (no leverage)
+- **Funding Rate**: No funding rate
+- **Use Case**: Low risk, accumulation
+- **Recommendation**: Good for beginners and conservative strategies
 
-### 合约/永续交易
+### Contract/Perpetual Trading
 
-- **杠杆**: 3x 到 10x（可配置）
-- **资金费率**: 定期资金费率
-- **用途**: 高风险、做空能力
-- **推荐**: 适合有经验交易者和适当风险管理
+- **Leverage**: 3x to 10x (configurable)
+- **Funding Rate**: Periodic funding rate
+- **Use Case**: Higher risk, shorting capability
+- **Recommendation**: For experienced traders with proper risk management
 
-详见 [配置指南](configuration.md#市场类型风险参数)。
+See [Configuration Guide](configuration.md#market-type-risk-parameters) for details.
 
-## 推荐
+## Recommendations
 
-### 测试
+### Testing
 
-- 使用 `simulator`（无需 API 密钥）
-- 适合学习和开发
-- 无外部依赖
+- Use `simulator` (no API keys needed)
+- Good for learning and development
+- No external dependencies
 
-### 生产
+### Production
 
-- 使用知名交易所（Binance, OKX, Coinbase）
-- 真实交易前先用模拟器测试
-- 可用时使用测试网
+- Use established exchanges (Binance, OKX, Coinbase)
+- Test with simulator before real trading
+- Use testnet when available
 
-### DEX 交易
+### DEX Trading
 
-- 使用 `hyperliquid` 进行链上永续合约交易
-- 了解链上交易成本
-- 注意网络延迟
+- Use `hyperliquid` for on-chain perpetual futures trading
+- Understand on-chain transaction costs
+- Be aware of network latency
 
-## 常见问题
+## Troubleshooting
 
-### API 错误
+### API Errors
 
 ```bash
-# 检查 API 凭据
+# Check API credentials
 quanta config show
 
-# 测试交易所连接
+# Test exchange connection
 quanta test exchange --exchange <exchange> --coin BTC
 
-# 详细测试
+# Detailed test
 quanta test exchange --exchange <exchange> --coin BTC --verbose
 ```
 
-### 符号错误
+### Symbol Errors
 
-- 确保币种符号有效（BTC, ETH, SOL 等）
-- Hyperliquid 需要永续格式，自动处理
-- OKX 永续合约使用 `BASE/USDT:USDT` 格式
-- 检查交易所特定的符号要求
+- Ensure coin symbols are valid (BTC, ETH, SOL, etc.)
+- Hyperliquid requires perpetual format, auto-handled
+- OKX perpetual contracts use `BASE/USDT:USDT` format
+- Check exchange-specific symbol requirements
 
-### 连接问题
+### Connection Issues
 
 ```bash
-# 测试连接
+# Test connection
 quanta test exchange --exchange simulator --coin BTC
 
-# 测试特定交易所
+# Test specific exchange
 quanta test exchange --exchange okx --coin BTC --verbose
 
-# 检查配置
+# Check configuration
 quanta config show | grep -i exchange
 ```
 
-更多帮助，请参考:
+For more help, see:
 
-- [配置指南](configuration.md)
-- [交易指南](trading-guide.md)
-- [命令参考](commands.md)
+- [Configuration Guide](configuration.md)
+- [Trading Guide](trading-guide.md)
+- [Commands Reference](commands.md)

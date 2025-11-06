@@ -4,20 +4,21 @@ sequenceDiagram
     participant TW as TradingWorkflow
     participant EX as Exchange
     participant MDP as MarketDataProvider
-    participant AI as OpenRouterClient
+    participant AIClient as IAIClient (Multi-Provider)
     participant RM as RiskManager
     participant OE as OrderExecutor
     participant PM as PositionMonitorService
     participant EB as EventBus
 
     CLI->>TM: trade start
-    TM->>TW: create & start
+    Note over TM: createAIClient(config)<br/>Creates provider-specific client<br/>(OpenRouter/OpenAI/DashScope/Deepseek)
+    TM->>TW: create & start (with IAIClient)
     TW->>EB: emit cycle:start
 
     loop Trading Cycle
         TW->>EX: getAccount()
         TW->>EX: getPositions()
-        
+
         rect lightgray
         Note over TW: Stage 1 – MonitorPositions
         TW->>PM: monitorPositions()
@@ -33,8 +34,9 @@ sequenceDiagram
 
         rect lightgray
         Note over TW: Stage 3 – GenerateSignals
-        TW->>AI: generateTradingSignal()
-        AI-->>TW: TradingSignal[]
+        TW->>AIClient: generateTradingSignal()<br/>(marketData, account, positions, context)
+        Note over AIClient: BaseAIClient.buildPrompt()<br/>+ provider-specific API call
+        AIClient-->>TW: TradingSignal[]
         TW->>EB: emit cycle:signals
         end
 

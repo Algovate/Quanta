@@ -167,10 +167,45 @@ const ConfigSchema = z.object({
   env: z.enum(['live', 'paper', 'simulate']).default('simulate'),
   exchange: ExchangeConfigSchema,
   ai: z.object({
-    apiKey: z.string(),
-    model: z.string().default('deepseek/deepseek-chat'),
+    provider: z.enum(['openrouter', 'openai', 'dashscope', 'deepseek']).default('openrouter'),
     temperature: z.number().min(0).max(2).default(0.7),
-    baseUrl: z.string().optional(), // OpenRouter API base URL (defaults to https://openrouter.ai/api/v1)
+    // Legacy fields for backward compatibility (used when provider not specified)
+    apiKey: z.string().optional(),
+    model: z.string().optional(),
+    baseUrl: z.string().optional(),
+    // Provider-specific configurations
+    openrouter: z
+      .object({
+        apiKey: z.string(),
+        model: z.string().default('deepseek/deepseek-chat-v3-0324'),
+        baseUrl: z.string().optional(),
+        temperature: z.number().min(0).max(2).optional(),
+      })
+      .optional(),
+    openai: z
+      .object({
+        apiKey: z.string(),
+        model: z.string().default('gpt-4'),
+        baseUrl: z.string().optional(),
+        temperature: z.number().min(0).max(2).optional(),
+      })
+      .optional(),
+    dashscope: z
+      .object({
+        apiKey: z.string(),
+        model: z.string().default('qwen-max'),
+        baseUrl: z.string().optional(),
+        temperature: z.number().min(0).max(2).optional(),
+      })
+      .optional(),
+    deepseek: z
+      .object({
+        apiKey: z.string(),
+        model: z.string().default('deepseek-chat'),
+        baseUrl: z.string().optional(),
+        temperature: z.number().min(0).max(2).optional(),
+      })
+      .optional(),
     tracing: AITracingSchema.optional(),
     prompt: z.object({
       activeGroup: z.string(),
@@ -357,10 +392,31 @@ const DEFAULT_CONFIG: Partial<Config> = {
     testnet: true,
   },
   ai: {
-    apiKey: '',
-    model: 'deepseek/deepseek-chat-v3-0324',
+    provider: 'openrouter',
     temperature: 0.7,
-    baseUrl: undefined, // Defaults to https://openrouter.ai/api/v1
+    apiKey: '', // Legacy field for backward compatibility
+    model: 'deepseek/deepseek-chat-v3-0324', // Legacy field for backward compatibility
+    baseUrl: undefined, // Legacy field for backward compatibility
+    openrouter: {
+      apiKey: '',
+      model: 'deepseek/deepseek-chat-v3-0324',
+      baseUrl: undefined, // Defaults to https://openrouter.ai/api/v1
+    },
+    openai: {
+      apiKey: '',
+      model: 'gpt-4',
+      baseUrl: undefined, // Defaults to https://api.openai.com/v1
+    },
+    dashscope: {
+      apiKey: '',
+      model: 'qwen-max',
+      baseUrl: undefined, // Defaults to https://dashscope.aliyuncs.com/api/v1
+    },
+    deepseek: {
+      apiKey: '',
+      model: 'deepseek-chat',
+      baseUrl: undefined, // Defaults to https://api.deepseek.com/v1
+    },
     tracing: {
       langsmith: {
         enabled: false,
@@ -521,10 +577,39 @@ function parseEnvConfig(): Partial<Config> {
         | undefined,
     },
     ai: {
+      provider: (process.env.AI_PROVIDER || 'openrouter') as
+        | 'openrouter'
+        | 'openai'
+        | 'dashscope'
+        | 'deepseek',
       apiKey: process.env.OPENROUTER_API_KEY || '',
       model: process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'deepseek/deepseek-chat',
       temperature: parseNumberEnv(process.env.AI_TEMPERATURE, 0.7),
       baseUrl: process.env.OPENROUTER_BASE_URL || undefined,
+      openrouter: {
+        apiKey: process.env.OPENROUTER_API_KEY || '',
+        model: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat-v3-0324',
+        baseUrl: process.env.OPENROUTER_BASE_URL || undefined,
+        temperature: parseNumberEnv(process.env.OPENROUTER_TEMPERATURE, undefined),
+      },
+      openai: {
+        apiKey: process.env.OPENAI_API_KEY || '',
+        model: process.env.OPENAI_MODEL || 'gpt-4',
+        baseUrl: process.env.OPENAI_BASE_URL || undefined,
+        temperature: parseNumberEnv(process.env.OPENAI_TEMPERATURE, undefined),
+      },
+      dashscope: {
+        apiKey: process.env.DASHSCOPE_API_KEY || '',
+        model: process.env.DASHSCOPE_MODEL || 'qwen-max',
+        baseUrl: process.env.DASHSCOPE_BASE_URL || undefined,
+        temperature: parseNumberEnv(process.env.DASHSCOPE_TEMPERATURE, undefined),
+      },
+      deepseek: {
+        apiKey: process.env.DEEPSEEK_API_KEY || '',
+        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+        baseUrl: process.env.DEEPSEEK_BASE_URL || undefined,
+        temperature: parseNumberEnv(process.env.DEEPSEEK_TEMPERATURE, undefined),
+      },
       tracing: {
         langsmith: {
           enabled: parseBooleanEnv(process.env.LANGCHAIN_TRACING_V2, false),

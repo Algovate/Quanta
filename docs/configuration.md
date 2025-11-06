@@ -1,10 +1,10 @@
-# 配置指南
+# Configuration Guide
 
-Quanta 系统配置完整指南。
+Complete guide to Quanta system configuration.
 
-## 配置文件
+## Configuration Files
 
-### 主配置: `config/config.json`
+### Main Configuration: `config/config.json`
 
 ```json
 {
@@ -18,13 +18,12 @@ Quanta 系统配置完整指南。
     "apiSecret": "your_api_secret"
   },
   "ai": {
-    "apiKey": "sk-or-v1-your-api-key-here",
-    "model": "deepseek/deepseek-chat-v3-0324",
+    "provider": "openrouter",
     "temperature": 0.7,
-    "prompt": {
-      "activeGroup": "default",
-      "candles": { "m3": 10, "h4": 5 },
-      "sections": { "candlesTA": true, "sentiment": true, "technicalState": true }
+    "openrouter": {
+      "apiKey": "sk-or-v1-your-api-key-here",
+      "model": "deepseek/deepseek-chat-v3-0324",
+      "baseUrl": "https://openrouter.ai/api/v1"
     }
   },
   "trading": {
@@ -39,47 +38,72 @@ Quanta 系统配置完整指南。
 }
 ```
 
-**关键字段:**
+**Key Fields:**
 
-- `mode`: `single`（单工作流）或 `arena`（多无人机竞技场）
-- `env`: `simulate`, `paper`, 或 `live`
-- `exchange.marketType`: `spot` 或 `swap`（影响杠杆和风险参数）
+- `mode`: `single` (single workflow) or `arena` (multi-drone arena)
+- `env`: `simulate`, `paper`, or `live`
+- `exchange.marketType`: `spot` or `swap` (affects leverage and risk parameters)
 
-## 配置优先级
+## Configuration Priority
 
-1. **命令行参数**（最高）
-2. **环境变量**
+1. **Command-line arguments** (highest)
+2. **Environment variables**
 3. `config/config.json`
-4. **默认值**（最低）
+4. **Default values** (lowest)
 
-## 环境变量
+## Environment Variables
 
-### 模式/环境
+### Mode/Environment
 
 ```bash
-QUANTA_MODE=single   # 或 arena
-QUANTA_ENV=paper       # 或 live|simulate
+QUANTA_MODE=single   # or arena
+QUANTA_ENV=paper     # or live|simulate
 ```
 
-### 交易所
+### Exchange
 
 ```bash
 EXCHANGE_NAME=okx
 EXCHANGE_API_KEY=your_key
 EXCHANGE_API_SECRET=your_secret
-EXCHANGE_MARKET_TYPE=swap    # 或 spot; 'perp'/'perpetual' → swap
+EXCHANGE_MARKET_TYPE=swap    # or spot; 'perp'/'perpetual' → swap
 ```
 
 ### AI
 
+**Multi-Provider Support:**
+
 ```bash
+# Select provider (default: openrouter)
+AI_PROVIDER=openrouter  # or 'openai', 'dashscope', 'deepseek'
+
+# OpenRouter (default)
 OPENROUTER_API_KEY=your_key
 OPENROUTER_MODEL=deepseek/deepseek-chat-v3-0324
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1  # 可选
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1  # optional
+
+# OpenAI
+OPENAI_API_KEY=your_key
+OPENAI_MODEL=gpt-4
+OPENAI_BASE_URL=https://api.openai.com/v1  # optional
+
+# DashScope (Alibaba Cloud Tongyi Qianwen)
+DASHSCOPE_API_KEY=your_key
+DASHSCOPE_MODEL=qwen-max
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/api/v1  # optional
+
+# Deepseek
+DEEPSEEK_API_KEY=your_key
+DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1  # optional
+
+# Global temperature (can be overridden per provider)
 AI_TEMPERATURE=0.7
 ```
 
-### AI 提示词
+**Legacy Support:** Old `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, and `OPENROUTER_BASE_URL` environment variables are still supported.
+
+### AI Prompts
 
 ```bash
 PROMPT_ACTIVE_GROUP=default
@@ -90,7 +114,7 @@ PROMPT_SECTIONS_SENTIMENT=true
 PROMPT_SECTIONS_TECH_STATE=true
 ```
 
-### 交易
+### Trading
 
 ```bash
 TRADING_COINS=BTC,ETH,SOL
@@ -102,26 +126,26 @@ TRADING_PRICE_SANITY_ENABLED=true
 TRADING_PRICE_SANITY_MAX_DEVIATION=0.05
 ```
 
-### 日志
+### Logs
 
 ```bash
-LOG_DIR=/absolute/path/to/logs/text  # 覆盖 JSONL 日志目录
+LOG_DIR=/absolute/path/to/logs/text  # Override JSONL log directory
 ```
 
-## 提示词组
+## Prompt Groups
 
-提示词组存储在 `config/prompts/`。每个组包含:
+Prompt groups are stored in `config/prompts/`. Each group contains:
 
-- `metadata`: 名称、描述、版本
-- `system`: 系统提示词模板（Mustache 变量）
-- `user`: 用户提示词模板（Mustache 变量）
+- `metadata`: Name, description, version
+- `system`: System prompt template (Mustache variables)
+- `user`: User prompt template (Mustache variables)
 
-**可用组:**
+**Available Groups:**
 
-- `default`: 平衡风险 + 技术分析
-- `nofx`: NoFX 风格的分阶段决策框架
+- `default`: Balanced risk + technical analysis
+- `nofx`: NoFX-style phased decision framework
 
-**切换组:**
+**Switch Groups:**
 
 ```json
 {
@@ -133,95 +157,95 @@ LOG_DIR=/absolute/path/to/logs/text  # 覆盖 JSONL 日志目录
 }
 ```
 
-或通过环境变量:
+Or via environment variable:
 
 ```bash
 PROMPT_ACTIVE_GROUP=nofx
 ```
 
-**查看提示词:**
+**View Prompts:**
 
 ```bash
-quanta prompts view                    # 查看当前活动组
-quanta prompts view --rendered         # 查看渲染后的提示词
-quanta prompts list                    # 列出所有组
+quanta prompts view                    # View current active group
+quanta prompts view --rendered         # View rendered prompts
+quanta prompts list                    # List all groups
 ```
 
-## 关键设置
+## Key Settings
 
-### AI 设置
+### AI Settings
 
-- **apiKey**: OpenRouter API 密钥（必需，通过 `OPENROUTER_API_KEY` 或 `ai.apiKey` 设置）
-- **model**: AI 模型（默认: `deepseek/deepseek-chat-v3-0324`）
-- **temperature**: 创造性水平（默认: 0.7）
-- **baseUrl**: OpenRouter API 基础 URL（可选，默认: `https://openrouter.ai/api/v1`）
+- **apiKey**: API key (required, set via provider-specific env vars or `ai.{provider}.apiKey`)
+- **model**: AI model (default: `deepseek/deepseek-chat-v3-0324`)
+- **temperature**: Creativity level (default: 0.7)
+- **baseUrl**: API base URL (optional)
 
-**配置优先级:**
+**Configuration Priority:**
 
-1. 环境变量（`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`）
-2. `config.json` 值（`ai.apiKey`, `ai.model`, `ai.baseUrl`）
-3. 默认值
+1. Environment variables (provider-specific)
+2. `config.json` values (`ai.{provider}.*`)
+3. Default values
 
-**AI 错误处理**: 当 AI 客户端错误（4xx 状态码）时，工作流立即停止并显示清晰日志。
+**AI Error Handling**: When AI client errors (4xx status codes), workflow stops immediately with clear logs.
 
-### 交易设置
+### Trading Settings
 
-- **coins**: 要交易的加密货币列表
-- **maxPositions**: 最大并发持仓数
-- **stopLoss**: 默认止损（交易 5%，模拟 3%）
-- **maxRisk**: 每笔交易的最大风险（5%）
-- **priceSanity**: 价格过期保护（偏差 > 5% 时转换为市价单）
+- **coins**: List of cryptocurrencies to trade
+- **maxPositions**: Maximum concurrent positions
+- **stopLoss**: Default stop loss (5% trading, 3% simulation)
+- **maxRisk**: Maximum risk per trade (5%)
+- **priceSanity**: Price staleness protection (converts to market order if deviation > 5%)
 
-### 交易所设置
+### Exchange Settings
 
-- **name**: 交易所名称（`simulator`, `okx`, `binance`, `coinbase`, `hyperliquid`）
-- **testnet**: 使用测试网环境（测试时为 true）
-- **marketType**: `spot` 或 `swap`（别名: `perp`, `perpetual` 映射到 `swap`）
+- **name**: Exchange name (`simulator`, `okx`, `binance`, `coinbase`, `hyperliquid`)
+- **testnet**: Use testnet environment (true for testing)
+- **marketType**: `spot` or `swap` (aliases: `perp`, `perpetual` map to `swap`)
 
-### 市场类型风险参数
+### Market Type Risk Parameters
 
-系统根据 `marketType` 自动验证和调整风险参数:
+System automatically validates and adjusts risk parameters based on `marketType`:
 
-**现货市场** (`marketType: "spot"`):
+**Spot Market** (`marketType: "spot"`):
 
-- 杠杆: 固定为 `1x - 1x`（无杠杆）
-- 止损: 范围 `3% - 7%`
-- 最大风险: 范围 `3% - 5%`
-- 最大持仓: 范围 `6 - 10`
+- Leverage: Fixed at `1x - 1x` (no leverage)
+- Stop Loss: Range `3% - 7%`
+- Max Risk: Range `3% - 5%`
+- Max Positions: Range `6 - 10`
 
-**合约/永续市场** (`marketType: "swap"`):
+**Contract/Perpetual Market** (`marketType: "swap"`):
 
-- 杠杆: 范围 `3x - 10x`
-- 止损: 范围 `1% - 2%`
-- 最大风险: 范围 `1% - 2%`
-- 最大持仓: 范围 `1 - 4`
+- Leverage: Range `3x - 10x`
+- Stop Loss: Range `1% - 2%`
+- Max Risk: Range `1% - 2%`
+- Max Positions: Range `1 - 4`
 
-**启动验证:**
+**Startup Validation:**
 
-- 检查所有风险参数是否在允许范围内
-- 自动调整超出范围的值并发出警告
-- 显示有效风险参数摘要
+- Checks all risk parameters are within allowed ranges
+- Auto-adjusts out-of-range values with warnings
+- Displays effective risk parameters summary
 
-### 合约选择（OKX）
+### Contract Selection (OKX)
 
-- 在衍生品模式下，Quanta 使用 OKX USDT 保证金永续合约
-- 符号内部标准化为 `BASE/USDT:USDT`
-- 示例: `ETH` → `ETH/USDT:USDT`, `ETH-USDT-SWAP` → `ETH/USDT:USDT`
+- In derivatives mode, Quanta uses OKX USDT-margined perpetual contracts
+- Symbols internally standardized to `BASE/USDT:USDT`
+- Example: `ETH` → `ETH/USDT:USDT`, `ETH-USDT-SWAP` → `ETH/USDT:USDT`
 
-## CLI 配置
+## CLI Configuration
 
 ```bash
-quanta config show      # 显示当前配置
+quanta config show      # Show current configuration
 quanta config set ai.model deepseek/deepseek-chat-v3-0324
-quanta config validate  # 验证配置
-quanta config save      # 保存配置
-quanta config reset     # 重置为默认值
-quanta config init      # 从示例初始化
+quanta config validate  # Validate configuration
+quanta config save      # Save configuration
+quanta config reset     # Reset to defaults
+quanta config init      # Initialize from example
 ```
 
-## 配置示例
+## Configuration Examples
 
-### 保守配置
+### Conservative Configuration
 
 ```json
 {
@@ -234,7 +258,7 @@ quanta config init      # 从示例初始化
 }
 ```
 
-### 激进配置
+### Aggressive Configuration
 
 ```json
 {
@@ -247,14 +271,14 @@ quanta config init      # 从示例初始化
 }
 ```
 
-## 常见问题
+## Troubleshooting
 
-**配置未加载**: 检查文件是否存在 `cat config/config.json`，验证 JSON `quanta config validate`
+**Configuration not loaded**: Check file exists `cat config/config.json`, validate JSON `quanta config validate`
 
-**配置冲突**: 检查优先级顺序（命令行 > 环境变量 > config.json > 默认值）
+**Configuration conflicts**: Check priority order (command-line > environment variables > config.json > defaults)
 
-**值未生效**: 环境变量会覆盖配置文件
+**Values not taking effect**: Environment variables override configuration file
 
-**无效 JSON**: 使用 `quanta config validate` 检查语法
+**Invalid JSON**: Use `quanta config validate` to check syntax
 
-**缺少必需字段**: 使用 `quanta config init` 从示例创建
+**Missing required fields**: Use `quanta config init` to create from example

@@ -2,9 +2,9 @@
 
 This document explains the distinction between execution modes and strategy classes in Quanta.
 
-## Concepts Overview
+## Overview
 
-### 1. Execution Mode (ExecutionMode)
+### Execution Mode (ExecutionMode)
 
 **Type**: Configuration setting, not a strategy class
 
@@ -35,7 +35,7 @@ export type ExecutionMode = 'single' | 'arena';
 }
 ```
 
-### 2. Strategy Classes
+### Strategy Classes
 
 **Type**: Concrete classes implementing signal generation logic
 
