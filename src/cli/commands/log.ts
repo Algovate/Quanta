@@ -22,11 +22,62 @@ import {
   formatLogFilesAsTable,
   formatStatsAsJson,
   formatStatsAsTable,
-  exportLogsAsJson,
-  exportLogsAsCsv,
-  exportLogsAsText,
+  formatLogsAsStructured,
+  formatLogsAsJson,
 } from './log-formatters.js';
 import type { TextLog } from '../../logging/types.js';
+
+// Type definitions for command options
+interface ViewOptions {
+  lines?: number;
+  follow?: boolean;
+  context?: string;
+  level?: string;
+  grep?: string;
+  format?: string;
+  days?: number;
+  since?: string;
+  until?: string;
+}
+
+interface CleanOptions {
+  all?: boolean;
+  days?: number;
+  force?: boolean;
+  dryRun?: boolean;
+}
+
+interface ListOptions {
+  format?: string;
+  sort?: string;
+}
+
+interface StatsOptions {
+  days?: number;
+  context?: string;
+  level?: string;
+  format?: string;
+  allContexts?: boolean;
+}
+
+interface TimeRange {
+  since?: number;
+  until?: number;
+}
+
+interface FollowModeOptions {
+  context?: string;
+  level?: 'info' | 'warn' | 'error' | 'debug';
+  grep?: string;
+  format?: string;
+}
+
+// Constants
+const DEFAULT_LINES = 50;
+const DEFAULT_RETENTION_DAYS = 7;
+const FOLLOW_MODE_POLL_INTERVAL = 1000; // 1 second
+const FOLLOW_MODE_BATCH_LIMIT = 100;
+const STATS_QUERY_LIMIT = 100000;
 
 export class LogCommands {
   static register(program: Command): void {
@@ -34,12 +85,15 @@ export class LogCommands {
     program
       .command('view')
       .description('View console output logs')
-      .option('--lines <n>', 'Show last N lines (default: 50)', parseInt, 50)
+      .option('--lines <n>', 'Show last N lines (default: 50)', parseInt, DEFAULT_LINES)
       .option('-f, --follow', 'Follow mode (real-time updates)', false)
       .option('--context <context>', 'Filter by logger context (e.g., TradeStart, Server)')
       .option('--level <level>', 'Filter by log level (info|warn|error|debug)')
       .option('--grep <pattern>', 'Search/filter by pattern in message')
-      .option('--format <format>', 'Output format (formatted|raw)', 'formatted')
+      .option('--format <format>', 'Output format (structured|json)', 'structured')
+      .option('--days <n>', 'Show logs from last N days', parseInt)
+      .option('--since <date>', 'Start date (YYYY-MM-DD)')
+      .option('--until <date>', 'End date (YYYY-MM-DD)')
       .action(
         safeAction(async options => {
           await LogCommands.showConsoleOutput(options);
@@ -80,38 +134,48 @@ export class LogCommands {
       .option('--context <context>', 'Filter by context')
       .option('--level <level>', 'Filter by log level (info|warn|error|debug)')
       .option('--format <format>', 'Output format: table, json', 'table')
+      .option('--all-contexts', 'Show all contexts (not just top 10)', false)
       .action(
         safeAction(async options => {
           await LogCommands.showStats(options);
         }, 'LogCommands.stats')
       );
-
-    // Export logs
-    program
-      .command('export')
-      .description('Export logs to different formats')
-      .option('--format <format>', 'Export format: json, csv, txt', 'json')
-      .option('--output <file>', 'Output file path (required)')
-      .option('--days <n>', 'Export last N days', parseInt)
-      .option('--context <context>', 'Filter by context')
-      .option('--level <level>', 'Filter by log level (info|warn|error|debug)')
-      .option('--since <date>', 'Start date (YYYY-MM-DD)')
-      .option('--until <date>', 'End date (YYYY-MM-DD)')
-      .action(
-        safeAction(async options => {
-          await LogCommands.exportLogs(options);
-        }, 'LogCommands.export')
-      );
   }
 
-  private static async showConsoleOutput(options: {
-    lines?: number;
-    follow?: boolean;
-    context?: string;
-    level?: string;
-    grep?: string;
-    format?: string;
-  }): Promise<void> {
+  /**
+   * Parse time range options into since/until timestamps
+   */
+  private static parseTimeRange(options: {
+    days?: number;
+    since?: string;
+    until?: string;
+  }): TimeRange | { error: string } {
+    const range: TimeRange = {};
+
+    if (options.days) {
+      range.since = calculateTimeRange(options.days);
+    }
+
+    if (options.since) {
+      const parsed = parseDate(options.since);
+      if (parsed === null) {
+        return { error: `Invalid --since date: ${options.since}` };
+      }
+      range.since = parsed;
+    }
+
+    if (options.until) {
+      const parsed = parseDateEndOfDay(options.until);
+      if (parsed === null) {
+        return { error: `Invalid --until date: ${options.until}` };
+      }
+      range.until = parsed;
+    }
+
+    return range;
+  }
+
+  private static async showConsoleOutput(options: ViewOptions): Promise<void> {
     const query = QueryInterface.getInstance();
     const logger = UnifiedLogger.getInstance();
     const context = 'LogCommands';
@@ -119,12 +183,21 @@ export class LogCommands {
     // Parse and validate level
     const level = parseLogLevel(options.level);
 
+    // Parse time range
+    const timeRange = this.parseTimeRange(options);
+    if ('error' in timeRange) {
+      logger.error(chalk.red(`✗ ${timeRange.error}`), undefined, context);
+      return;
+    }
+
     try {
       // Query text logs
       const result = await query.queryTextLogs({
         context: options.context,
         level,
-        limit: options.lines || 50,
+        since: timeRange.since,
+        until: timeRange.until,
+        limit: options.lines || DEFAULT_LINES,
         offset: 0,
       });
 
@@ -153,6 +226,8 @@ export class LogCommands {
 
       // Follow mode: Poll for new logs
       if (options.follow) {
+        // Use the latest timestamp (logs are sorted DESC, so first log is newest)
+        const latestTimestamp = logs.length > 0 ? logs[0].timestamp : Date.now();
         await this.startFollowMode({
           query,
           options: {
@@ -161,7 +236,7 @@ export class LogCommands {
             grep: options.grep,
             format: options.format,
           },
-          initialTimestamp: logs.length > 0 ? logs[0].timestamp : Date.now(),
+          initialTimestamp: latestTimestamp,
         });
       }
     } finally {
@@ -176,24 +251,18 @@ export class LogCommands {
   /**
    * Display logs to console
    */
-  private static displayLogs(
-    logs: Array<{ message: string; formattedMessage?: string }>,
-    format?: string
-  ): void {
+  private static displayLogs(logs: TextLog[], format?: string): void {
     const logger = UnifiedLogger.getInstance();
     const context = 'LogCommands';
     // Logs are already sorted by timestamp DESC (newest first)
     // For display, we want oldest first so they appear in chronological order
     const sortedLogs = [...logs].reverse();
 
-    for (const log of sortedLogs) {
-      if (format === 'raw') {
-        logger.info(log.message, {}, context);
-      } else {
-        // Use formatted message (with ANSI codes) for display
-        logger.info(log.formattedMessage || log.message, {}, context);
-      }
-    }
+    // Format based on user preference, default to structured
+    const formatted =
+      format === 'json' ? formatLogsAsJson(sortedLogs) : formatLogsAsStructured(sortedLogs);
+
+    logger.info(formatted, {}, context);
   }
 
   /**
@@ -201,12 +270,7 @@ export class LogCommands {
    */
   private static async startFollowMode(options: {
     query: QueryInterface;
-    options: {
-      context?: string;
-      level?: 'info' | 'warn' | 'error' | 'debug';
-      grep?: string;
-      format?: string;
-    };
+    options: FollowModeOptions;
     initialTimestamp: number;
   }): Promise<void> {
     const logger = UnifiedLogger.getInstance();
@@ -224,7 +288,7 @@ export class LogCommands {
             context: queryOptions.context,
             level: queryOptions.level,
             since: lastTimestamp + 1, // Only get logs newer than last seen
-            limit: 100,
+            limit: FOLLOW_MODE_BATCH_LIMIT,
           });
 
           const newLogs = filterLogsByGrep(newResult.logs, queryOptions.grep);
@@ -240,7 +304,7 @@ export class LogCommands {
         } catch (error) {
           logger.error(chalk.red('Error polling logs:'), error, context);
         }
-      }, 1000); // Poll every second
+      }, FOLLOW_MODE_POLL_INTERVAL);
 
       // Handle Ctrl+C
       const sigintHandler = () => {
@@ -285,14 +349,30 @@ export class LogCommands {
   }
 
   /**
+   * Determine which files should be deleted based on options
+   */
+  private static getFilesToDelete(
+    files: LogFileMetadata[],
+    options: CleanOptions
+  ): LogFileMetadata[] {
+    if (options.all) {
+      return files;
+    }
+
+    if (options.days) {
+      const cutoff = Date.now() - options.days * 24 * 60 * 60 * 1000;
+      return files.filter(f => f.mtime.getTime() < cutoff);
+    }
+
+    // Default: delete files older than retention period
+    const cutoff = Date.now() - DEFAULT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    return files.filter(f => f.mtime.getTime() < cutoff);
+  }
+
+  /**
    * Clean log files
    */
-  private static async cleanLogs(options: {
-    all?: boolean;
-    days?: number;
-    force?: boolean;
-    dryRun?: boolean;
-  }): Promise<void> {
+  private static async cleanLogs(options: CleanOptions): Promise<void> {
     const logger = UnifiedLogger.getInstance();
     const context = 'LogCommands';
     const files = await getLogFiles();
@@ -302,19 +382,7 @@ export class LogCommands {
       return;
     }
 
-    let filesToDelete: typeof files = [];
-
-    if (options.all) {
-      filesToDelete = files;
-    } else if (options.days) {
-      const cutoff = Date.now() - options.days * 24 * 60 * 60 * 1000;
-      filesToDelete = files.filter(f => f.mtime.getTime() < cutoff);
-    } else {
-      // Default: delete files older than retention period (7 days)
-      const retentionDays = 7;
-      const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-      filesToDelete = files.filter(f => f.mtime.getTime() < cutoff);
-    }
+    const filesToDelete = this.getFilesToDelete(files, options);
 
     if (filesToDelete.length === 0) {
       logger.info(chalk.green('✓ No files to delete'));
@@ -385,7 +453,7 @@ export class LogCommands {
   /**
    * List log files
    */
-  private static async listLogFiles(options: { format?: string; sort?: string }): Promise<void> {
+  private static async listLogFiles(options: ListOptions): Promise<void> {
     const logger = UnifiedLogger.getInstance();
     const context = 'LogCommands';
     const files = await getLogFiles();
@@ -466,12 +534,7 @@ export class LogCommands {
   /**
    * Show log statistics
    */
-  private static async showStats(options: {
-    days?: number;
-    context?: string;
-    level?: string;
-    format?: string;
-  }): Promise<void> {
+  private static async showStats(options: StatsOptions): Promise<void> {
     const logger = UnifiedLogger.getInstance();
     const context = 'LogCommands';
     const query = QueryInterface.getInstance();
@@ -487,7 +550,7 @@ export class LogCommands {
       context: options.context,
       level,
       since,
-      limit: 100000, // Large limit to get all matching logs
+      limit: STATS_QUERY_LIMIT,
     });
 
     const logs = result.logs;
@@ -501,117 +564,9 @@ export class LogCommands {
     const stats = this.aggregateStats(logs);
 
     const format = options.format || 'table';
-    const output = format === 'json' ? formatStatsAsJson(stats) : formatStatsAsTable(stats);
+    const output =
+      format === 'json' ? formatStatsAsJson(stats) : formatStatsAsTable(stats, options.allContexts);
 
     logger.info(output, {}, context);
-  }
-
-  /**
-   * Calculate export time range from options
-   */
-  private static calculateExportTimeRange(options: {
-    days?: number;
-    since?: string;
-    until?: string;
-  }): { since?: number; until?: number; error?: string } {
-    let since: number | undefined;
-    let until: number | undefined;
-
-    if (options.days) {
-      since = calculateTimeRange(options.days);
-    }
-
-    if (options.since) {
-      const parsed = parseDate(options.since);
-      if (parsed === null) {
-        return { error: `Invalid --since date: ${options.since}` };
-      }
-      since = parsed;
-    }
-
-    if (options.until) {
-      const parsed = parseDateEndOfDay(options.until);
-      if (parsed === null) {
-        return { error: `Invalid --until date: ${options.until}` };
-      }
-      until = parsed;
-    }
-
-    return { since, until };
-  }
-
-  /**
-   * Export logs
-   */
-  private static async exportLogs(options: {
-    format?: string;
-    output?: string;
-    days?: number;
-    context?: string;
-    level?: string;
-    since?: string;
-    until?: string;
-  }): Promise<void> {
-    const logger = UnifiedLogger.getInstance();
-    const context = 'LogCommands';
-    const query = QueryInterface.getInstance();
-
-    if (!options.output) {
-      logger.error(chalk.red('✗ Error: --output is required'), undefined, context);
-      return;
-    }
-
-    // Calculate time range
-    const timeRange = this.calculateExportTimeRange(options);
-    if (timeRange.error) {
-      logger.error(chalk.red(`✗ ${timeRange.error}`));
-      return;
-    }
-
-    // Parse level
-    const level = parseLogLevel(options.level);
-
-    // Query logs
-    const result = await query.queryTextLogs({
-      context: options.context,
-      level,
-      since: timeRange.since,
-      until: timeRange.until,
-      limit: 100000, // Large limit
-    });
-
-    const logs = result.logs;
-
-    if (logs.length === 0) {
-      logger.info(chalk.yellow('⚠️  No logs found matching the criteria'));
-      return;
-    }
-
-    // Sort by timestamp ascending
-    logs.sort((a, b) => a.timestamp - b.timestamp);
-
-    const format = options.format || 'json';
-    let content = '';
-
-    if (format === 'json') {
-      content = exportLogsAsJson(logs);
-    } else if (format === 'csv') {
-      content = exportLogsAsCsv(logs);
-    } else if (format === 'txt') {
-      content = exportLogsAsText(logs);
-    } else {
-      logger.error(chalk.red(`✗ Invalid format: ${format}. Use json, csv, or txt`));
-      return;
-    }
-
-    // Write to file
-    try {
-      await fs.promises.writeFile(options.output, content, 'utf-8');
-      logger.info(chalk.green(`✓ Exported ${logs.length} log entries to ${options.output}`));
-      logger.info(chalk.dim(`Format: ${format}, Size: ${formatFileSize(content.length)}`));
-    } catch (error) {
-      logger.error(chalk.red(`✗ Failed to write file: ${options.output}`), error);
-      throw error;
-    }
   }
 }
