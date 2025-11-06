@@ -14,6 +14,7 @@ import { createExchangeForMode, validateModeConfiguration } from '../shared/exch
 import { setupGracefulShutdown } from '../shared/shutdown-handler.js';
 import type { Config } from '../../config/settings.js';
 import type { WorkflowConfig } from '../../types/index.js';
+import { UserFriendlyError } from '../../types/index.js';
 
 export class TradeCommands {
   /**
@@ -221,7 +222,7 @@ export class TradeCommands {
 
     // Validate prerequisites based on mode
     validateModeConfiguration(env, exchangeName, exchangeApiKey, exchangeApiSecret);
-    this.validateAIConfiguration(updatedConfig.ai?.apiKey);
+    this.validateAIConfiguration(updatedConfig);
 
     // Initialize components and construct exchange only once
     const spinner = ora('Initializing trading system...').start();
@@ -475,8 +476,20 @@ export class TradeCommands {
 
   /**
    * Validate AI configuration
+   * Checks provider-specific API key with fallback to legacy config
    */
-  private static validateAIConfiguration(apiKey?: string): void {
+  private static validateAIConfiguration(config: Config): void {
+    const provider = (config.ai.provider || 'openrouter') as
+      | 'openrouter'
+      | 'openai'
+      | 'dashscope'
+      | 'deepseek';
+
+    const providerConfig = (config.ai as any)[provider];
+
+    // Resolve API key with same logic as AI client factory
+    const apiKey = providerConfig?.apiKey || config.ai.apiKey;
+
     if (!apiKey) {
       const formatError = (
         title: string,
@@ -493,13 +506,29 @@ export class TradeCommands {
         }
         return message;
       };
-      throw new Error(
+
+      const providerName = provider === 'openrouter' ? 'OpenRouter' : provider.toUpperCase();
+      const keyLocation =
+        provider === 'openrouter' ? `ai.openrouter.apiKey` : `ai.${provider}.apiKey`;
+      const urlMap: Record<string, string> = {
+        openrouter: 'https://openrouter.ai/keys',
+        openai: 'https://platform.openai.com/api-keys',
+        dashscope: 'https://dashscope.console.aliyun.com/',
+        deepseek: 'https://platform.deepseek.com/',
+      };
+
+      throw new UserFriendlyError(
         formatError(
           'Missing AI API key',
-          'AI signal generation requires an API key from OpenRouter.',
-          `Add your OpenRouter API key to ${chalk.cyan('config.json')}`,
-          `Get API Key: ${chalk.blue('https://openrouter.ai/keys')}`
-        )
+          `AI signal generation requires an API key from ${providerName}.`,
+          `Add your ${providerName} API key to ${chalk.cyan('config.json')} as ${chalk.cyan(keyLocation)}`,
+          `Get API Key: ${chalk.blue(urlMap[provider] || 'https://openrouter.ai/keys')}`
+        ),
+        {
+          provider,
+          keyLocation,
+          url: urlMap[provider] || 'https://openrouter.ai/keys',
+        }
       );
     }
   }

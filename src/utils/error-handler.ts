@@ -1,4 +1,10 @@
-import { QuantaError, ExchangeError, AIError, ValidationError } from '../types/index.js';
+import {
+  QuantaError,
+  ExchangeError,
+  AIError,
+  ValidationError,
+  UserFriendlyError,
+} from '../types/index.js';
 import { UnifiedLogger } from '../logging/index.js';
 
 /**
@@ -13,8 +19,41 @@ export function toError(error: unknown): Error {
   return new Error(String(error));
 }
 
+/**
+ * Check if an error is a UserFriendlyError
+ */
+export function isUserFriendlyError(error: unknown): error is UserFriendlyError {
+  return error instanceof UserFriendlyError;
+}
+
+/**
+ * Handle UserFriendlyError by logging message and exiting gracefully
+ * Returns a promise that never resolves to prevent propagation
+ */
+function handleUserFriendlyError(error: UserFriendlyError): Promise<never> {
+  const logger = UnifiedLogger.getInstance();
+  // Log the error message directly (without error object to avoid stack trace)
+  logger.error(error.message, undefined, 'ErrorHandler');
+  // Exit immediately - logger will flush automatically on process exit
+  // Use setImmediate to ensure exit happens after current event loop tick
+  // but before any promise rejection handlers can run
+  setImmediate(() => {
+    process.exit(1);
+  });
+  // Return a promise that never resolves to prevent propagation
+  // This prevents commander.js from catching the rejection
+  return new Promise(() => {
+    // Never resolves, keeps promise pending until process exits
+  });
+}
+
 export class ErrorHandler {
   static handle(error: unknown, context?: string): QuantaError {
+    // Preserve UserFriendlyError as-is (don't wrap)
+    if (error instanceof UserFriendlyError) {
+      return error;
+    }
+
     if (error instanceof QuantaError) {
       return error;
     }
@@ -45,9 +84,19 @@ export class ErrorHandler {
   }
 
   static logError(error: QuantaError): void {
+    // Skip logging user-friendly errors as they're already logged by handleAsync
+    if (isUserFriendlyError(error)) {
+      return;
+    }
+
+    // After the type guard, error is a QuantaError (not UserFriendlyError)
+    // Access properties directly since QuantaError has these properties
     const logger = UnifiedLogger.getInstance();
-    logger.error(`[${error.code}] ${error.message}`, undefined, 'ErrorHandler');
-    this.logContext(error.context);
+    const code = (error as QuantaError).code;
+    const message = (error as QuantaError).message;
+    const context = (error as QuantaError).context;
+    logger.error(`[${code}] ${message}`, undefined, 'ErrorHandler');
+    this.logContext(context);
   }
 
   private static logContext(context?: Record<string, unknown>): void {
@@ -92,22 +141,9 @@ export const handleAsync = async <T>(operation: () => Promise<T>, context?: stri
   try {
     return await operation();
   } catch (error) {
-    const logger = UnifiedLogger.getInstance();
-
-    // For user-friendly errors, show clean message without stack trace
-    if (error instanceof Error) {
-      const isUserFriendlyError =
-        error.message.includes('Configuration Error') ||
-        error.message.includes('Missing API') ||
-        error.message.includes('requires API') ||
-        error.message.includes('Invalid mode');
-
-      if (isUserFriendlyError) {
-        // Log the error message directly and signal non-zero exit
-        logger.error(error.message, error, 'ErrorHandler');
-        process.exitCode = 1;
-        throw error;
-      }
+    // For user-friendly errors, handle gracefully and exit
+    if (isUserFriendlyError(error)) {
+      return handleUserFriendlyError(error) as Promise<T>;
     }
 
     // For other errors, log with context

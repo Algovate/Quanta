@@ -22,12 +22,6 @@
     "_comment_provider": "AI provider to use: 'openrouter', 'openai', 'dashscope', or 'deepseek'",
     "temperature": 0.7,
     "_comment_temperature": "AI creativity level (0.0-2.0, lower = more conservative). Can be overridden per provider.",
-    "apiKey": "",
-    "_comment_apiKey": "Legacy field for backward compatibility (used when provider-specific config not set)",
-    "model": "deepseek/deepseek-chat-v3-0324",
-    "_comment_model": "Legacy field for backward compatibility (used when provider-specific config not set)",
-    "baseUrl": "",
-    "_comment_baseUrl": "Legacy field for backward compatibility (used when provider-specific config not set)",
     "openrouter": {
       "_comment": "OpenRouter provider configuration",
       "apiKey": "",
@@ -323,18 +317,6 @@
           "max": 0.95
         },
         "_comment_confidenceRange": "AI confidence range for mock signals (min-max)"
-      },
-      "real": {
-        "apiKey": "",
-        "_comment_apiKey": "OpenRouter API key for real AI signals",
-        "model": "deepseek/deepseek-chat",
-        "_comment_model": "AI model name for signal generation",
-        "temperature": 0.7,
-        "_comment_temperature": "AI temperature (0.0-2.0, lower = more conservative)",
-        "maxRetries": 3,
-        "_comment_maxRetries": "Maximum API retry attempts on failure",
-        "timeout": 30000,
-        "_comment_timeout": "API request timeout in milliseconds (30000 = 30 seconds)"
       }
     }
   }

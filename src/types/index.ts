@@ -243,6 +243,13 @@ export class ValidationError extends QuantaError {
   }
 }
 
+export class UserFriendlyError extends QuantaError {
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(message, 'USER_FRIENDLY_ERROR', context);
+    this.name = 'UserFriendlyError';
+  }
+}
+
 // Configuration types
 export interface ExchangeConfig {
   name: string;
