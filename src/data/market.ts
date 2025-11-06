@@ -78,6 +78,8 @@ export class MarketDataProvider {
   private readonly context = 'MarketDataProvider';
   // Request deduplication for candlestick fetches to prevent duplicate API calls
   private readonly candlestickDeduplicator = new RequestDeduplicator<Candlestick[]>();
+  // Track reported cache misses to prevent spam
+  private readonly reportedCacheMisses = new Set<string>();
 
   constructor(private exchange: Exchange) {}
 
@@ -139,14 +141,20 @@ export class MarketDataProvider {
           );
           fetchedResults.push(fallbackCached);
         } else {
-          this.logger.warn(
-            'No cached data available for failed fetch',
-            {
-              coin,
-              timeframe,
-            },
-            this.context
-          );
+          // Throttle warnings: only log once per coin:timeframe combination
+          // Use debug level to reduce noise (expected during data loading)
+          const missKey = `${coin}:${timeframe}`;
+          if (!this.reportedCacheMisses.has(missKey)) {
+            this.logger.debug(
+              'No cached data available for failed fetch',
+              {
+                coin,
+                timeframe,
+              },
+              this.context
+            );
+            this.reportedCacheMisses.add(missKey);
+          }
         }
       }
     }

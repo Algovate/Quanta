@@ -46,12 +46,12 @@ export class BacktestRenderer {
     this.mode = options?.mode || 'normal';
     this.showProgress = options?.showProgress ?? true;
     this.updateIntervalMs = options?.updateIntervalMs ?? 750;
-    this.sampleEveryCycles = Math.max(1, options?.sampleEveryCycles ?? 10);
+    this.sampleEveryCycles = Math.max(1, options?.sampleEveryCycles ?? 50);
     this.thresholds = {
-      equityDeltaPctToPrint: options?.equityDeltaPctToPrint ?? 0.001,
-      upnlDeltaAbsToPrint: options?.upnlDeltaAbsToPrint ?? 10,
-      exposureDeltaPctToPrint: options?.exposureDeltaPctToPrint ?? 0.1,
-      leverageDeltaAbsToPrint: options?.leverageDeltaAbsToPrint ?? 0.2,
+      equityDeltaPctToPrint: options?.equityDeltaPctToPrint ?? 0.01,
+      upnlDeltaAbsToPrint: options?.upnlDeltaAbsToPrint ?? 50,
+      exposureDeltaPctToPrint: options?.exposureDeltaPctToPrint ?? 1.0,
+      leverageDeltaAbsToPrint: options?.leverageDeltaAbsToPrint ?? 0.5,
     };
     this.drawdownSteps = (options?.drawdownSteps ?? [5, 10, 15, 20]).sort((a, b) => a - b);
     this.ddTracker = new DrawdownTracker(this.drawdownSteps);

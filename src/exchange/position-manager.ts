@@ -277,6 +277,9 @@ export class PositionUpdateManager {
       oppositePosition.leverage
     );
 
+    // Recompute account equity and related fields to avoid drift after partial close
+    updateAccountEquity(this.config.account, this.config.positions);
+
     if (this.config.onAccountUpdate) {
       this.config.onAccountUpdate();
     }

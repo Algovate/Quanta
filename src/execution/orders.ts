@@ -8,6 +8,11 @@ import type { OrderEvent, TradeEvent } from '../core/types/trading-manager.js';
 import { getConfig } from '../config/settings.js';
 import { SlippageManager } from './slippage-manager.js';
 import { TechnicalIndicators } from '../types/index.js';
+import {
+  validateOrder as validateOrderUtil,
+  clampReduceOnlyQuantity,
+  attemptFallbackRounding,
+} from '../utils/order-validation.js';
 
 // Type guard to check if exchange is SimulatorExchange with metadata support
 function isSimulatorExchange(exchange: Exchange): exchange is Exchange & {
@@ -52,19 +57,99 @@ export class OrderExecutor {
   /**
    * Execute a partial close of a position by submitting an opposite side market order
    * for the requested fraction of current size.
+   * Validates quantity, notional, and clamps to position size for reduce-only.
    */
   async executePartialClose(position: Position, fraction: number): Promise<OrderResult> {
     try {
       const symbol = position.symbol;
       const side: 'buy' | 'sell' = position.side === 'long' ? 'sell' : 'buy';
-      const amount = Math.max(0, Math.min(1, fraction)) * position.size;
-      if (amount <= 0) return { success: false, error: 'Zero amount for partial close' };
+      const requestedAmount = Math.max(0, Math.min(1, fraction)) * position.size;
+      if (requestedAmount <= 0) {
+        return { success: false, error: 'Zero amount for partial close' };
+      }
+
+      // Get current price for validation
+      let currentPrice: number;
+      try {
+        const ticker = await this.exchange.getTicker(symbol);
+        currentPrice = (ticker as { price: number }).price;
+      } catch (error) {
+        this.logger.warn(
+          `Failed to get price for partial close validation: ${symbol}`,
+          error instanceof Error ? { error: error.message } : { error: String(error) },
+          this.context
+        );
+        // Fallback: use mark price from position
+        currentPrice = position.markPrice || position.entryPrice;
+      }
+
+      // Clamp reduce-only quantity to position size and validate
+      const clampedAmount = clampReduceOnlyQuantity(requestedAmount, position.size, symbol);
+      if (clampedAmount <= 0) {
+        return {
+          success: false,
+          error: 'Quantity below minimum after rounding and clamping to position size',
+        };
+      }
+
+      // Validate order (reduce-only, with position size)
+      const validation = validateOrderUtil(symbol, side, clampedAmount, currentPrice, {
+        isReduceOnly: true,
+        positionSize: position.size,
+      });
+
+      if (!validation.valid) {
+        // Attempt fallback rounding
+        const fallback = attemptFallbackRounding(symbol, clampedAmount, currentPrice, true);
+        if (fallback && fallback.valid && fallback.validatedQuantity) {
+          // Use fallback quantity if valid
+          const fallbackAmount = Math.min(fallback.validatedQuantity, position.size);
+          const finalValidation = validateOrderUtil(symbol, side, fallbackAmount, currentPrice, {
+            isReduceOnly: true,
+            positionSize: position.size,
+          });
+
+          if (finalValidation.valid && finalValidation.validatedQuantity) {
+            // Execute with fallback quantity
+            const order = await this.exchange.placeOrder(
+              symbol,
+              side,
+              finalValidation.validatedQuantity,
+              undefined,
+              position.leverage
+            );
+            if (isSimulatorExchange(this.exchange)) {
+              this.exchange.setOrderMetadata?.(order.id, 'AI', 'partial-close');
+            }
+            this.pushOrderEvent(
+              order,
+              symbol,
+              side,
+              finalValidation.validatedQuantity,
+              'AI',
+              'partial-close',
+              undefined
+            );
+            if (order.status === 'filled' || order.status === 'open') {
+              return { success: true, order };
+            }
+          }
+        }
+
+        return {
+          success: false,
+          error: `Order validation failed: ${validation.reason || 'Unknown reason'}`,
+        };
+      }
+
+      // Use validated quantity
+      const validatedAmount = validation.validatedQuantity || clampedAmount;
 
       // Market order for immediate reduction
       const order = await this.exchange.placeOrder(
         symbol,
         side,
-        amount,
+        validatedAmount,
         undefined,
         position.leverage
       );
@@ -72,7 +157,7 @@ export class OrderExecutor {
       if (isSimulatorExchange(this.exchange)) {
         this.exchange.setOrderMetadata?.(order.id, 'AI', 'partial-close');
       }
-      this.pushOrderEvent(order, symbol, side, amount, 'AI', 'partial-close', undefined);
+      this.pushOrderEvent(order, symbol, side, validatedAmount, 'AI', 'partial-close', undefined);
       if (order.status === 'filled' || order.status === 'open') {
         return { success: true, order };
       }

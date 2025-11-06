@@ -1,8 +1,13 @@
 import { Exchange, Account, Position, Candlestick, Order } from './types.js';
-import { normalizeSymbol } from '../utils/symbol-utils.js';
+import { normalizeSymbol, ensureUsdtSuffix } from '../utils/symbol-utils.js';
 import { CompletedTrade } from '../types/index.js';
 import { updatePositionWithPrice, updateAccountEquity } from './position-calculations.js';
 import { PositionUpdateManager } from './position-manager.js';
+import {
+  validateOrder as validateOrderUtil,
+  clampReduceOnlyQuantity,
+  attemptFallbackRounding,
+} from '../utils/order-validation.js';
 
 /**
  * BacktestExchange - Time-aware exchange for historical data replay
@@ -195,7 +200,9 @@ export class BacktestExchange implements Exchange {
     timeframe: string,
     limit: number = 100
   ): Promise<Candlestick[]> {
-    const key = `${symbol}_${timeframe}`;
+    // Normalize symbol to ensure it matches stored data keys (e.g., "ETH" -> "ETH/USDT")
+    const normalizedSymbol = ensureUsdtSuffix(symbol);
+    const key = `${normalizedSymbol}_${timeframe}`;
     const candles = this.historicalData.get(key);
 
     if (!candles) {
@@ -219,11 +226,80 @@ export class BacktestExchange implements Exchange {
     const orderPrice = price || currentPrice;
     const orderLeverage = leverage || 1;
 
+    // Check if this is a reduce-only order (opposite position exists)
+    const oppositeSide = side === 'buy' ? 'short' : 'long';
+    const oppositePosition = this.positions.find(
+      p => p.symbol === normalizedSymbol && p.side === oppositeSide
+    );
+    const isReduceOnly = oppositePosition !== undefined;
+
+    // For reduce-only orders, clamp to position size
+    let validatedAmount = amount;
+    if (isReduceOnly && oppositePosition) {
+      validatedAmount = clampReduceOnlyQuantity(amount, oppositePosition.size, normalizedSymbol);
+      if (validatedAmount <= 0) {
+        // Reject order if clamped amount is invalid
+        const order: Order = {
+          id: `bt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+          symbol: normalizedSymbol,
+          side,
+          amount,
+          price: orderPrice,
+          status: 'rejected',
+          timestamp: this.currentTime,
+        };
+        return order;
+      }
+    }
+
+    // Validate order
+    const validation = validateOrderUtil(normalizedSymbol, side, validatedAmount, orderPrice, {
+      isReduceOnly,
+      positionSize: oppositePosition?.size,
+    });
+
+    if (!validation.valid) {
+      // Attempt fallback rounding
+      const fallback = attemptFallbackRounding(
+        normalizedSymbol,
+        validatedAmount,
+        orderPrice,
+        isReduceOnly
+      );
+      if (fallback && fallback.valid && fallback.validatedQuantity) {
+        // Clamp fallback to position size if reduce-only
+        if (isReduceOnly && oppositePosition) {
+          validatedAmount = Math.min(fallback.validatedQuantity, oppositePosition.size);
+        } else {
+          validatedAmount = fallback.validatedQuantity;
+        }
+      } else {
+        // Reject order if validation fails and no fallback
+        const order: Order = {
+          id: `bt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+          symbol: normalizedSymbol,
+          side,
+          amount,
+          price: orderPrice,
+          status: 'rejected',
+          timestamp: this.currentTime,
+        };
+        return order;
+      }
+    } else if (validation.validatedQuantity) {
+      // Use validated quantity
+      validatedAmount = validation.validatedQuantity;
+      // Clamp to position size if reduce-only
+      if (isReduceOnly && oppositePosition) {
+        validatedAmount = Math.min(validatedAmount, oppositePosition.size);
+      }
+    }
+
     const order: Order = {
       id: `bt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
       symbol: normalizedSymbol,
       side,
-      amount,
+      amount: validatedAmount,
       price: orderPrice,
       status: 'open',
       timestamp: this.currentTime,
@@ -232,7 +308,7 @@ export class BacktestExchange implements Exchange {
     this.orders.push(order);
 
     // Execute order immediately at the current historical price
-    this.executeOrder(order, orderLeverage);
+    this.executeOrder(order, orderLeverage, isReduceOnly);
 
     return order;
   }
@@ -307,30 +383,57 @@ export class BacktestExchange implements Exchange {
   }
 
   private getCurrentPrice(symbol: string): number {
+    // Normalize symbol to avoid duplicates like BTC/USDT/USDT
+    const normalized = normalizeSymbol(symbol);
     // Prefer lower timeframe data for more granular pricing
-    const preferredKeys = [`${symbol}_3m`, `${symbol}_4h`];
+    const preferredKeys = [`${normalized}_3m`, `${normalized}_4h`];
 
     // 1) Try preferred timeframes first
     for (const key of preferredKeys) {
       const candles = this.historicalData.get(key);
       if (candles && candles.length > 0) {
         const idx = this.candleIndex.get(key) ?? -1;
-        if (idx >= 0) return candles[idx].close;
+        if (idx >= 0 && idx < candles.length) {
+          return candles[idx].close;
+        }
+        // If index is valid but no data yet, try previous candle
+        if (idx >= 0 && idx - 1 >= 0 && idx - 1 < candles.length) {
+          return candles[idx - 1].close;
+        }
       }
     }
 
     // 2) Fallback: any timeframe for this symbol
-    const anyKey = [...this.historicalData.keys()].find(k => k.startsWith(`${symbol}_`));
+    const anyKey = [...this.historicalData.keys()].find(k => k.startsWith(`${normalized}_`));
     if (anyKey) {
       const candles = this.historicalData.get(anyKey);
       if (candles && candles.length > 0) {
         const idx = this.candleIndex.get(anyKey) ?? -1;
-        if (idx >= 0) return candles[idx].close;
+        if (idx >= 0 && idx < candles.length) {
+          return candles[idx].close;
+        }
+        // If index is valid but no data yet, try previous candle
+        if (idx >= 0 && idx - 1 >= 0 && idx - 1 < candles.length) {
+          return candles[idx - 1].close;
+        }
+        // If no valid index, use last available candle
+        if (candles.length > 0) {
+          return candles[candles.length - 1].close;
+        }
       }
     }
 
     // 3) Ultimate fallback: static base price
-    return this.getBasePrice(symbol);
+    // Log warning when falling back to base price (indicates cache miss)
+    const basePrice = this.getBasePrice(normalized);
+    // Only log if we're past initial time (to avoid spam during initialization)
+    if (this.currentTime > 0) {
+      // Use console.warn for backtest (logger might not be available)
+      console.warn(
+        `[BacktestExchange] Cache miss for ${normalized} at ${new Date(this.currentTime).toISOString()}, using base price ${basePrice}`
+      );
+    }
+    return basePrice;
   }
 
   private getBasePrice(symbol: string): number {
@@ -348,16 +451,37 @@ export class BacktestExchange implements Exchange {
     return prices[normalizedSymbol] || 100;
   }
 
-  private executeOrder(order: Order, leverage: number = 1): void {
+  private executeOrder(order: Order, leverage: number = 1, isReduceOnly: boolean = false): void {
     const currentPrice = this.getCurrentPrice(order.symbol);
+
+    // For reduce-only orders, check if opposite position exists
+    if (isReduceOnly) {
+      const oppositeSide = order.side === 'buy' ? 'short' : 'long';
+      const oppositePosition = this.positions.find(
+        p => p.symbol === order.symbol && p.side === oppositeSide
+      );
+
+      if (!oppositePosition) {
+        // Reject reduce-only order if no opposite position
+        order.status = 'rejected';
+        return;
+      }
+
+      // Clamp amount to position size (should already be done, but double-check)
+      if (order.amount > oppositePosition.size) {
+        order.amount = oppositePosition.size;
+      }
+    }
 
     // Simulate realistic order execution with slippage
     let executedPrice: number;
     if (order.price && order.price !== currentPrice) {
       // Limit order - check if it can fill at historical price
+      // For reduce-only, allow crossing spread (closing position)
       const canFill =
         (order.side === 'buy' && order.price >= currentPrice) ||
-        (order.side === 'sell' && order.price <= currentPrice);
+        (order.side === 'sell' && order.price <= currentPrice) ||
+        isReduceOnly; // Allow reduce-only to fill even if crossing spread
 
       if (!canFill) {
         order.status = 'open'; // Keep as open limit order
@@ -384,11 +508,24 @@ export class BacktestExchange implements Exchange {
       filledAmount = Math.max(0, Math.min(order.amount, order.amount * ratio));
     }
 
+    // For reduce-only, ensure we don't exceed position size
+    if (isReduceOnly) {
+      const oppositeSide = order.side === 'buy' ? 'short' : 'long';
+      const oppositePosition = this.positions.find(
+        p => p.symbol === order.symbol && p.side === oppositeSide
+      );
+      if (oppositePosition && filledAmount > oppositePosition.size) {
+        filledAmount = oppositePosition.size;
+      }
+    }
+
     const notionalValue = filledAmount * executedPrice;
     const marginRequired = notionalValue / leverage;
 
     if (order.side === 'buy' || order.side === 'sell') {
-      if (marginRequired <= this.account.availableMargin) {
+      // For reduce-only orders, margin check is less strict (closing reduces margin)
+      // For opening orders, check margin requirement
+      if (isReduceOnly || marginRequired <= this.account.availableMargin) {
         this.positionManager.updatePosition(
           order.symbol,
           order.side,

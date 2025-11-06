@@ -140,34 +140,80 @@ export class RiskManager {
   checkMaintenance(
     position: Position,
     markPrice: number,
-    rates?: { initialMarginRate?: number; maintenanceMarginRate?: number; takerFeeRate?: number }
+    rates?: {
+      initialMarginRate?: number;
+      maintenanceMarginRate?: number;
+      takerFeeRate?: number;
+      maintenanceBuffer?: number; // Buffer to prevent early liquidation (e.g., 0.1 = 10%)
+    }
   ): {
     shouldLiquidate: boolean;
     marginRatio: number;
     equityOnPosition: number;
     maintenanceMargin: number;
+    initialMargin: number;
+    liquidationPrice: number;
   } {
     const notional = Math.abs(position.size * markPrice);
     const leverage = Math.max(1, position.leverage || 1);
     const defaultIMR = 1 / leverage; // simple proxy when no table available
     const imr = rates?.initialMarginRate ?? defaultIMR;
-    const mmr = rates?.maintenanceMarginRate ?? Math.min(imr * 0.5, 0.02); // conservative 50% of IMR or 2%
     const takerFee = rates?.takerFeeRate ?? 0.0005; // 5 bps default
+    const maintenanceBuffer = rates?.maintenanceBuffer ?? 0.1; // 10% buffer by default
+
+    // Tiered maintenance margin rate based on notional (for BTC/USDT and similar)
+    // Lower notional = lower rate, higher notional = higher rate
+    let mmr: number;
+    if (rates?.maintenanceMarginRate !== undefined) {
+      mmr = rates.maintenanceMarginRate;
+    } else {
+      // Tiered rates based on notional (matches typical exchange tiers)
+      if (notional < 5000) {
+        mmr = Math.min(imr * 0.4, 0.015); // 1.5% for small positions
+      } else if (notional < 50000) {
+        mmr = Math.min(imr * 0.5, 0.02); // 2% for medium positions
+      } else if (notional < 200000) {
+        mmr = Math.min(imr * 0.6, 0.025); // 2.5% for large positions
+      } else {
+        mmr = Math.min(imr * 0.7, 0.03); // 3% for very large positions
+      }
+    }
+
+    // Apply maintenance buffer to prevent early liquidation
+    // Buffer increases the effective maintenance margin requirement
+    const effectiveMMR = mmr * (1 + maintenanceBuffer);
 
     const entryNotional = Math.abs(position.size * position.entryPrice);
     const initialMargin = position.marginUsed || entryNotional / leverage;
     const unreal = this.computeUnrealized(position, markPrice);
     const feesBuffer = notional * takerFee; // simple fees buffer
     const equityOnPosition = initialMargin + unreal - feesBuffer;
-    const maintenanceMargin = notional * mmr;
+    const maintenanceMargin = notional * effectiveMMR;
+
+    // Calculate liquidation price (price at which equityOnPosition = maintenanceMargin)
+    // For long: liquidationPrice = entryPrice - (initialMargin - maintenanceMargin) / size
+    // For short: liquidationPrice = entryPrice + (initialMargin - maintenanceMargin) / size
+    let liquidationPrice: number;
+    if (position.side === 'long') {
+      liquidationPrice =
+        position.entryPrice -
+        (initialMargin - maintenanceMargin) / Math.abs(position.size);
+    } else {
+      liquidationPrice =
+        position.entryPrice +
+        (initialMargin - maintenanceMargin) / Math.abs(position.size);
+    }
 
     const marginRatio = maintenanceMargin > 0 ? equityOnPosition / maintenanceMargin : Infinity;
     const shouldLiquidate = equityOnPosition <= maintenanceMargin;
+
     return {
       shouldLiquidate,
       marginRatio: roundToPrecision(marginRatio, 4),
       equityOnPosition: roundToPrecision(equityOnPosition, EXCHANGE_PRECISION.USDT),
       maintenanceMargin: roundToPrecision(maintenanceMargin, EXCHANGE_PRECISION.USDT),
+      initialMargin: roundToPrecision(initialMargin, EXCHANGE_PRECISION.USDT),
+      liquidationPrice: roundToPrecision(liquidationPrice, EXCHANGE_PRECISION.USDT),
     };
   }
 

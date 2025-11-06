@@ -40,14 +40,54 @@ export class PositionMonitorService implements PositionMonitor {
   private breakevenPlusStrategy: BreakevenPlusStrategy;
   private pyramidingStrategy: PyramidingStrategy;
   private adaptiveTrailingStrategy: AdaptiveTrailingStopStrategy;
+  // Throttling: track reported events per symbol to prevent spam
+  private reportedEvents: Set<string> = new Set();
+  private monitoringVerbosity: 'verbose' | 'normal' | 'quiet' = 'normal';
 
-  constructor(riskManager: RiskManager, orderExecutor: OrderExecutor) {
+  constructor(
+    riskManager: RiskManager,
+    orderExecutor: OrderExecutor,
+    options?: { monitoringVerbosity?: 'verbose' | 'normal' | 'quiet' }
+  ) {
     this.riskManager = riskManager;
     this.orderExecutor = orderExecutor;
     this.logger = UnifiedLogger.getInstance();
+    this.monitoringVerbosity = options?.monitoringVerbosity || 'normal';
     this.breakevenPlusStrategy = new BreakevenPlusStrategy(1.5, 0.005); // 1.5R threshold, 0.5% profit buffer
     this.pyramidingStrategy = new PyramidingStrategy([1.5, 2.5], 0.25); // Add 25% at 1.5R and 2.5R
     this.adaptiveTrailingStrategy = new AdaptiveTrailingStopStrategy();
+  }
+
+  /**
+   * Check if an event should be logged based on verbosity and throttling
+   */
+  private shouldLogEvent(symbol: string, eventType: string): boolean {
+    if (this.monitoringVerbosity === 'quiet') {
+      return false;
+    }
+    if (this.monitoringVerbosity === 'verbose') {
+      return true;
+    }
+    // Normal mode: throttle - only log once per event type per symbol
+    const eventKey = `${symbol}_${eventType}`;
+    if (this.reportedEvents.has(eventKey)) {
+      return false;
+    }
+    this.reportedEvents.add(eventKey);
+    return true;
+  }
+
+  /**
+   * Clear throttling cache for a symbol (called when position is closed)
+   */
+  private clearThrottlingCache(symbol: string): void {
+    const keysToRemove: string[] = [];
+    this.reportedEvents.forEach(key => {
+      if (key.startsWith(`${symbol}_`)) {
+        keysToRemove.push(key);
+      }
+    });
+    keysToRemove.forEach(key => this.reportedEvents.delete(key));
   }
 
   checkStopLoss(position: Position, currentPrice: number): boolean {
@@ -216,6 +256,23 @@ export class PositionMonitorService implements PositionMonitor {
 
         // Maintenance margin/liquidation check (highest priority)
         const maint = this.riskManager.checkMaintenance(position, validatedPrice);
+        
+        // Log diagnostic information for margin calculations
+        this.logger.debug(
+          `Margin check for ${position.symbol} ${position.side}`,
+          {
+            marginRatio: maint.marginRatio,
+            equityOnPosition: maint.equityOnPosition,
+            maintenanceMargin: maint.maintenanceMargin,
+            initialMargin: maint.initialMargin,
+            liquidationPrice: maint.liquidationPrice,
+            markPrice: validatedPrice,
+            positionSize: position.size,
+            leverage: position.leverage,
+          },
+          this.context
+        );
+
         if (maint.shouldLiquidate) {
           const reason = `Maintenance margin breached (ratio ${maint.marginRatio.toFixed(2)})`;
           decisions.push({
@@ -226,6 +283,8 @@ export class PositionMonitorService implements PositionMonitor {
               marginRatio: maint.marginRatio,
               equityOnPosition: maint.equityOnPosition,
               maintenanceMargin: maint.maintenanceMargin,
+              initialMargin: maint.initialMargin,
+              liquidationPrice: maint.liquidationPrice,
             },
           });
           await this.executePositionClose(position, validatedPrice, reason);
@@ -244,12 +303,14 @@ export class PositionMonitorService implements PositionMonitor {
         try {
           // TP1: Close 50% at 1R and move stop to breakeven (once)
           if (!st.tp1Done && rMultiple >= 1) {
-            // Log partial TP1 event
-            this.logger.info(
-              `Partial TP1 for ${position.symbol}: 1R reached (${rMultiple.toFixed(2)}), closing 50% and moving stop to breakeven`,
-              {},
-              this.context
-            );
+            // Log partial TP1 event (throttled)
+            if (this.shouldLogEvent(position.symbol, 'tp1')) {
+              this.logger.info(
+                `Partial TP1 for ${position.symbol}: 1R reached (${rMultiple.toFixed(2)}), closing 50% and moving stop to breakeven`,
+                {},
+                this.context
+              );
+            }
             const result = await this.orderExecutor.executePartialClose(position, 0.5);
             if (!result.success) {
               this.logger.warn(
@@ -283,11 +344,13 @@ export class PositionMonitorService implements PositionMonitor {
           // TP2: Close 30% at 2R (of remaining position, which is 50% after TP1)
           // This means closing 30% of original = 60% of remaining 50%
           if (st.tp1Done && !st.tp2Done && rMultiple >= 2) {
-            this.logger.info(
-              `Partial TP2 for ${position.symbol}: 2R reached (${rMultiple.toFixed(2)}), closing 30% of original position`,
-              {},
-              this.context
-            );
+            if (this.shouldLogEvent(position.symbol, 'tp2')) {
+              this.logger.info(
+                `Partial TP2 for ${position.symbol}: 2R reached (${rMultiple.toFixed(2)}), closing 30% of original position`,
+                {},
+                this.context
+              );
+            }
             // Close 60% of remaining position (which is 50% of original) = 30% of original
             const result = await this.orderExecutor.executePartialClose(position, 0.6);
             if (!result.success) {
@@ -316,11 +379,13 @@ export class PositionMonitorService implements PositionMonitor {
           // TP3: Close 20% at 3R (of remaining position, which is 20% after TP1+TP2)
           // This means closing 100% of remaining 20% = 20% of original
           if (st.tp1Done && st.tp2Done && !st.tp3Done && rMultiple >= 3) {
-            this.logger.info(
-              `Partial TP3 for ${position.symbol}: 3R reached (${rMultiple.toFixed(2)}), closing remaining 20% of original position`,
-              {},
-              this.context
-            );
+            if (this.shouldLogEvent(position.symbol, 'tp3')) {
+              this.logger.info(
+                `Partial TP3 for ${position.symbol}: 3R reached (${rMultiple.toFixed(2)}), closing remaining 20% of original position`,
+                {},
+                this.context
+              );
+            }
             // Close 100% of remaining position (which is 20% of original) = 20% of original
             const result = await this.orderExecutor.executePartialClose(position, 1.0);
             if (!result.success) {
@@ -357,16 +422,18 @@ export class PositionMonitorService implements PositionMonitor {
               breakevenPlusDecision.action === 'move_stop' &&
               breakevenPlusDecision.details?.newStopPrice
             ) {
-              // Apply breakeven plus stop
-              this.logger.info(
-                `Breakeven plus applied for ${position.symbol}: ${breakevenPlusDecision.details.reason}`,
-                {
-                  newStopPrice: breakevenPlusDecision.details.newStopPrice,
-                  rMultiple,
-                  currentPrice: validatedPrice,
-                },
-                this.context
-              );
+              // Apply breakeven plus stop (throttled)
+              if (this.shouldLogEvent(position.symbol, 'breakeven_plus')) {
+                this.logger.info(
+                  `Breakeven plus applied for ${position.symbol}: ${breakevenPlusDecision.details.reason}`,
+                  {
+                    newStopPrice: breakevenPlusDecision.details.newStopPrice,
+                    rMultiple,
+                    currentPrice: validatedPrice,
+                  },
+                  this.context
+                );
+              }
               st.breakevenPlusApplied = true;
               decisions.push({
                 type: 'breakeven',
@@ -393,16 +460,18 @@ export class PositionMonitorService implements PositionMonitor {
             pyramidingDecision.details?.addSize
           ) {
             // Note: Pyramiding requires adding to position, which would need order executor support
-            // For now, log the decision
-            this.logger.info(
-              `Pyramiding opportunity for ${position.symbol}: ${pyramidingDecision.details.reason}`,
-              {
-                addSize: pyramidingDecision.details.addSize,
-                currentSize: position.size,
-                rMultiple,
-              },
-              this.context
-            );
+            // For now, log the decision (throttled)
+            if (this.shouldLogEvent(position.symbol, 'pyramiding')) {
+              this.logger.info(
+                `Pyramiding opportunity for ${position.symbol}: ${pyramidingDecision.details.reason}`,
+                {
+                  addSize: pyramidingDecision.details.addSize,
+                  currentSize: position.size,
+                  rMultiple,
+                },
+                this.context
+              );
+            }
             decisions.push({
               type: 'tp1', // Reuse type for now
               action: 'add_to_position',
@@ -470,19 +539,31 @@ export class PositionMonitorService implements PositionMonitor {
               this.riskManager.applyBreakevenStop(position);
               st.breakevenApplied = true;
               {
-                const stopLossPrice = this.riskManager.getEffectiveStopLossPrice(
-                  position,
-                  validatedPrice
-                );
-                const takeProfitPrice = this.riskManager.getEffectiveTakeProfitPrice(
-                  position,
-                  validatedPrice
-                );
-                this.logger.info(
-                  `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${stopLossPrice.toFixed(2)} tp=@${takeProfitPrice.toFixed(2)}`,
-                  {},
-                  this.context
-                );
+                // Log breakeven application (throttled, debug level in normal mode)
+                if (this.shouldLogEvent(position.symbol, 'breakeven')) {
+                  const stopLossPrice = this.riskManager.getEffectiveStopLossPrice(
+                    position,
+                    validatedPrice
+                  );
+                  const takeProfitPrice = this.riskManager.getEffectiveTakeProfitPrice(
+                    position,
+                    validatedPrice
+                  );
+                  // Use debug level in normal mode, info in verbose mode
+                  if (this.monitoringVerbosity === 'verbose') {
+                    this.logger.info(
+                      `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${stopLossPrice.toFixed(2)} tp=@${takeProfitPrice.toFixed(2)}`,
+                      {},
+                      this.context
+                    );
+                  } else {
+                    this.logger.debug(
+                      `Exit policy: breakeven applied | symbol=${position.symbol} side=${position.side} size=${position.size} cycles=${st.flatCycles} r=${rMultiple.toFixed(2)} stop=@${stopLossPrice.toFixed(2)} tp=@${takeProfitPrice.toFixed(2)}`,
+                      {},
+                      this.context
+                    );
+                  }
+                }
               }
               decisions.push({
                 type: 'breakeven',
@@ -725,8 +806,13 @@ export class PositionMonitorService implements PositionMonitor {
         await this.orderExecutor.executeStopLoss(position, currentPrice, source, orderReason);
       }
       // Emit a concise, context-rich close log with consistent formatting
-      const formattedLog = this.formatPositionCloseLog(position, currentPrice, reason);
-      this.logger.info(formattedLog, {}, this.context);
+      // Log position closed (important event) - suppress in quiet mode
+      if (this.monitoringVerbosity !== 'quiet') {
+        const formattedLog = this.formatPositionCloseLog(position, currentPrice, reason);
+        this.logger.info(formattedLog, {}, this.context);
+      }
+      // Clear throttling cache for this symbol when position is closed
+      this.clearThrottlingCache(position.symbol);
     } catch (error) {
       this.logger.error(
         `Failed to execute close for ${position.symbol}`,

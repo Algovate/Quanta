@@ -19,6 +19,9 @@ import { validatePrice } from '../utils/price-validation.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { TOLERANCES } from '../execution/constants/tolerances.js';
 
+// Throttle over-leverage debug logging to once per process
+let reportedOverlevered = false;
+
 /**
  * Calculate notional value for a position
  * Formula: notional = size * markPrice * leverage (matches real exchanges)
@@ -196,11 +199,10 @@ export function updateAccountEquity(account: Account, positions: Position[]): vo
   );
 
   // Available margin = equity - used margin (margin locked in positions)
+  // Compute raw (unclamped) available first for validation and diagnostics
   const availableMarginCalc = safeSubtract(account.equity, account.usedMargin);
-  account.availableMargin = Math.max(
-    0,
-    roundToPrecision(availableMarginCalc.toNumber(), EXCHANGE_PRECISION.USDT)
-  );
+  const rawAvailable = roundToPrecision(availableMarginCalc.toNumber(), EXCHANGE_PRECISION.USDT);
+  account.availableMargin = Math.max(0, rawAvailable);
 
   // Margin ratio = used margin / equity (using precision-safe division)
   if (account.equity > 0) {
@@ -209,22 +211,43 @@ export function updateAccountEquity(account: Account, positions: Position[]): vo
     account.marginRatio = 0;
   }
 
-  // Verify: equity - usedMargin = availableMargin (with tolerance for rounding)
+  // Verify: equity - usedMargin = availableMargin (within tolerance)
   const diff = Math.abs(account.equity - account.usedMargin - account.availableMargin);
   if (diff > TOLERANCES.EQUITY_DRIFT) {
     const logger = UnifiedLogger.getInstance();
-    logger.warn(
-      'Account calculation mismatch',
-      {
-        equity: account.equity,
-        usedMargin: account.usedMargin,
-        availableMargin: account.availableMargin,
-        balance: account.balance,
-        unrealizedPnl: unrealizedPnlNum,
-        diff,
-      },
-      'PositionCalculations'
-    );
+    // If raw available was negative, we clamped to 0; this is expected under stress.
+    // Log at debug once and suppress spam.
+    if (rawAvailable < 0) {
+      if (!reportedOverlevered) {
+        logger.debug(
+          'Account over-leveraged (available clamped to 0)',
+          {
+            equity: account.equity,
+            usedMargin: account.usedMargin,
+            availableMargin: account.availableMargin,
+            balance: account.balance,
+            unrealizedPnl: unrealizedPnlNum,
+            rawAvailable,
+            diff,
+          },
+          'PositionCalculations'
+        );
+        reportedOverlevered = true;
+      }
+    } else {
+      logger.warn(
+        'Account calculation mismatch',
+        {
+          equity: account.equity,
+          usedMargin: account.usedMargin,
+          availableMargin: account.availableMargin,
+          balance: account.balance,
+          unrealizedPnl: unrealizedPnlNum,
+          diff,
+        },
+        'PositionCalculations'
+      );
+    }
   }
 }
 

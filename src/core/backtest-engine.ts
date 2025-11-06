@@ -54,6 +54,10 @@ export interface BacktestEngineCallbacks {
   onSnapshot?: (snapshot: EquitySnapshot) => void;
 }
 
+export interface BacktestEngineOptions {
+  monitoringVerbosity?: 'verbose' | 'normal' | 'quiet';
+}
+
 export class BacktestEngine {
   private exchange: BacktestExchange;
   private marketDataProvider: MarketDataProvider;
@@ -78,7 +82,11 @@ export class BacktestEngine {
   private rng: () => number;
   private callbacks?: BacktestEngineCallbacks;
 
-  constructor(config: BacktestConfig, callbacks?: BacktestEngineCallbacks) {
+  constructor(
+    config: BacktestConfig,
+    callbacks?: BacktestEngineCallbacks,
+    options?: BacktestEngineOptions
+  ) {
     this.config = config;
     // Initialize RNG (seeded if provided)
     this.rng = this.createRng(config.seed);
@@ -118,7 +126,9 @@ export class BacktestEngine {
     this.orderExecutor = new OrderExecutor(this.exchange, this.riskManager, {
       forceMarketOrders: true,
     });
-    this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor);
+    this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor, {
+      monitoringVerbosity: options?.monitoringVerbosity || 'normal',
+    });
   }
 
   private createRng(seed?: number): () => number {
@@ -184,6 +194,7 @@ export class BacktestEngine {
 
   /**
    * Load historical data for all configured coins
+   * Preloads all required data and handles cache misses gracefully
    */
   private async loadHistoricalData(): Promise<void> {
     const timeframes = ['3m', '4h'];
@@ -192,20 +203,47 @@ export class BacktestEngine {
 
     let totalCandles = 0;
     const dataInfo: string[] = [];
+    const failedLoads: string[] = [];
 
     for (const coin of this.config.coins) {
       const symbol = `${coin}/USDT`;
 
       // Fetch all timeframes for a coin in parallel
       const framePromises = timeframes.map(async timeframe => {
-        const candlesticks = await this.historicalDataProvider.getHistoricalCandlesticks(
-          symbol,
-          timeframe,
-          startDate,
-          endDate
-        );
-        this.exchange.loadHistoricalData(symbol, timeframe, candlesticks);
-        return candlesticks.length;
+        try {
+          const candlesticks = await this.historicalDataProvider.getHistoricalCandlesticks(
+            symbol,
+            timeframe,
+            startDate,
+            endDate
+          );
+
+          if (candlesticks.length === 0) {
+            this.logger.warn(
+              `No historical data loaded for ${symbol} ${timeframe}`,
+              { symbol, timeframe, startDate, endDate },
+              this.context
+            );
+            failedLoads.push(`${symbol} ${timeframe}`);
+            return 0;
+          }
+
+          // Load data into exchange
+          this.exchange.loadHistoricalData(symbol, timeframe, candlesticks);
+          return candlesticks.length;
+        } catch (error) {
+          this.logger.warn(
+            `Failed to load historical data for ${symbol} ${timeframe}`,
+            {
+              symbol,
+              timeframe,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            this.context
+          );
+          failedLoads.push(`${symbol} ${timeframe}`);
+          return 0;
+        }
       });
 
       const results = await Promise.allSettled(framePromises);
@@ -215,7 +253,20 @@ export class BacktestEngine {
       );
 
       totalCandles += coinCandles;
-      dataInfo.push(`${coin}: ${coinCandles} candles`);
+      if (coinCandles > 0) {
+        dataInfo.push(`${coin}: ${coinCandles} candles`);
+      } else {
+        dataInfo.push(`${coin}: failed to load`);
+      }
+    }
+
+    // Warn if any loads failed
+    if (failedLoads.length > 0) {
+      this.logger.warn(
+        `Some historical data failed to load: ${failedLoads.join(', ')}`,
+        { failedLoads },
+        this.context
+      );
     }
 
     // Store for later display
@@ -391,12 +442,13 @@ export class BacktestEngine {
     // Fetch market data for all coins in parallel; continue on failures
     const results = await Promise.allSettled(
       this.config.coins.map(async coin => {
-        const symbol = `${coin}/USDT`;
+        // Pass coin name, not symbol - MarketDataProvider will handle normalization
+        // getMarketData() expects coin name (e.g., "ETH"), not symbol (e.g., "ETH/USDT")
         try {
-          return await this.marketDataProvider.getMarketData(symbol, timeframes);
+          return await this.marketDataProvider.getMarketData(coin, timeframes);
         } catch (error) {
           this.logger.warn(
-            `No market data available for ${symbol}`,
+            `No market data available for ${coin}`,
             error instanceof Error ? { error: error.message } : { error: String(error) },
             this.context
           );

@@ -123,6 +123,8 @@ export class TradeCommands {
       .option('--seed <number>', 'Deterministic seed', '')
       .option('--verbose', 'Verbose output (per-signal details)', false)
       .option('--quiet', 'Minimal output', false)
+      .option('--verbose-monitoring', 'Show all position monitoring messages', false)
+      .option('--quiet-monitoring', 'Suppress position monitoring messages (keep only position closed)', false)
       .option('--json', 'JSON summary output', false)
       .option('--no-progress', 'Disable progress bar', false)
       .option('--update-interval <ms>', 'Progress update interval (ms)', '750')
@@ -300,6 +302,8 @@ export class TradeCommands {
     noRisks?: boolean;
     noSignals?: boolean;
     noEquity?: boolean;
+    verboseMonitoring?: boolean;
+    quietMonitoring?: boolean;
   }): Promise<void> {
     const { BacktestEngine } = await import('../../core/backtest-engine.js');
     const { BacktestReport } = await import('../../analytics/report.js');
@@ -406,11 +410,11 @@ export class TradeCommands {
         mode,
         showProgress: options.progress !== false,
         updateIntervalMs: Number(options.updateInterval || '750') || 750,
-        sampleEveryCycles: Number(options.cycleSample || '10') || 10,
-        equityDeltaPctToPrint: Number(options.equityDeltaPct || '0.001') || 0.001,
-        upnlDeltaAbsToPrint: Number(options.upnlDelta || '10') || 10,
-        exposureDeltaPctToPrint: Number(options.exposureDeltaPct || '0.1') || 0.1,
-        leverageDeltaAbsToPrint: Number(options.leverageDelta || '0.2') || 0.2,
+        sampleEveryCycles: Number(options.cycleSample || '50') || 50,
+        equityDeltaPctToPrint: Number(options.equityDeltaPct || '0.01') || 0.01,
+        upnlDeltaAbsToPrint: Number(options.upnlDelta || '50') || 50,
+        exposureDeltaPctToPrint: Number(options.exposureDeltaPct || '1.0') || 1.0,
+        leverageDeltaAbsToPrint: Number(options.leverageDelta || '0.5') || 0.5,
         drawdownSteps:
           (options.ddSteps
             ? options.ddSteps.split(',').map((s: string) => Number(s))
@@ -420,12 +424,26 @@ export class TradeCommands {
       // Note: UnifiedLogger doesn't use configurable log levels
       // Log level filtering can be done via query filters in log view command
 
-      const engine = new BacktestEngine(backtestConfig, {
-        onPhase: phase => renderer.startPhase(phase),
-        onProgress: (p, elapsed) => renderer.updateProgress(p, elapsed),
-        onCycle: info => renderer.updateCycleLine(info),
-        onSnapshot: () => renderer.heartbeat('Still running'),
-      });
+      // Determine monitoring verbosity
+      let monitoringVerbosity: 'verbose' | 'normal' | 'quiet' = 'normal';
+      if (options.verboseMonitoring) {
+        monitoringVerbosity = 'verbose';
+      } else if (options.quietMonitoring) {
+        monitoringVerbosity = 'quiet';
+      }
+
+      const engine = new BacktestEngine(
+        backtestConfig,
+        {
+          onPhase: phase => renderer.startPhase(phase),
+          onProgress: (p, elapsed) => renderer.updateProgress(p, elapsed),
+          onCycle: info => renderer.updateCycleLine(info),
+          onSnapshot: () => renderer.heartbeat('Still running'),
+        },
+        {
+          monitoringVerbosity,
+        }
+      );
 
       const result = await engine.runBacktest();
 
