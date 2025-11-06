@@ -9,7 +9,7 @@ import type { Account, Position, TradingSignal } from '../types/index.js';
 /**
  * AI Provider Type
  */
-export type AIClientType = 'openrouter' | 'openai' | 'dashscope' | 'deepseek';
+export type AIClientType = 'openrouter' | 'openai' | 'dashscope' | 'deepseek' | 'ollama';
 
 /**
  * AI Context for signal generation

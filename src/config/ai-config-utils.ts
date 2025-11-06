@@ -6,7 +6,7 @@
 import type { Config } from './settings.js';
 
 export interface AIProviderInfo {
-  provider: 'openrouter' | 'openai' | 'dashscope' | 'deepseek';
+  provider: 'openrouter' | 'openai' | 'dashscope' | 'deepseek' | 'ollama';
   model: string;
   temperature: number;
   apiKey?: string;
@@ -22,7 +22,8 @@ export function getAIProviderInfo(config: Config): AIProviderInfo {
     | 'openrouter'
     | 'openai'
     | 'dashscope'
-    | 'deepseek';
+    | 'deepseek'
+    | 'ollama';
 
   const providerConfig = (config.ai as any)[provider];
 
@@ -36,7 +37,9 @@ export function getAIProviderInfo(config: Config): AIProviderInfo {
         ? 'gpt-4'
         : provider === 'dashscope'
           ? 'qwen-max'
-          : 'deepseek-chat');
+          : provider === 'ollama'
+            ? 'llama2'
+            : 'deepseek-chat');
 
   // Get temperature with fallback: provider config -> legacy config -> default
   const temperature = providerConfig?.temperature ?? config.ai.temperature ?? 0.7;

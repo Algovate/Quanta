@@ -24,6 +24,10 @@ Complete guide to Quanta system configuration.
       "apiKey": "sk-or-v1-your-api-key-here",
       "model": "deepseek/deepseek-chat-v3-0324",
       "baseUrl": "https://openrouter.ai/api/v1"
+    },
+    "ollama": {
+      "model": "llama2",
+      "baseUrl": "http://localhost:11434"
     }
   },
   "trading": {
@@ -75,7 +79,7 @@ EXCHANGE_MARKET_TYPE=swap    # or spot; 'perp'/'perpetual' → swap
 
 ```bash
 # Select provider (default: openrouter)
-AI_PROVIDER=openrouter  # or 'openai', 'dashscope', 'deepseek'
+AI_PROVIDER=openrouter  # or 'openai', 'dashscope', 'deepseek', 'ollama'
 
 # OpenRouter (default)
 OPENROUTER_API_KEY=your_key
@@ -96,6 +100,11 @@ DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/api/v1  # optional
 DEEPSEEK_API_KEY=your_key
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1  # optional
+
+# Ollama (local or remote instance)
+OLLAMA_MODEL=llama2  # or 'mistral', 'qwen', 'llama3', etc.
+OLLAMA_BASE_URL=http://localhost:11434  # optional (defaults to http://localhost:11434)
+OLLAMA_API_KEY=  # optional (not required for local instances)
 
 # Global temperature (can be overridden per provider)
 AI_TEMPERATURE=0.7
@@ -175,8 +184,8 @@ quanta prompts list                    # List all groups
 
 ### AI Settings
 
-- **apiKey**: API key (required, set via provider-specific env vars or `ai.{provider}.apiKey`)
-- **model**: AI model (default: `deepseek/deepseek-chat-v3-0324`)
+- **apiKey**: API key (required for most providers, optional for Ollama, set via provider-specific env vars or `ai.{provider}.apiKey`)
+- **model**: AI model (default varies by provider)
 - **temperature**: Creativity level (default: 0.7)
 - **baseUrl**: API base URL (optional)
 
@@ -185,6 +194,32 @@ quanta prompts list                    # List all groups
 1. Environment variables (provider-specific)
 2. `config.json` values (`ai.{provider}.*`)
 3. Default values
+
+**AI Providers:**
+
+- **OpenRouter**: Default provider, supports multiple models via OpenRouter.ai
+- **OpenAI**: Official OpenAI API (GPT models)
+- **DashScope**: Alibaba Cloud Tongyi Qianwen (Qwen models)
+- **Deepseek**: Official Deepseek API
+- **Ollama**: Local or remote Ollama instance (no API key required for local instances)
+
+**Ollama Setup:**
+
+1. Install Ollama: https://ollama.ai
+2. Pull a model: `ollama pull llama2` (or `mistral`, `qwen`, `llama3`, etc.)
+3. Start Ollama: `ollama serve` (usually runs automatically)
+4. Configure in `config.json`:
+   ```json
+   {
+     "ai": {
+       "provider": "ollama",
+       "ollama": {
+         "model": "llama2",
+         "baseUrl": "http://localhost:11434"
+       }
+     }
+   }
+   ```
 
 **AI Error Handling**: When AI client errors (4xx status codes), workflow stops immediately with clear logs.
 

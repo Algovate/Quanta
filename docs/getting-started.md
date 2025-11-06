@@ -37,8 +37,13 @@ quanta test exchange --exchange simulator --coin BTC
 **Live Trading**: API keys required
 
 ```bash
-# OpenRouter API key (for real AI)
+# AI provider options (choose one):
+# OpenRouter (default)
 export OPENROUTER_API_KEY=your_key_here
+
+# Or use Ollama (local instance, no API key needed)
+export AI_PROVIDER=ollama
+export OLLAMA_MODEL=llama2
 
 # Exchange API keys (for live trading)
 export OKX_API_KEY=your_key

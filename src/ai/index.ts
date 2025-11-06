@@ -4,6 +4,7 @@ export { MockAIAgent } from './mock-agent.js';
 export { OpenAIClient } from './openai-client.js';
 export { DashScopeClient } from './dashscope-client.js';
 export { DeepseekClient } from './deepseek-client.js';
+export { OllamaClient } from './ollama-client.js';
 export { createAIClient } from './factory.js';
 export type { IAIClient, AIClientType, EnrichedPositionInfo } from './types.js';
 export * from './constants.js';

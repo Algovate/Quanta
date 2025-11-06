@@ -19,7 +19,7 @@
 
   "ai": {
     "provider": "openrouter",
-    "_comment_provider": "AI provider to use: 'openrouter', 'openai', 'dashscope', or 'deepseek'",
+    "_comment_provider": "AI provider to use: 'openrouter', 'openai', 'dashscope', 'deepseek', or 'ollama'",
     "temperature": 0.7,
     "_comment_temperature": "AI creativity level (0.0-2.0, lower = more conservative). Can be overridden per provider.",
     "openrouter": {
@@ -63,6 +63,17 @@
       "_comment_model": "Deepseek model (e.g., 'deepseek-chat', 'deepseek-coder', etc.)",
       "baseUrl": "",
       "_comment_baseUrl": "Optional base URL (defaults to https://api.deepseek.com/v1)",
+      "temperature": 0.7,
+      "_comment_temperature": "Optional temperature override (uses ai.temperature if not set)"
+    },
+    "ollama": {
+      "_comment": "Ollama provider configuration (local or remote Ollama instance)",
+      "apiKey": "",
+      "_comment_apiKey": "Optional API key for Ollama (not required for local instances)",
+      "model": "llama2",
+      "_comment_model": "Ollama model name (e.g., 'llama2', 'mistral', 'qwen', 'llama3', etc.). Ensure the model is pulled: 'ollama pull <model>'",
+      "baseUrl": "",
+      "_comment_baseUrl": "Optional base URL (defaults to http://localhost:11434)",
       "temperature": 0.7,
       "_comment_temperature": "Optional temperature override (uses ai.temperature if not set)"
     },

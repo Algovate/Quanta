@@ -162,7 +162,8 @@ export class TradingManager extends EventEmitter {
       throw new Error('Trading workflow is already running');
     }
 
-    this.logger.info('Starting trading workflow...');
+    // Log to structured logs only (not console)
+    this.logger.debug('Starting trading workflow...');
 
     const sessionManager = ExecutionSessionManager.getInstance();
     let sessionAcquired = false;

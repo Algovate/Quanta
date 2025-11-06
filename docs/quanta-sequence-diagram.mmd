@@ -11,7 +11,7 @@ sequenceDiagram
     participant EB as EventBus
 
     CLI->>TM: trade start
-    Note over TM: createAIClient(config)<br/>Creates provider-specific client<br/>(OpenRouter/OpenAI/DashScope/Deepseek)
+    Note over TM: createAIClient(config)<br/>Creates provider-specific client<br/>(OpenRouter/OpenAI/DashScope/Deepseek/Ollama)
     TM->>TW: create & start (with IAIClient)
     TW->>EB: emit cycle:start
 

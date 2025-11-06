@@ -167,7 +167,9 @@ const ConfigSchema = z.object({
   env: z.enum(['live', 'paper', 'simulate']).default('simulate'),
   exchange: ExchangeConfigSchema,
   ai: z.object({
-    provider: z.enum(['openrouter', 'openai', 'dashscope', 'deepseek']).default('openrouter'),
+    provider: z
+      .enum(['openrouter', 'openai', 'dashscope', 'deepseek', 'ollama'])
+      .default('openrouter'),
     temperature: z.number().min(0).max(2).default(0.7),
     // Legacy fields for backward compatibility (used when provider not specified)
     apiKey: z.string().optional(),
@@ -202,6 +204,14 @@ const ConfigSchema = z.object({
       .object({
         apiKey: z.string(),
         model: z.string().default('deepseek-chat'),
+        baseUrl: z.string().optional(),
+        temperature: z.number().min(0).max(2).optional(),
+      })
+      .optional(),
+    ollama: z
+      .object({
+        apiKey: z.string().optional(),
+        model: z.string().default('llama2'),
         baseUrl: z.string().optional(),
         temperature: z.number().min(0).max(2).optional(),
       })
@@ -417,6 +427,11 @@ const DEFAULT_CONFIG: Partial<Config> = {
       model: 'deepseek-chat',
       baseUrl: undefined, // Defaults to https://api.deepseek.com/v1
     },
+    ollama: {
+      apiKey: undefined, // Optional for local instances
+      model: 'llama2',
+      baseUrl: undefined, // Defaults to http://localhost:11434
+    },
     tracing: {
       langsmith: {
         enabled: false,
@@ -581,7 +596,8 @@ function parseEnvConfig(): Partial<Config> {
         | 'openrouter'
         | 'openai'
         | 'dashscope'
-        | 'deepseek',
+        | 'deepseek'
+        | 'ollama',
       apiKey: process.env.OPENROUTER_API_KEY || '',
       model: process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'deepseek/deepseek-chat',
       temperature: parseNumberEnv(process.env.AI_TEMPERATURE, 0.7),
@@ -609,6 +625,12 @@ function parseEnvConfig(): Partial<Config> {
         model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
         baseUrl: process.env.DEEPSEEK_BASE_URL || undefined,
         temperature: parseNumberEnv(process.env.DEEPSEEK_TEMPERATURE, undefined),
+      },
+      ollama: {
+        apiKey: process.env.OLLAMA_API_KEY || undefined,
+        model: process.env.OLLAMA_MODEL || 'llama2',
+        baseUrl: process.env.OLLAMA_BASE_URL || undefined,
+        temperature: parseNumberEnv(process.env.OLLAMA_TEMPERATURE, undefined),
       },
       tracing: {
         langsmith: {

@@ -59,7 +59,7 @@ export class CircuitBreaker {
   constructor(private config: CircuitBreakerConfig) {
     this.logger = UnifiedLogger.getInstance();
     this.context = `CircuitBreaker:${config.name || 'default'}`;
-    this.logger.info(
+    this.logger.debug(
       'Circuit breaker initialized',
       {
         failureThreshold: config.failureThreshold,

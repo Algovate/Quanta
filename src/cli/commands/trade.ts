@@ -193,18 +193,11 @@ export class TradeCommands {
       exchangeDisplay = `${exchangeName}${exchangeTestnet ? ' (testnet)' : ''}`;
     }
 
-    // Console: Minimal essential info only
-    unifiedLogger.info(chalk.cyan('🏆 Quanta Trading System\n'), {}, 'TradeStart');
+    // Console: Single consolidated header
     unifiedLogger.info(
-      chalk.gray(`Env: ${env} | Exchange: ${exchangeDisplay} | Coins: ${coins.join(', ')}\n`),
-      {},
-      'TradeStart'
-    );
-
-    // UnifiedLogger: Full detailed output
-    unifiedLogger.info(chalk.cyan('🏆 Quanta Trading System'), {}, 'TradeStart');
-    unifiedLogger.info(
-      chalk.gray('AI-powered quantitative trading with real-time decision making\n'),
+      chalk.cyan('🏆 Quanta Trading System\n') +
+        chalk.gray(`AI-powered quantitative trading with real-time decision making\n\n`) +
+        chalk.gray(`Env: ${env} | Exchange: ${exchangeDisplay} | Coins: ${coins.join(', ')}\n`),
       {},
       'TradeStart'
     );
@@ -226,7 +219,6 @@ export class TradeCommands {
 
     // Initialize components and construct exchange only once
     const spinner = ora('Initializing trading system...').start();
-    unifiedLogger.info('Initializing trading system...', {}, 'TradeStart');
     const exchange = await createExchangeForMode({
       mode: env as 'simulation' | 'paper' | 'live',
       config: {
@@ -241,43 +233,35 @@ export class TradeCommands {
     // UnifiedLogger: Display effective exchange implementation
     this.printEffectiveExchangeWithLogger(unifiedLogger, exchange, exchangeTestnet);
 
-    // UnifiedLogger: Log configuration details
-    unifiedLogger.info(`   Coins: ${coins.join(', ')}`, {}, 'TradeStart');
+    // UnifiedLogger: Log configuration details (consolidated)
     const mt = (config.exchange?.marketType || 'spot').toLowerCase();
     unifiedLogger.info(
       chalk.gray(
-        `   MarketType: ${mt || 'spot'} | Effective risk → lev: ${config.trading.leverageRange[0]}-${config.trading.leverageRange[1]}x, SL: ${(config.trading.stopLoss * 100).toFixed(1)}%, risk/trade: ${(config.trading.maxRisk * 100).toFixed(1)}%, maxPos: ${config.trading.maxPositions}`
+        `   Coins: ${coins.join(', ')} | MarketType: ${mt || 'spot'} | ` +
+          `Risk → lev: ${config.trading.leverageRange[0]}-${config.trading.leverageRange[1]}x, ` +
+          `SL: ${(config.trading.stopLoss * 100).toFixed(1)}%, ` +
+          `risk/trade: ${(config.trading.maxRisk * 100).toFixed(1)}%, ` +
+          `maxPos: ${config.trading.maxPositions}\n`
       ),
       {},
       'TradeStart'
     );
-    unifiedLogger.info('', {}, 'TradeStart');
 
     const marketProvider = new MarketDataProvider(exchange);
     const { createAIClient } = await import('../../ai/factory.js');
-    const { getAIProviderInfo } = await import('../../config/ai-config-utils.js');
     const aiClient = createAIClient(updatedConfig);
-    const aiInfo = getAIProviderInfo(updatedConfig);
-    unifiedLogger.info(
-      chalk.gray(`   AI Provider: ${aiInfo.provider} | Model: ${aiInfo.model}`),
-      {},
-      'TradeStart'
-    );
     const workflowConfig = this.buildWorkflowConfig(config, coins);
     const manager = TradingManager.getInstance();
 
     spinner.succeed('Trading system initialized');
 
-    // Console: Minimal status
+    // Console: Consolidated startup message
     unifiedLogger.info(
-      chalk.green('🚀 Trading started. Use "quanta log view" to view detailed output.\n'),
+      chalk.green('🚀 Trading started. Use "quanta log view" to view detailed output.\n') +
+        chalk.gray('Press Ctrl+C to stop\n'),
       {},
       'TradeStart'
     );
-
-    // UnifiedLogger: Full startup message
-    unifiedLogger.info(chalk.green('🚀 Starting trading workflow...'), {}, 'TradeStart');
-    unifiedLogger.info(chalk.gray('Press Ctrl+C to stop\n'), {}, 'TradeStart');
 
     // Set up signal handlers for graceful shutdown (core manages session)
     setupGracefulShutdown({

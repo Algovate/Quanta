@@ -51,7 +51,7 @@ export type ExecutionMode = 'single' | 'arena';
 
 **Implementation**:
 
-- Uses `OpenRouterClient` to call LLM API
+- Uses `IAIClient` interface (supports multiple providers: OpenRouter, OpenAI, DashScope, Deepseek, Ollama)
 - Generates signals based on market data, technical indicators, and context
 - Returns `TradingSignal[]` with confidence scores
 
