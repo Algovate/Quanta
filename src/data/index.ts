@@ -1,4 +1,5 @@
 export { HistoricalDataProvider } from './historical.js';
+export * from './historical-providers/index.js';
 export {
   MarketDataProvider,
   type MarketData,

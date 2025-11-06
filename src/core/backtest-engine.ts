@@ -4,7 +4,16 @@ import {
   type Position,
   type TradingSignal,
 } from '../exchange/index.js';
-import { HistoricalDataProvider, MarketDataProvider, type MarketData } from '../data/index.js';
+import {
+  HistoricalDataProvider,
+  MarketDataProvider,
+  type MarketData,
+  OKXHistoricalProvider,
+  BinanceHistoricalProvider,
+  CachedHistoricalProvider,
+  SimulatedHistoricalProvider,
+  type IHistoricalProvider,
+} from '../data/index.js';
 import { MockAIAgent } from '../ai/index.js';
 import { RiskManager, OrderExecutor, PositionMonitorService } from '../execution/index.js';
 import {
@@ -19,6 +28,7 @@ import { parseUTCDateString } from '../utils/index.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { ProgressTracker } from './backtest/progress-tracker.js';
 import cliProgress from 'cli-progress';
+import { POSITION_SIZING, SIGNAL_VALIDATION } from '../execution/constants.js';
 
 // Constants
 const TIME_CONSTANTS = {
@@ -75,7 +85,30 @@ export class BacktestEngine {
     details: string[];
     timeframes: string;
   } | null = null;
-  private signalStats = { generated: 0, accepted: 0, rejected: 0 };
+  private signalStats = {
+    generated: 0,
+    accepted: 0,
+    rejected: 0,
+    byAction: {
+      LONG: { generated: 0, accepted: 0, rejected: 0 },
+      SHORT: { generated: 0, accepted: 0, rejected: 0 },
+      CLOSE: { generated: 0, accepted: 0, rejected: 0 },
+      HOLD: { generated: 0, accepted: 0, rejected: 0 },
+    },
+    rejectionReasons: {} as Record<string, number>,
+    confidenceDistribution: {
+      min: Infinity,
+      max: -Infinity,
+      totalSum: 0,
+      count: 0,
+      byAction: {
+        LONG: { min: Infinity, max: -Infinity, totalSum: 0, count: 0 },
+        SHORT: { min: Infinity, max: -Infinity, totalSum: 0, count: 0 },
+      },
+    },
+    skippedTinyPartials: 0,
+    batchedTinyPartials: 0,
+  };
   private errorCount: number = 0;
   private logger = UnifiedLogger.getInstance();
   private readonly context = 'BacktestEngine';
@@ -100,8 +133,9 @@ export class BacktestEngine {
       throw new Error('Start date must be before end date');
     }
 
-    // Initialize exchange with historical data provider (deterministic if seeded)
-    this.historicalDataProvider = new HistoricalDataProvider(this.rng);
+    // Initialize historical data provider based on config
+    const provider = this.createHistoricalProvider();
+    this.historicalDataProvider = new HistoricalDataProvider(provider, this.rng);
 
     this.exchange = new BacktestExchange(
       config.initialBalance,
@@ -125,6 +159,7 @@ export class BacktestEngine {
     this.riskManager = new RiskManager(riskParams);
     this.orderExecutor = new OrderExecutor(this.exchange, this.riskManager, {
       forceMarketOrders: true,
+      minNotionalUsd: config.backtestExec?.minNotionalUsd,
     });
     this.positionMonitor = new PositionMonitorService(this.riskManager, this.orderExecutor, {
       monitoringVerbosity: options?.monitoringVerbosity || 'normal',
@@ -145,6 +180,44 @@ export class BacktestEngine {
       // >>> 0 ensures unsigned; divide by 2^32
       return (state >>> 0) / 4294967296;
     };
+  }
+
+  /**
+   * Create historical data provider based on config
+   */
+  private createHistoricalProvider(): IHistoricalProvider {
+    const providerType = this.config.historicalProvider || 'sim';
+
+    let provider: IHistoricalProvider;
+
+    switch (providerType) {
+      case 'okx':
+        provider = new OKXHistoricalProvider({
+          apiKey: this.config.exchange?.apiKey,
+          apiSecret: this.config.exchange?.apiSecret,
+          passphrase: this.config.exchange?.passphrase,
+          testnet: this.config.exchange?.testnet,
+        });
+        break;
+      case 'binance':
+        provider = new BinanceHistoricalProvider({
+          apiKey: this.config.exchange?.apiKey,
+          apiSecret: this.config.exchange?.apiSecret,
+          testnet: this.config.exchange?.testnet,
+        });
+        break;
+      case 'sim':
+      default:
+        provider = new SimulatedHistoricalProvider(this.rng);
+        break;
+    }
+
+    // Wrap with disk cache if cache directory is specified
+    if (this.config.dataCacheDir) {
+      provider = new CachedHistoricalProvider(provider, this.config.dataCacheDir);
+    }
+
+    return provider;
   }
 
   /**
@@ -180,8 +253,14 @@ export class BacktestEngine {
   private displayDataSourceInfo(): void {
     if (this.dataSourceInfo) {
       const logger = UnifiedLogger.getInstance();
+      const providerName =
+        this.config.historicalProvider === 'okx'
+          ? 'OKX historical data'
+          : this.config.historicalProvider === 'binance'
+            ? 'Binance historical data'
+            : 'Simulated historical data';
       logger.info(
-        `📊 Data Source: Simulated historical data`,
+        `📊 Data Source: ${providerName}`,
         {
           totalCandles: this.dataSourceInfo.totalCandles.toLocaleString(),
           timeframes: this.dataSourceInfo.timeframes,
@@ -201,80 +280,120 @@ export class BacktestEngine {
     const startDate = new Date(this.startTime);
     const endDate = new Date(this.endTime);
 
-    let totalCandles = 0;
-    const dataInfo: string[] = [];
-    const failedLoads: string[] = [];
-
-    for (const coin of this.config.coins) {
-      const symbol = `${coin}/USDT`;
-
-      // Fetch all timeframes for a coin in parallel
-      const framePromises = timeframes.map(async timeframe => {
-        try {
-          const candlesticks = await this.historicalDataProvider.getHistoricalCandlesticks(
-            symbol,
-            timeframe,
-            startDate,
-            endDate
-          );
-
-          if (candlesticks.length === 0) {
-            this.logger.warn(
-              `No historical data loaded for ${symbol} ${timeframe}`,
-              { symbol, timeframe, startDate, endDate },
-              this.context
-            );
-            failedLoads.push(`${symbol} ${timeframe}`);
-            return 0;
-          }
-
-          // Load data into exchange
-          this.exchange.loadHistoricalData(symbol, timeframe, candlesticks);
-          return candlesticks.length;
-        } catch (error) {
-          this.logger.warn(
-            `Failed to load historical data for ${symbol} ${timeframe}`,
-            {
-              symbol,
-              timeframe,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            this.context
-          );
-          failedLoads.push(`${symbol} ${timeframe}`);
-          return 0;
-        }
-      });
-
-      const results = await Promise.allSettled(framePromises);
-      const coinCandles = results.reduce(
-        (sum, r) => (r.status === 'fulfilled' ? sum + r.value : sum),
-        0
-      );
-
-      totalCandles += coinCandles;
-      if (coinCandles > 0) {
-        dataInfo.push(`${coin}: ${coinCandles} candles`);
-      } else {
-        dataInfo.push(`${coin}: failed to load`);
-      }
-    }
+    const results = await this.loadDataForAllCoins(timeframes, startDate, endDate);
 
     // Warn if any loads failed
-    if (failedLoads.length > 0) {
+    if (results.failedLoads.length > 0) {
       this.logger.warn(
-        `Some historical data failed to load: ${failedLoads.join(', ')}`,
-        { failedLoads },
+        `Some historical data failed to load: ${results.failedLoads.join(', ')}`,
+        { failedLoads: results.failedLoads },
         this.context
       );
     }
 
     // Store for later display
     this.dataSourceInfo = {
-      totalCandles,
-      details: dataInfo,
+      totalCandles: results.totalCandles,
+      details: results.dataInfo,
       timeframes: timeframes.join(', '),
     };
+  }
+
+  /**
+   * Load historical data for all coins
+   */
+  private async loadDataForAllCoins(
+    timeframes: string[],
+    startDate: Date,
+    endDate: Date
+  ): Promise<{ totalCandles: number; dataInfo: string[]; failedLoads: string[] }> {
+    let totalCandles = 0;
+    const dataInfo: string[] = [];
+    const failedLoads: string[] = [];
+
+    for (const coin of this.config.coins) {
+      const symbol = `${coin}/USDT`;
+      const coinResult = await this.loadDataForCoin(symbol, coin, timeframes, startDate, endDate);
+
+      totalCandles += coinResult.candleCount;
+      dataInfo.push(coinResult.info);
+      failedLoads.push(...coinResult.failed);
+    }
+
+    return { totalCandles, dataInfo, failedLoads };
+  }
+
+  /**
+   * Load historical data for a single coin across all timeframes
+   */
+  private async loadDataForCoin(
+    symbol: string,
+    coin: string,
+    timeframes: string[],
+    startDate: Date,
+    endDate: Date
+  ): Promise<{ candleCount: number; info: string; failed: string[] }> {
+    const framePromises = timeframes.map(timeframe =>
+      this.loadDataForTimeframe(symbol, timeframe, startDate, endDate)
+    );
+
+    const results = await Promise.allSettled(framePromises);
+    const coinCandles = results.reduce(
+      (sum, r) => (r.status === 'fulfilled' ? sum + r.value.candleCount : sum),
+      0
+    );
+    const failed = results
+      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      .map(r => r.reason?.symbolTimeframe || 'unknown');
+
+    return {
+      candleCount: coinCandles,
+      info: coinCandles > 0 ? `${coin}: ${coinCandles} candles` : `${coin}: failed to load`,
+      failed,
+    };
+  }
+
+  /**
+   * Load historical data for a single symbol/timeframe
+   */
+  private async loadDataForTimeframe(
+    symbol: string,
+    timeframe: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<{ candleCount: number; symbolTimeframe: string }> {
+    try {
+      const candlesticks = await this.historicalDataProvider.getHistoricalCandlesticks(
+        symbol,
+        timeframe,
+        startDate,
+        endDate
+      );
+
+      if (candlesticks.length === 0) {
+        this.logger.warn(
+          `No historical data loaded for ${symbol} ${timeframe}`,
+          { symbol, timeframe, startDate, endDate },
+          this.context
+        );
+        throw { symbolTimeframe: `${symbol} ${timeframe}` };
+      }
+
+      // Load data into exchange
+      this.exchange.loadHistoricalData(symbol, timeframe, candlesticks);
+      return { candleCount: candlesticks.length, symbolTimeframe: `${symbol} ${timeframe}` };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load historical data for ${symbol} ${timeframe}`,
+        {
+          symbol,
+          timeframe,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        this.context
+      );
+      throw { symbolTimeframe: `${symbol} ${timeframe}` };
+    }
   }
 
   /**
@@ -375,7 +494,35 @@ export class BacktestEngine {
     // Generate AI signals
     const signals = await this.generateSignals(marketData, context);
 
-    // Only count actionable signals (exclude HOLD)
+    // Track all signals by action type and confidence
+    for (const signal of signals) {
+      const action = signal.action;
+      if (this.signalStats.byAction[action]) {
+        this.signalStats.byAction[action].generated++;
+      }
+
+      // Track confidence distribution
+      if (signal.confidence !== undefined) {
+        const conf = signal.confidence;
+        const dist = this.signalStats.confidenceDistribution;
+        dist.min = Math.min(dist.min, conf);
+        dist.max = Math.max(dist.max, conf);
+        dist.totalSum += conf;
+        dist.count++;
+
+        if (action === 'LONG' || action === 'SHORT') {
+          const actionStats = dist.byAction[action];
+          if (actionStats) {
+            actionStats.min = Math.min(actionStats.min, conf);
+            actionStats.max = Math.max(actionStats.max, conf);
+            actionStats.totalSum += conf;
+            actionStats.count++;
+          }
+        }
+      }
+    }
+
+    // Only count actionable signals (exclude HOLD) for main counter
     const actionableSignals = signals.filter(s => s.action !== 'HOLD');
     this.signalStats.generated += actionableSignals.length;
 
@@ -515,20 +662,39 @@ export class BacktestEngine {
           currentPrice
         );
 
-        // Record result - result is always defined, but success may be false
+        // Record result with diagnostic tracking
+        const action = signal.action;
         if (result.success) {
           this.signalStats.accepted++;
+          if (this.signalStats.byAction[action]) {
+            this.signalStats.byAction[action].accepted++;
+          }
         } else {
           this.signalStats.rejected++;
+          if (this.signalStats.byAction[action]) {
+            this.signalStats.byAction[action].rejected++;
+          }
+
+          // Track rejection reason
+          const reason = result.error || 'Unknown error';
+          this.signalStats.rejectionReasons[reason] =
+            (this.signalStats.rejectionReasons[reason] || 0) + 1;
         }
       } catch (error) {
         // Count exceptions as rejected signals
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         this.logger.error(
           `Failed to execute signal for ${signal.coin}`,
           error instanceof Error ? error : new Error(String(error)),
           this.context
         );
         this.signalStats.rejected++;
+        const action = signal.action;
+        if (this.signalStats.byAction[action]) {
+          this.signalStats.byAction[action].rejected++;
+        }
+        this.signalStats.rejectionReasons[`Exception: ${errorMsg}`] =
+          (this.signalStats.rejectionReasons[`Exception: ${errorMsg}`] || 0) + 1;
       }
     }
   }
@@ -571,6 +737,102 @@ export class BacktestEngine {
       reason: trade.reason || 'end_of_backtest',
     }));
 
+    // Get partial close stats from OrderExecutor
+    const partialCloseStats = this.orderExecutor.getPartialCloseStats();
+
+    // Calculate final averages for confidence distribution
+    const confDist = this.signalStats.confidenceDistribution;
+    const finalSignalStats = {
+      ...this.signalStats,
+      skippedTinyPartials: partialCloseStats.skipped,
+      batchedTinyPartials: partialCloseStats.batched,
+      confidenceDistribution: {
+        min: confDist.min === Infinity ? 0 : confDist.min,
+        max: confDist.max === -Infinity ? 0 : confDist.max,
+        avg: confDist.count > 0 ? confDist.totalSum / confDist.count : 0,
+        byAction: {
+          LONG:
+            confDist.byAction.LONG.count > 0
+              ? {
+                  min: confDist.byAction.LONG.min === Infinity ? 0 : confDist.byAction.LONG.min,
+                  max: confDist.byAction.LONG.max === -Infinity ? 0 : confDist.byAction.LONG.max,
+                  avg: confDist.byAction.LONG.totalSum / confDist.byAction.LONG.count,
+                  count: confDist.byAction.LONG.count,
+                }
+              : undefined,
+          SHORT:
+            confDist.byAction.SHORT.count > 0
+              ? {
+                  min: confDist.byAction.SHORT.min === Infinity ? 0 : confDist.byAction.SHORT.min,
+                  max: confDist.byAction.SHORT.max === -Infinity ? 0 : confDist.byAction.SHORT.max,
+                  avg: confDist.byAction.SHORT.totalSum / confDist.byAction.SHORT.count,
+                  count: confDist.byAction.SHORT.count,
+                }
+              : undefined,
+        },
+      },
+    };
+
+    // Build initialization environment summary
+    const execDefaults = {
+      takerFeeRate: 0.0004,
+      makerFeeRate: 0.0002,
+      maxMarketSlippageBps: 5,
+      partialFillProbability: 0.0,
+      minPartialFillRatio: 0.5,
+      maxPartialFillRatio: 1.0,
+      networkLatencyMs: 0,
+      latencySlippageBpsPerSec: 0.5,
+    } as const;
+    const execCfg = { ...execDefaults, ...(this.config.backtestExec || {}) };
+
+    const initEnv = {
+      trading: {
+        coins: this.config.coins,
+        period: { start: this.config.startDate, end: this.config.endDate },
+        initialBalance: this.config.initialBalance,
+        maxPositions: this.config.maxPositions || 6,
+      },
+      leverage: { min: 1, max: this.config.leverage || 1 },
+      riskSizing: {
+        maxRiskPerTrade: 0.05,
+        maxCapitalPercent: POSITION_SIZING.MAX_CAPITAL_PERCENT,
+        minReservePercent: POSITION_SIZING.MIN_RESERVE_PERCENT,
+        maxPositionSizePercent: POSITION_SIZING.MAX_POSITION_SIZE_PERCENT,
+      },
+      ai: {
+        provider: 'mock' as const,
+        model: 'internal',
+        context: {
+          maxPositions: this.config.maxPositions || 6,
+          maxRiskPerTrade: 0.05,
+          defaultStopLoss: 0.03,
+          leverage: { min: 1, max: this.config.leverage || 1 },
+        },
+      },
+      validation: {
+        minConfidence: SIGNAL_VALIDATION.MIN_CONFIDENCE,
+        maxSameSidePositions: POSITION_SIZING.MAX_SAME_SIDE_POSITIONS,
+        correlationThreshold: POSITION_SIZING.MAX_PAIRWISE_CORRELATION,
+      },
+      execution: {
+        takerFeeRate: execCfg.takerFeeRate,
+        makerFeeRate: execCfg.makerFeeRate,
+        maxMarketSlippageBps: execCfg.maxMarketSlippageBps,
+        partialFillProbability: execCfg.partialFillProbability,
+        networkLatencyMs: execCfg.networkLatencyMs,
+        latencySlippageBpsPerSec: execCfg.latencySlippageBpsPerSec,
+        minNotionalUsd: execCfg.minNotionalUsd,
+      },
+      dataSource: this.dataSourceInfo
+        ? {
+            timeframes: this.dataSourceInfo.timeframes,
+            details: this.dataSourceInfo.details,
+            provider: this.config.historicalProvider || 'sim',
+          }
+        : undefined,
+    };
+
     // Create result object first (without metrics)
     const resultWithoutMetrics: Omit<BacktestResult, 'metrics'> = {
       config: this.config,
@@ -581,7 +843,8 @@ export class BacktestEngine {
       trades,
       finalBalance: finalAccount.balance,
       finalEquity: finalAccount.equity,
-      signalStats: this.signalStats,
+      signalStats: finalSignalStats,
+      initEnv,
     };
 
     // Calculate performance metrics using the complete result
@@ -600,7 +863,8 @@ export class BacktestEngine {
       metrics,
       finalBalance: finalAccount.balance,
       finalEquity: finalAccount.equity,
-      signalStats: this.signalStats,
+      signalStats: finalSignalStats,
+      initEnv,
     };
   }
 }

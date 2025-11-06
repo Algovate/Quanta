@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
+import { format, addMonths, subMonths } from 'date-fns';
 import { getConfig } from '../../config/settings.js';
 import { MarketDataProvider } from '../../data/index.js';
 import { TradingManager } from '../../core/index.js';
@@ -12,11 +13,143 @@ import { checkSessionConflict } from '../shared/session-guard.js';
 import { validateEnv, validateCoins } from '../shared/validation.js';
 import { createExchangeForMode, validateModeConfiguration } from '../shared/exchange-factory.js';
 import { setupGracefulShutdown } from '../shared/shutdown-handler.js';
+import { parseUTCDateString } from '../../utils/time.js';
 import type { Config } from '../../config/settings.js';
-import type { WorkflowConfig } from '../../types/index.js';
+import type { WorkflowConfig, BacktestConfig } from '../../types/index.js';
 import { UserFriendlyError } from '../../types/index.js';
 
+/**
+ * Raw CLI options for backtest command
+ */
+interface BacktestCLIOptions {
+  coins?: string;
+  start?: string;
+  end?: string;
+  initialBalance?: string;
+  seed?: string;
+  historicalProvider?: string;
+  dataCacheDir?: string;
+  noCache?: boolean;
+  exchangeApiKey?: string;
+  exchangeApiSecret?: string;
+  exchangePassphrase?: string;
+  exchangeTestnet?: boolean;
+  verbose?: boolean;
+  quiet?: boolean;
+  json?: boolean;
+  progress?: boolean;
+  updateInterval?: string;
+  cycleSample?: string;
+  equityDeltaPct?: string;
+  minNotionalUsd?: string;
+  upnlDelta?: string;
+  exposureDeltaPct?: string;
+  leverageDelta?: string;
+  ddSteps?: string;
+  summaryOnly?: boolean;
+  noRisks?: boolean;
+  noSignals?: boolean;
+  noEquity?: boolean;
+  verboseMonitoring?: boolean;
+  quietMonitoring?: boolean;
+}
+
 export class TradeCommands {
+  /**
+   * Parse and validate backtest dates
+   */
+  private static parseBacktestDates(
+    startStr: string | undefined,
+    endStr: string | undefined
+  ): { startDate: string; endDate: string } {
+
+    const now = new Date();
+    let start = startStr;
+    let end = endStr;
+
+    // Derive default 4-month span when dates are missing
+    if (!start && !end) {
+      const endD = now;
+      const startD = subMonths(endD, 4);
+      start = format(startD, 'yyyy-MM-dd');
+      end = format(endD, 'yyyy-MM-dd');
+    }
+
+    try {
+      if (start && !end) {
+        parseUTCDateString(start);
+        const s = new Date(start + 'T00:00:00Z');
+        end = format(addMonths(s, 4), 'yyyy-MM-dd');
+      } else if (!start && end) {
+        parseUTCDateString(end);
+        const e = new Date(end + 'T00:00:00Z');
+        start = format(subMonths(e, 4), 'yyyy-MM-dd');
+      }
+
+      // Validate dates
+      const startTimestamp = parseUTCDateString(start as string);
+      const endTimestamp = parseUTCDateString(end as string);
+
+      if (startTimestamp >= endTimestamp) {
+        throw new Error('Start date must be before end date');
+      }
+
+      return { startDate: start as string, endDate: end as string };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Invalid')) {
+        throw error;
+      }
+      throw new Error(
+        `Invalid date format. Use YYYY-MM-DD. ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Parse exchange configuration from CLI options
+   */
+  private static parseExchangeConfig(
+    historicalProvider: 'sim' | 'okx' | 'binance',
+    options: BacktestCLIOptions
+  ): BacktestConfig['exchange'] {
+    if (
+      (historicalProvider === 'okx' || historicalProvider === 'binance') &&
+      options.exchangeApiKey &&
+      options.exchangeApiSecret
+    ) {
+      const config: BacktestConfig['exchange'] = {
+        name: historicalProvider,
+        apiKey: options.exchangeApiKey,
+        apiSecret: options.exchangeApiSecret,
+        testnet: options.exchangeTestnet || false,
+      };
+      if (historicalProvider === 'okx' && options.exchangePassphrase) {
+        config.passphrase = options.exchangePassphrase;
+      }
+      return config;
+    }
+    return undefined;
+  }
+
+  /**
+   * Determine cache directory from CLI options
+   */
+  private static determineCacheDir(
+    historicalProvider: 'sim' | 'okx' | 'binance',
+    options: BacktestCLIOptions
+  ): string | undefined {
+    if (options.noCache) {
+      return undefined;
+    }
+    if (options.dataCacheDir) {
+      return options.dataCacheDir;
+    }
+    if (historicalProvider === 'okx' || historicalProvider === 'binance') {
+      return './.quanta-cache/historical';
+    }
+    return undefined;
+  }
+
   /**
    * Build a workflow configuration from loaded settings and selected coins.
    * Keeps the startTrading path concise and improves readability.
@@ -121,10 +254,30 @@ export class TradeCommands {
       .option('-e, --end <date>', 'End date (YYYY-MM-DD)')
       .option('--initial-balance <amount>', 'Initial balance', '10000')
       .option('--seed <number>', 'Deterministic seed', '')
+      .option(
+        '--historical-provider <provider>',
+        'Historical data provider: sim, okx, binance',
+        'sim'
+      )
+      .option(
+        '--data-cache-dir <dir>',
+        'Directory to cache historical data (default: ./.quanta-cache/historical)',
+        ''
+      )
+      .option('--no-cache', 'Disable caching of historical data', false)
+      .option('--min-notional-usd <n>', 'Minimum notional (USD) for closes', '')
+      .option('--exchange-api-key <key>', 'Exchange API key (for okx/binance)', '')
+      .option('--exchange-api-secret <secret>', 'Exchange API secret (for okx/binance)', '')
+      .option('--exchange-passphrase <passphrase>', 'Exchange passphrase (for okx)', '')
+      .option('--exchange-testnet', 'Use exchange testnet', false)
       .option('--verbose', 'Verbose output (per-signal details)', false)
       .option('--quiet', 'Minimal output', false)
       .option('--verbose-monitoring', 'Show all position monitoring messages', false)
-      .option('--quiet-monitoring', 'Suppress position monitoring messages (keep only position closed)', false)
+      .option(
+        '--quiet-monitoring',
+        'Suppress position monitoring messages (keep only position closed)',
+        false
+      )
       .option('--json', 'JSON summary output', false)
       .option('--no-progress', 'Disable progress bar', false)
       .option('--update-interval <ms>', 'Progress update interval (ms)', '750')
@@ -281,34 +434,10 @@ export class TradeCommands {
     await manager.start(exchange, marketProvider, aiClient, workflowConfig);
   }
 
-  private static async runBacktest(options: {
-    coins?: string;
-    start: string;
-    end: string;
-    initialBalance: string;
-    seed?: string;
-    verbose?: boolean;
-    quiet?: boolean;
-    json?: boolean;
-    progress?: boolean;
-    updateInterval?: string;
-    cycleSample?: string;
-    equityDeltaPct?: string;
-    upnlDelta?: string;
-    exposureDeltaPct?: string;
-    leverageDelta?: string;
-    ddSteps?: string;
-    summaryOnly?: boolean;
-    noRisks?: boolean;
-    noSignals?: boolean;
-    noEquity?: boolean;
-    verboseMonitoring?: boolean;
-    quietMonitoring?: boolean;
-  }): Promise<void> {
+  private static async runBacktest(options: BacktestCLIOptions): Promise<void> {
     const { BacktestEngine } = await import('../../core/backtest-engine.js');
     const { BacktestReport } = await import('../../analytics/report.js');
     const { BacktestRenderer } = await import('../../utils/cli-render.js');
-    const { format, addMonths, subMonths } = await import('date-fns');
     const logger = UnifiedLogger.getInstance();
     logger.info(chalk.cyan('📈 Quanta Backtest'), {}, 'TradeCommands');
     logger.info(chalk.gray('Historical strategy validation\n'), {}, 'TradeCommands');
@@ -319,67 +448,42 @@ export class TradeCommands {
       ? options.coins.split(',').map((c: string) => c.trim().toUpperCase())
       : config.trading.coins;
 
-    // Derive default 4-month span when dates are missing
-    const now = new Date();
-    let startStr = options.start;
-    let endStr = options.end;
+    // Parse and validate dates
+    const { startDate, endDate } = TradeCommands.parseBacktestDates(options.start, options.end);
 
-    if (!startStr && !endStr) {
-      const endD = now;
-      const startD = subMonths(endD, 4);
-      startStr = format(startD, 'yyyy-MM-dd');
-      endStr = format(endD, 'yyyy-MM-dd');
-    }
-
-    // Import UTC date parser for consistent timezone handling
-    const { parseUTCDateString } = await import('../../utils/time.js');
-
-    try {
-      if (startStr && !endStr) {
-        // Validate start date using UTC parser
-        parseUTCDateString(startStr);
-        // Calculate end date from start (using date-fns which handles calendar months correctly)
-        const s = new Date(startStr + 'T00:00:00Z'); // Parse as UTC for date-fns
-        endStr = format(addMonths(s, 4), 'yyyy-MM-dd');
-      } else if (!startStr && endStr) {
-        // Validate end date using UTC parser
-        parseUTCDateString(endStr);
-        // Calculate start date from end (using date-fns which handles calendar months correctly)
-        const e = new Date(endStr + 'T00:00:00Z'); // Parse as UTC for date-fns
-        startStr = format(subMonths(e, 4), 'yyyy-MM-dd');
-      }
-
-      // Validate dates using UTC parser to ensure consistent timezone handling
-      const startTimestamp = parseUTCDateString(startStr as string);
-      const endTimestamp = parseUTCDateString(endStr as string);
-
-      if (startTimestamp >= endTimestamp) {
-        throw new Error('Start date must be before end date');
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('Invalid')) {
-        throw error; // Re-throw validation errors as-is
-      }
-      throw new Error(
-        `Invalid date format. Use YYYY-MM-DD. ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-
-    const initialBalance = parseFloat(options.initialBalance);
-
+    // Validate initial balance
+    const initialBalance = parseFloat(options.initialBalance || '10000');
     if (initialBalance <= 0 || isNaN(initialBalance)) {
       throw new Error(`Invalid initial balance: ${options.initialBalance}`);
     }
 
-    const backtestConfig = {
-      startDate: startStr as string,
-      endDate: endStr as string,
+    // Validate historical provider
+    const historicalProvider = (options.historicalProvider || 'sim') as 'sim' | 'okx' | 'binance';
+    if (!['sim', 'okx', 'binance'].includes(historicalProvider)) {
+      throw new Error(
+        `Invalid historical provider: ${historicalProvider}. Must be sim, okx, or binance`
+      );
+    }
+
+    // Parse exchange and cache configuration
+    const exchangeConfig = TradeCommands.parseExchangeConfig(historicalProvider, options);
+    const dataCacheDir = TradeCommands.determineCacheDir(historicalProvider, options);
+
+    const backtestConfig: BacktestConfig = {
+      startDate,
+      endDate,
       initialBalance,
       coins,
       cyclePeriod: 180000, // 3 minutes
       maxPositions: 6,
       leverage: 1,
       seed: options.seed ? Number(options.seed) : undefined,
+      historicalProvider,
+      dataCacheDir,
+      exchange: exchangeConfig,
+      backtestExec: {
+        minNotionalUsd: options.minNotionalUsd ? Number(options.minNotionalUsd) : undefined,
+      },
     };
 
     logger.info(chalk.blue('📊 Backtest Configuration:'), {}, 'TradeCommands');
@@ -396,6 +500,15 @@ export class TradeCommands {
       {},
       'TradeCommands'
     );
+    if (backtestConfig.dataCacheDir) {
+      logger.info(
+        `   Cache: ${chalk.green('enabled')} (${backtestConfig.dataCacheDir})`,
+        {},
+        'TradeCommands'
+      );
+    } else {
+      logger.info(`   Cache: ${chalk.gray('disabled')}`, {}, 'TradeCommands');
+    }
     logger.info('', {}, 'TradeCommands');
 
     // Configuration will be printed after dates are resolved below

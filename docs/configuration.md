@@ -237,6 +237,48 @@ quanta prompts list                    # List all groups
 - **testnet**: Use testnet environment (true for testing)
 - **marketType**: `spot` or `swap` (aliases: `perp`, `perpetual` map to `swap`)
 
+### Backtest Settings
+
+Backtest configuration can be set via CLI options or in `config.json`:
+
+```json
+{
+  "backtest": {
+    "startDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "initialBalance": 10000
+  }
+}
+```
+
+**CLI Options:**
+
+- `--historical-provider`: Data provider (`sim`, `okx`, `binance`) - default: `sim`
+- `--data-cache-dir`: Cache directory for historical data - default: `./.quanta-cache/historical`
+- `--no-cache`: Disable caching of historical data
+- `--min-notional-usd`: Minimum notional value for orders in USD - default: `5`
+
+**Historical Data Providers:**
+
+- **sim**: Simulated historical data (no API required)
+- **okx**: Real historical data from OKX (no API key required for public data)
+- **binance**: Real historical data from Binance (no API key required for public data)
+
+**Caching:**
+
+- Historical data is automatically cached to disk for reuse
+- Cache location: `./.quanta-cache/historical` (default)
+- Cache key format: `{symbol}_{timeframe}_{startDate}_{endDate}`
+- Use `--no-cache` to disable caching
+
+**Minimum Notional:**
+
+- Prevents execution of orders below exchange minimum notional requirements
+- Default: $5 USD
+- Can be configured via `--min-notional-usd` flag
+- System uses max of configured value and symbol metadata minimum
+- Tiny partial closes are automatically batched until they meet minimum
+
 ### Market Type Risk Parameters
 
 System automatically validates and adjusts risk parameters based on `marketType`:
@@ -339,11 +381,13 @@ Configure news ingestion:
 ```
 
 **Sources:**
+
 - `cryptopanic`: CryptoPanic API (requires `CRYPTOPANIC_API_KEY` env var)
 - `rss:coindesk`: CoinDesk RSS feed
 - `rss:cointelegraph`: CoinTelegraph RSS feed
 
 **Settings:**
+
 - `pollIntervalMs`: Polling interval in milliseconds (default: 45000)
 - `cycleWindowMinutes`: Time window for news aggregation per cycle (default: 3)
 - `deliveryLagSeconds`: Safety lag for backtesting (default: 10)

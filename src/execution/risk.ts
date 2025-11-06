@@ -196,12 +196,10 @@ export class RiskManager {
     let liquidationPrice: number;
     if (position.side === 'long') {
       liquidationPrice =
-        position.entryPrice -
-        (initialMargin - maintenanceMargin) / Math.abs(position.size);
+        position.entryPrice - (initialMargin - maintenanceMargin) / Math.abs(position.size);
     } else {
       liquidationPrice =
-        position.entryPrice +
-        (initialMargin - maintenanceMargin) / Math.abs(position.size);
+        position.entryPrice + (initialMargin - maintenanceMargin) / Math.abs(position.size);
     }
 
     const marginRatio = maintenanceMargin > 0 ? equityOnPosition / maintenanceMargin : Infinity;

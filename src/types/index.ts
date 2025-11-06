@@ -286,6 +286,15 @@ export interface BacktestConfig {
   maxPositions?: number;
   leverage?: number;
   seed?: number;
+  historicalProvider?: 'sim' | 'okx' | 'binance';
+  dataCacheDir?: string;
+  exchange?: {
+    name: 'okx' | 'binance';
+    apiKey?: string;
+    apiSecret?: string;
+    passphrase?: string;
+    testnet?: boolean;
+  };
   backtestExec?: {
     takerFeeRate?: number;
     makerFeeRate?: number;
@@ -295,6 +304,7 @@ export interface BacktestConfig {
     maxPartialFillRatio?: number;
     networkLatencyMs?: number;
     latencySlippageBpsPerSec?: number;
+    minNotionalUsd?: number;
   };
 }
 
@@ -348,6 +358,26 @@ export interface SignalStatistics {
   generated: number;
   accepted: number;
   rejected: number;
+  // Diagnostic tracking
+  byAction?: {
+    LONG: { generated: number; accepted: number; rejected: number };
+    SHORT: { generated: number; accepted: number; rejected: number };
+    CLOSE: { generated: number; accepted: number; rejected: number };
+    HOLD: { generated: number; accepted: number; rejected: number };
+  };
+  rejectionReasons?: Record<string, number>;
+  confidenceDistribution?: {
+    min: number;
+    max: number;
+    avg: number;
+    byAction: {
+      LONG?: { min: number; max: number; avg: number; count: number };
+      SHORT?: { min: number; max: number; avg: number; count: number };
+    };
+  };
+  // Partial close tracking
+  skippedTinyPartials?: number; // Count of partial closes skipped due to min notional
+  batchedTinyPartials?: number; // Count of batched partial closes executed
 }
 
 export interface BacktestResult {
@@ -361,6 +391,59 @@ export interface BacktestResult {
   finalBalance: number;
   finalEquity: number;
   signalStats: SignalStatistics;
+  initEnv?: BacktestInitEnv;
+}
+
+/**
+ * Initialization environment summary captured at backtest start
+ */
+export interface BacktestInitEnv {
+  trading: {
+    coins: string[];
+    period: { start: string; end: string };
+    initialBalance: number;
+    maxPositions: number;
+  };
+  leverage: { min: number; max: number };
+  riskSizing: {
+    maxRiskPerTrade: number;
+    maxCapitalPercent: number;
+    minReservePercent: number;
+    maxPositionSizePercent: number;
+  };
+  ai: {
+    provider: 'mock' | 'openrouter';
+    model: string;
+    temperature?: number;
+    retries?: number;
+    timeoutMs?: number;
+    promptGroup?: string;
+    context: {
+      maxPositions: number;
+      maxRiskPerTrade: number;
+      defaultStopLoss: number;
+      leverage: { min: number; max: number };
+    };
+  };
+  validation: {
+    minConfidence: number;
+    maxSameSidePositions: number;
+    correlationThreshold: number;
+  };
+  execution: {
+    takerFeeRate: number;
+    makerFeeRate: number;
+    maxMarketSlippageBps: number;
+    partialFillProbability: number;
+    networkLatencyMs: number;
+    latencySlippageBpsPerSec: number;
+    minNotionalUsd?: number;
+  };
+  dataSource?: {
+    provider: 'sim' | 'okx' | 'binance';
+    timeframes: string;
+    details: string[];
+  };
 }
 
 export interface Config {

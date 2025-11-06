@@ -90,8 +90,7 @@ async function testValidateOrder() {
   });
   assert.strictEqual(reduceOnly.valid, true, 'Reduce-only order should pass');
   assert(
-    reduceOnly.validatedQuantity !== undefined &&
-      reduceOnly.validatedQuantity <= 0.3,
+    reduceOnly.validatedQuantity !== undefined && reduceOnly.validatedQuantity <= 0.3,
     'Should clamp to position size'
   );
 }
@@ -148,4 +147,3 @@ async function run() {
 }
 
 run();
-

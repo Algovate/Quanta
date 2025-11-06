@@ -1,6 +1,6 @@
 import { Exchange, Position } from '../exchange/types.js';
 import { RiskManager } from './risk.js';
-import { OrderExecutor } from './orders.js';
+import { OrderExecutor, type OrderResult } from './orders.js';
 import { POSITION_MONITORING, ORDER_EXECUTION, RETRIES, TIMEOUTS } from './constants.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { calculateUnrealizedPnl, aggregatePositionMetrics } from './position-utils.js';
@@ -256,7 +256,7 @@ export class PositionMonitorService implements PositionMonitor {
 
         // Maintenance margin/liquidation check (highest priority)
         const maint = this.riskManager.checkMaintenance(position, validatedPrice);
-        
+
         // Log diagnostic information for margin calculations
         this.logger.debug(
           `Margin check for ${position.symbol} ${position.side}`,
@@ -312,13 +312,7 @@ export class PositionMonitorService implements PositionMonitor {
               );
             }
             const result = await this.orderExecutor.executePartialClose(position, 0.5);
-            if (!result.success) {
-              this.logger.warn(
-                `Partial close failed for ${position.symbol}: ${result.error}`,
-                {},
-                this.context
-              );
-            }
+            this.handlePartialCloseResult(result, position.symbol);
             this.riskManager.applyBreakevenStop(position);
             st.tp1Done = true;
             st.breakevenApplied = true;
@@ -353,13 +347,7 @@ export class PositionMonitorService implements PositionMonitor {
             }
             // Close 60% of remaining position (which is 50% of original) = 30% of original
             const result = await this.orderExecutor.executePartialClose(position, 0.6);
-            if (!result.success) {
-              this.logger.warn(
-                `Partial close failed for ${position.symbol}: ${result.error}`,
-                {},
-                this.context
-              );
-            }
+            this.handlePartialCloseResult(result, position.symbol);
             st.tp2Done = true;
             st.flatCycles = 0; // Reset flat counter on profit
             this.stateBySymbol.set(key, st);
@@ -388,13 +376,7 @@ export class PositionMonitorService implements PositionMonitor {
             }
             // Close 100% of remaining position (which is 20% of original) = 20% of original
             const result = await this.orderExecutor.executePartialClose(position, 1.0);
-            if (!result.success) {
-              this.logger.warn(
-                `Partial close failed for ${position.symbol}: ${result.error}`,
-                {},
-                this.context
-              );
-            }
+            this.handlePartialCloseResult(result, position.symbol);
             st.tp3Done = true;
             st.flatCycles = 0; // Reset flat counter on profit
             this.stateBySymbol.set(key, st);
@@ -754,6 +736,30 @@ export class PositionMonitorService implements PositionMonitor {
    * Format position close log message consistently with other logs
    * Follows format: "Position closed | symbol=... side=... size=... price=... reason=... | context"
    */
+  /**
+   * Handle partial close result, suppressing warnings for tiny partials being accumulated
+   */
+  private handlePartialCloseResult(result: OrderResult, symbol: string): void {
+    if (!result.success) {
+      // Suppress warnings for tiny partials being accumulated (expected behavior)
+      const isTinyPartial =
+        result.errorCode === 'TINY_PARTIAL_ACCUMULATED' ||
+        result.errorCode === 'BATCH_TOO_SMALL_AFTER_CLAMP';
+
+      if (isTinyPartial) {
+        // Log at debug level instead of warning
+        this.logger.debug(`Tiny partial close accumulated for ${symbol}: ${result.error}`, {}, this.context);
+      } else {
+        // Actual failure - log as warning
+        this.logger.warn(
+          `Partial close failed for ${symbol}: ${result.error}`,
+          {},
+          this.context
+        );
+      }
+    }
+  }
+
   private formatPositionCloseLog(position: Position, currentPrice: number, reason: string): string {
     const { baseReason, context } = this.parseReasonWithContext(reason);
 

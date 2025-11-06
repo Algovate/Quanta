@@ -124,3 +124,5 @@ secrets.json
 
 config/config.json
 config/simulate.json
+.quanta-cache/
+.notebook/

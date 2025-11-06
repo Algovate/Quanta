@@ -33,8 +33,12 @@ Options:
   -c, --coins <coins>            Comma-separated coin list
   -s, --start <date>             Start date (YYYY-MM-DD)
   -e, --end <date>               End date (YYYY-MM-DD)
-  --initial-balance <amount>     Initial balance (default: "10000")
-  --seed <number>                Random seed
+  --initial-balance <amount>     Initial balance (default: 10000)
+  --seed <number>                Random seed for reproducibility
+  --historical-provider <provider> Data provider: sim, okx, binance (default: sim)
+  --data-cache-dir <dir>         Cache directory for historical data (default: ./.quanta-cache/historical)
+  --no-cache                     Disable caching of historical data
+  --min-notional-usd <amount>    Minimum notional value for orders in USD (default: 5)
   --verbose                      Verbose output
   --quiet                        Minimal output
   --json                         JSON output
@@ -47,6 +51,8 @@ Options:
 quanta trade backtest
 quanta trade backtest --start 2024-06-01 --end 2024-10-01
 quanta trade backtest --seed 42 --summary-only
+quanta trade backtest --historical-provider okx --min-notional-usd 5
+quanta trade backtest --historical-provider binance --data-cache-dir ./cache --min-notional-usd 10
 ```
 
 > **Default**: Uses last 4 months of data when dates not specified.
@@ -298,6 +304,7 @@ Options:
 ```
 
 **Examples:**
+
 ```bash
 # View last 10 minutes of news
 quanta news

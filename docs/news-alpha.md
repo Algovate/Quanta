@@ -62,11 +62,13 @@ Configure news sources in `config/config.json`:
 ```
 
 **Sources:**
+
 - `cryptopanic`: CryptoPanic API (requires `CRYPTOPANIC_API_KEY` env var)
 - `rss:coindesk`: CoinDesk RSS feed
 - `rss:cointelegraph`: CoinTelegraph RSS feed
 
 **Settings:**
+
 - `pollIntervalMs`: How often to poll sources (default: 45000ms = 45s)
 - `cycleWindowMinutes`: Time window for news aggregation per cycle (default: 3)
 - `deliveryLagSeconds`: Safety lag for backtesting (default: 10s)
@@ -150,6 +152,7 @@ quanta news [options]
 ```
 
 **Options:**
+
 - `-m, --minutes <n>`: Look back N minutes (default: 10)
 - `-s, --symbols <symbols>`: Filter by symbols (comma-separated, e.g., "BTC,ETH")
 - `-w, --watch`: Watch mode (continuous polling)
@@ -160,6 +163,7 @@ quanta news [options]
 - `--heartbeat-every <n>`: Print heartbeat every N polls (default: 1)
 
 **Examples:**
+
 ```bash
 # View last 10 minutes of news
 quanta news
@@ -191,6 +195,7 @@ quanta news --watch --llm --llm-debug
 ### 3. Feature Extraction
 
 For each news event:
+
 - **Sentiment**: [-1, 1] from NLP or LLM analysis
 - **Novelty**: [0, 1] based on similarity to recent events
 - **Reliability**: [0, 1] based on source reputation
@@ -199,23 +204,26 @@ For each news event:
 ### 4. Event Scoring
 
 Events are scored using:
+
 ```
-score = (sentiment * w_sentiment) + 
-        (novelty * w_novelty) + 
-        (reliability * w_reliability) + 
-        (volumeShock * w_volumeShock) + 
+score = (sentiment * w_sentiment) +
+        (novelty * w_novelty) +
+        (reliability * w_reliability) +
+        (volumeShock * w_volumeShock) +
         topic_boosts
 ```
 
 ### 5. Time Decay
 
 Scores decay exponentially based on:
+
 - Time since event
 - Topic-specific halflife (e.g., ETF news decays slower than hack news)
 
 ### 6. Signal Generation
 
 `NewsAlphaStrategy` generates signals:
+
 - **Buy**: Positive decayed score above threshold
 - **Sell**: Negative decayed score above threshold
 - **Kill-switch**: For hack/outage topics, only protective sells allowed
@@ -228,6 +236,7 @@ High-risk topics trigger protective behavior:
 - **Outage**: Only sell signals, capped confidence (0.5 max)
 
 Configure in strategy params:
+
 ```json
 {
   "killSwitch": {
@@ -242,6 +251,7 @@ Configure in strategy params:
 ### When LLM is Used
 
 LLM enrichment is triggered when:
+
 1. `enabledLLM` is true (or `force` flag is set)
 2. Event meets reliability threshold OR has trigger topics
 3. Budget limits are not exceeded
@@ -249,6 +259,7 @@ LLM enrichment is triggered when:
 ### LLM Output
 
 LLM enriches events with:
+
 - **Sentiment**: More accurate sentiment analysis
 - **Topics**: Better topic classification
 - **Reliability**: Confidence assessment
@@ -256,6 +267,7 @@ LLM enriches events with:
 ### Caching
 
 LLM responses are cached by:
+
 - Provider + model
 - Source + event ID
 
@@ -264,6 +276,7 @@ Cache reduces API costs for duplicate or similar news.
 ### Debug Output
 
 Use `--llm-debug` to see:
+
 - `[LLM:used]`: LLM was called
 - `[LLM:cache_hit]`: Used cached result
 - `[LLM:skip:not_triggered]`: Didn't meet trigger criteria
@@ -351,4 +364,3 @@ News Alpha integrates into the 3-minute trading cycle:
 - [Strategies Guide](strategies.md) - Strategy architecture
 - [Commands Reference](commands.md) - CLI commands
 - [Trading Guide](trading-guide.md) - Trading workflows
-

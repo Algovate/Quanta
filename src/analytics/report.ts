@@ -79,6 +79,66 @@ export class BacktestReport {
     console.log(
       `  Initial:        ${chalk.white.bold(fmtMoney(this.result.config.initialBalance))}`
     );
+    // Backtest Initialization Environment (concise)
+    if (this.result.initEnv) {
+      const env = this.result.initEnv;
+      console.log('');
+      console.log(chalk.cyan.bold('  🧰 Backtest Initialization'));
+      console.log(chalk.gray('  ' + '─'.repeat(68)));
+      console.log(
+        `  Leverage:        ${chalk.white(`${env.leverage.min}x`)} ${chalk.gray('→')} ${chalk.white(`${env.leverage.max}x`)}`
+      );
+      console.log(
+        `  Risk/Sizing:     ${chalk.white(`${(env.riskSizing.maxRiskPerTrade * 100).toFixed(1)}% risk`)} | ` +
+          `Cap ${chalk.white(`${(env.riskSizing.maxCapitalPercent * 100).toFixed(0)}%`)}, ` +
+          `Reserve ${chalk.white(`${(env.riskSizing.minReservePercent * 100).toFixed(0)}%`)}, ` +
+          `MaxPos ${chalk.white(`${(env.riskSizing.maxPositionSizePercent * 100).toFixed(0)}%`)}`
+      );
+      console.log(
+        `  Validation:      Min conf ${chalk.white(`${(env.validation.minConfidence * 100).toFixed(0)}%`)} | ` +
+          `Same-side ≤ ${chalk.white(env.validation.maxSameSidePositions.toString())} | ` +
+          `Corr ≤ ${chalk.white(env.validation.correlationThreshold.toFixed(2))}`
+      );
+      console.log(
+        `  Execution:       Fees ${chalk.white(`${(env.execution.takerFeeRate * 100).toFixed(2)}%/${(env.execution.makerFeeRate * 100).toFixed(2)}%`)} | ` +
+          `Slip ≤ ${chalk.white(`${env.execution.maxMarketSlippageBps}bps`)} | ` +
+          `Latency ${chalk.white(`${env.execution.networkLatencyMs}ms`)} (${env.execution.latencySlippageBpsPerSec}bps/s)` +
+          `${env.execution.minNotionalUsd ? ' | MinNot ' + chalk.white(`$${env.execution.minNotionalUsd.toFixed(2)}`) : ''}`
+      );
+      if (env.dataSource) {
+        const providerName =
+          env.dataSource.provider === 'okx'
+            ? 'OKX'
+            : env.dataSource.provider === 'binance'
+              ? 'Binance'
+              : 'Simulated';
+        const timeframes = env.dataSource.timeframes || 'unknown';
+        const details = env.dataSource.details?.join(' · ') || 'no details';
+        console.log(
+          `  Data:            ${chalk.white(providerName)} | ${chalk.white(timeframes)} | ${chalk.white(details)}`
+        );
+      }
+      // AI block
+      if (env.ai) {
+        const provider = env.ai.provider || 'unknown';
+        const model = env.ai.model ? ` · ${chalk.white(env.ai.model)}` : '';
+        console.log(`  AI:              ${chalk.white(provider)}${model}`);
+        const ctx = env.ai.context;
+        if (ctx) {
+          const maxPos = ctx.maxPositions?.toString() || '0';
+          const risk = ctx.maxRiskPerTrade ? (ctx.maxRiskPerTrade * 100).toFixed(1) : '0.0';
+          const sl = ctx.defaultStopLoss ? (ctx.defaultStopLoss * 100).toFixed(1) : '0.0';
+          const levMin = ctx.leverage?.min?.toString() || '1';
+          const levMax = ctx.leverage?.max?.toString() || '1';
+          console.log(
+            `  AI Context:      maxPos ${chalk.white(maxPos)} | ` +
+              `risk ${chalk.white(risk + '%')} | ` +
+              `defSL ${chalk.white(sl + '%')} | ` +
+              `lev ${chalk.white(`${levMin}x`)} ${chalk.gray('→')} ${chalk.white(`${levMax}x`)}`
+          );
+        }
+      }
+    }
     console.log('');
   }
 
@@ -124,6 +184,83 @@ export class BacktestReport {
       `  Rejected:         ${chalk.red.bold('✗')} ${chalk.red(stats.rejected.toLocaleString())}`
     );
     console.log(`  Acceptance Rate:  ${this.formatAcceptanceRate(parseFloat(acceptanceRate))}`);
+
+    // Display diagnostic data if available
+    if (stats.byAction) {
+      console.log('');
+      console.log(chalk.cyan('  📊 By Action Type:'));
+      for (const [action, actionStats] of Object.entries(stats.byAction)) {
+        const actionRate =
+          actionStats.generated > 0
+            ? ((actionStats.accepted / actionStats.generated) * 100).toFixed(1)
+            : '0.0';
+        console.log(
+          `    ${action.padEnd(6)}: Gen ${actionStats.generated.toLocaleString().padStart(8)} | ` +
+            `Acc ${chalk.green(actionStats.accepted.toLocaleString().padStart(6))} | ` +
+            `Rej ${chalk.red(actionStats.rejected.toLocaleString().padStart(6))} | ` +
+            `Rate ${this.formatAcceptanceRate(parseFloat(actionRate))}`
+        );
+      }
+    }
+
+    // Display confidence distribution if available
+    if (stats.confidenceDistribution) {
+      const conf = stats.confidenceDistribution;
+      console.log('');
+      console.log(chalk.cyan('  📈 Confidence Distribution:'));
+      console.log(
+        `    Overall: Min ${(conf.min * 100).toFixed(1)}% | Max ${(conf.max * 100).toFixed(1)}% | Avg ${(conf.avg * 100).toFixed(1)}%`
+      );
+      if (conf.byAction.LONG) {
+        const long = conf.byAction.LONG;
+        console.log(
+          `    LONG:   Min ${(long.min * 100).toFixed(1)}% | Max ${(long.max * 100).toFixed(1)}% | Avg ${(long.avg * 100).toFixed(1)}% | Count ${long.count.toLocaleString()}`
+        );
+      }
+      if (conf.byAction.SHORT) {
+        const short = conf.byAction.SHORT;
+        console.log(
+          `    SHORT:  Min ${(short.min * 100).toFixed(1)}% | Max ${(short.max * 100).toFixed(1)}% | Avg ${(short.avg * 100).toFixed(1)}% | Count ${short.count.toLocaleString()}`
+        );
+      }
+    }
+
+    // Display top rejection reasons if available
+    if (stats.rejectionReasons && Object.keys(stats.rejectionReasons).length > 0) {
+      console.log('');
+      console.log(chalk.cyan('  ⚠️  Top Rejection Reasons:'));
+      const sortedReasons = Object.entries(stats.rejectionReasons)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+      for (const [reason, count] of sortedReasons) {
+        const percentage = ((count / stats.rejected) * 100).toFixed(1);
+        console.log(
+          `    ${chalk.red(count.toLocaleString().padStart(8))} (${percentage.padStart(5)}%): ${reason.substring(0, 60)}`
+        );
+      }
+    }
+
+    // Display partial close statistics if available
+    if (stats.skippedTinyPartials !== undefined || stats.batchedTinyPartials !== undefined) {
+      console.log('');
+      console.log(chalk.cyan('  🔄 Partial Close Statistics:'));
+      if (stats.skippedTinyPartials !== undefined && stats.skippedTinyPartials > 0) {
+        console.log(
+          `    Skipped tiny partials: ${chalk.yellow(stats.skippedTinyPartials.toLocaleString())} (below min notional)`
+        );
+      }
+      if (stats.batchedTinyPartials !== undefined && stats.batchedTinyPartials > 0) {
+        console.log(
+          `    Batched tiny partials: ${chalk.green(stats.batchedTinyPartials.toLocaleString())} (accumulated and executed)`
+        );
+      }
+      if (
+        (stats.skippedTinyPartials === undefined || stats.skippedTinyPartials === 0) &&
+        (stats.batchedTinyPartials === undefined || stats.batchedTinyPartials === 0)
+      ) {
+        console.log(`    ${chalk.gray('No tiny partials (all orders met minimum notional)')}`);
+      }
+    }
 
     console.log('');
   }

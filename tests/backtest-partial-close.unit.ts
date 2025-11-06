@@ -48,7 +48,10 @@ async function testETHPartialTPLadder() {
   const result1 = await orderExecutor.executePartialClose(position, 0.5);
   assert.strictEqual(result1.success, true, 'TP1 partial close should succeed');
   assert(result1.order !== undefined, 'Should have order');
-  assert(result1.order?.status === 'filled' || result1.order?.status === 'open', 'Order should be filled or open');
+  assert(
+    result1.order?.status === 'filled' || result1.order?.status === 'open',
+    'Order should be filled or open'
+  );
 
   // Update position size after TP1
   position.size = 0.5;
@@ -111,7 +114,7 @@ async function testBTCShortStability() {
     if (positions.length > 0) {
       const pos = positions[0];
       const maint = riskManager.checkMaintenance(pos, pos.markPrice);
-      
+
       // Position should not be liquidated prematurely (with buffer)
       // Maintenance margin should be stable
       assert(
@@ -165,7 +168,11 @@ async function testNoPartialCloseRejections() {
     );
 
     // Should not be rejected
-    assert.strictEqual(result.success, true, `Partial close should not be rejected (fraction: ${fraction})`);
+    assert.strictEqual(
+      result.success,
+      true,
+      `Partial close should not be rejected (fraction: ${fraction})`
+    );
     assert(
       result.error === undefined || !result.error.includes('rejected'),
       `Should not have rejection error: ${result.error}`
@@ -197,4 +204,3 @@ async function run() {
 }
 
 run();
-

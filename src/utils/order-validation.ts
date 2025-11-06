@@ -310,4 +310,3 @@ export function attemptFallbackRounding(
 
   return null;
 }
-

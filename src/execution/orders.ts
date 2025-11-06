@@ -12,6 +12,7 @@ import {
   validateOrder as validateOrderUtil,
   clampReduceOnlyQuantity,
   attemptFallbackRounding,
+  getSymbolMetadata,
 } from '../utils/order-validation.js';
 
 // Type guard to check if exchange is SimulatorExchange with metadata support
@@ -25,6 +26,7 @@ export interface OrderResult {
   success: boolean;
   order?: Order;
   error?: string;
+  errorCode?: 'TINY_PARTIAL_ACCUMULATED' | 'BATCH_TOO_SMALL_AFTER_CLAMP' | 'VALIDATION_FAILED' | 'EXECUTION_FAILED';
   realizedPnl?: number;
   fees?: number;
 }
@@ -38,16 +40,24 @@ export class OrderExecutor {
   private priceSanityEnabled: boolean;
   private priceSanityMaxDeviation: number;
   private slippageManager: SlippageManager;
+  // Accumulate tiny partial close remainders per position (symbol -> remainder USD)
+  private partialCloseRemainders: Map<string, number> = new Map();
+  // Track skipped and batched tiny partials
+  private skippedTinyPartialsCount = 0;
+  private batchedTinyPartialsCount = 0;
+
+  private minNotionalUsd?: number;
 
   constructor(
     exchange: Exchange,
     riskManager: RiskManager,
-    options?: { forceMarketOrders?: boolean }
+    options?: { forceMarketOrders?: boolean; minNotionalUsd?: number }
   ) {
     this.exchange = exchange;
     this.riskManager = riskManager;
     this.logger = UnifiedLogger.getInstance();
     this.forceMarketOrders = Boolean(options?.forceMarketOrders);
+    this.minNotionalUsd = options?.minNotionalUsd;
     const cfg = getConfig();
     this.priceSanityEnabled = Boolean(cfg.trading?.priceSanity?.enabled);
     this.priceSanityMaxDeviation = Number(cfg.trading?.priceSanity?.maxDeviation ?? 0.05);
@@ -65,103 +75,57 @@ export class OrderExecutor {
       const side: 'buy' | 'sell' = position.side === 'long' ? 'sell' : 'buy';
       const requestedAmount = Math.max(0, Math.min(1, fraction)) * position.size;
       if (requestedAmount <= 0) {
-        return { success: false, error: 'Zero amount for partial close' };
+        return this.createErrorResult('Zero amount for partial close', 'VALIDATION_FAILED');
       }
 
       // Get current price for validation
-      let currentPrice: number;
-      try {
-        const ticker = await this.exchange.getTicker(symbol);
-        currentPrice = (ticker as { price: number }).price;
-      } catch (error) {
-        this.logger.warn(
-          `Failed to get price for partial close validation: ${symbol}`,
-          error instanceof Error ? { error: error.message } : { error: String(error) },
-          this.context
-        );
-        // Fallback: use mark price from position
-        currentPrice = position.markPrice || position.entryPrice;
-      }
+      const currentPrice = await this.getCurrentPriceWithFallback(symbol, position);
 
       // Clamp reduce-only quantity to position size and validate
       const clampedAmount = clampReduceOnlyQuantity(requestedAmount, position.size, symbol);
       if (clampedAmount <= 0) {
-        return {
-          success: false,
-          error: 'Quantity below minimum after rounding and clamping to position size',
-        };
+        return this.createErrorResult(
+          'Quantity below minimum after rounding and clamping to position size',
+          'VALIDATION_FAILED'
+        );
       }
 
-      // Validate order (reduce-only, with position size)
-      const validation = validateOrderUtil(symbol, side, clampedAmount, currentPrice, {
-        isReduceOnly: true,
-        positionSize: position.size,
-      });
-
-      if (!validation.valid) {
-        // Attempt fallback rounding
-        const fallback = attemptFallbackRounding(symbol, clampedAmount, currentPrice, true);
-        if (fallback && fallback.valid && fallback.validatedQuantity) {
-          // Use fallback quantity if valid
-          const fallbackAmount = Math.min(fallback.validatedQuantity, position.size);
-          const finalValidation = validateOrderUtil(symbol, side, fallbackAmount, currentPrice, {
-            isReduceOnly: true,
-            positionSize: position.size,
-          });
-
-          if (finalValidation.valid && finalValidation.validatedQuantity) {
-            // Execute with fallback quantity
-            const order = await this.exchange.placeOrder(
-              symbol,
-              side,
-              finalValidation.validatedQuantity,
-              undefined,
-              position.leverage
-            );
-            if (isSimulatorExchange(this.exchange)) {
-              this.exchange.setOrderMetadata?.(order.id, 'AI', 'partial-close');
-            }
-            this.pushOrderEvent(
-              order,
-              symbol,
-              side,
-              finalValidation.validatedQuantity,
-              'AI',
-              'partial-close',
-              undefined
-            );
-            if (order.status === 'filled' || order.status === 'open') {
-              return { success: true, order };
-            }
-          }
-        }
-
-        return {
-          success: false,
-          error: `Order validation failed: ${validation.reason || 'Unknown reason'}`,
-        };
+      // Enforce minimum notional for partial closes (to avoid spammy tiny orders)
+      // Batch tiny remainders until they reach minimum
+      const batchingResult = this.handleTinyPartialBatching(
+        symbol,
+        clampedAmount,
+        currentPrice,
+        position.size
+      );
+      if (!batchingResult.shouldProceed) {
+        return this.createErrorResult(
+          batchingResult.error || 'Batching failed',
+          batchingResult.errorCode
+        );
       }
+      const effectiveAmount = batchingResult.effectiveAmount;
 
-      // Use validated quantity
-      const validatedAmount = validation.validatedQuantity || clampedAmount;
-
-      // Market order for immediate reduction
-      const order = await this.exchange.placeOrder(
+      // Validate and execute order with fallback handling
+      const executionResult = await this.validateAndExecuteOrder(
         symbol,
         side,
-        validatedAmount,
-        undefined,
-        position.leverage
+        effectiveAmount,
+        currentPrice,
+        {
+          isReduceOnly: true,
+          positionSize: position.size,
+          leverage: position.leverage,
+          source: 'AI',
+          reason: 'partial-close',
+        }
       );
-      // Set metadata for simulator exchange if applicable
-      if (isSimulatorExchange(this.exchange)) {
-        this.exchange.setOrderMetadata?.(order.id, 'AI', 'partial-close');
+
+      if (!executionResult.success) {
+        return executionResult;
       }
-      this.pushOrderEvent(order, symbol, side, validatedAmount, 'AI', 'partial-close', undefined);
-      if (order.status === 'filled' || order.status === 'open') {
-        return { success: true, order };
-      }
-      return { success: false, error: `Order ${order.status || 'unknown'} on partial close` };
+
+      return this.createSuccessResult(executionResult.order);
     } catch (error) {
       return this.handleError('Partial close', error);
     }
@@ -190,6 +154,23 @@ export class OrderExecutor {
   }
 
   /**
+   * Create a success result
+   */
+  private createSuccessResult(order?: Order, realizedPnl?: number, fees?: number): OrderResult {
+    return { success: true, order, realizedPnl, fees };
+  }
+
+  /**
+   * Create an error result with optional error code
+   */
+  private createErrorResult(
+    error: string,
+    errorCode?: OrderResult['errorCode']
+  ): OrderResult {
+    return { success: false, error, errorCode };
+  }
+
+  /**
    * Handle error and return standardized error result
    */
   private handleError(context: string, error: unknown): OrderResult {
@@ -198,10 +179,10 @@ export class OrderExecutor {
       error instanceof Error ? error : new Error(String(error)),
       this.context
     );
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : `${context} execution failed`,
-    };
+    return this.createErrorResult(
+      error instanceof Error ? error.message : `${context} execution failed`,
+      'EXECUTION_FAILED'
+    );
   }
 
   private pushOrderEvent(
@@ -308,7 +289,10 @@ export class OrderExecutor {
       // Validate signal (do not log per-failure here; caller aggregates for UI)
       const validationResult = this.riskManager.validateSignal(signal, account, currentPositions);
       if (!validationResult.valid) {
-        return { success: false, error: validationResult.reason || 'Signal validation failed' };
+        return this.createErrorResult(
+          validationResult.reason || 'Signal validation failed',
+          'VALIDATION_FAILED'
+        );
       }
 
       // Calculate position sizing (ATR not available at this level, will use default)
@@ -320,7 +304,7 @@ export class OrderExecutor {
       );
 
       if (!sizing) {
-        return { success: false, error: 'Position sizing calculation failed' };
+        return this.createErrorResult('Position sizing calculation failed', 'VALIDATION_FAILED');
       }
 
       // Execute order based on signal action
@@ -335,10 +319,10 @@ export class OrderExecutor {
           return await this.executeCloseOrder(signal, currentPositions, currentPrice);
 
         case 'HOLD':
-          return { success: true, order: undefined };
+          return this.createSuccessResult();
 
         default:
-          return { success: false, error: `Unknown action: ${signal.action}` };
+          return this.createErrorResult(`Unknown action: ${signal.action}`, 'VALIDATION_FAILED');
       }
     } catch (error) {
       this.logger.error(
@@ -346,7 +330,10 @@ export class OrderExecutor {
         error instanceof Error ? error : new Error(String(error)),
         this.context
       );
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      return this.createErrorResult(
+        error instanceof Error ? error.message : 'Unknown error',
+        'EXECUTION_FAILED'
+      );
     }
   }
 
@@ -493,17 +480,13 @@ export class OrderExecutor {
       this.pushOrderAndTradeEvents(order, symbol, side, amount, 'AI', 'signal', price);
 
       // Check if order was actually filled
-      if (order.status === 'filled') {
-        return { success: true, order };
-      } else if (order.status === 'open') {
-        // For limit orders that cannot fill immediately, this is expected behavior
-        // The order will remain open until market conditions allow it to fill
-        return { success: true, order };
+      if (order.status === 'filled' || order.status === 'open') {
+        return this.createSuccessResult(order);
       } else {
-        return {
-          success: false,
-          error: `Order ${order.status}: ${order.status === 'rejected' ? 'Insufficient margin' : 'Unknown reason'}`,
-        };
+        return this.createErrorResult(
+          `Order ${order.status}: ${order.status === 'rejected' ? 'Insufficient margin' : 'Unknown reason'}`,
+          'EXECUTION_FAILED'
+        );
       }
     } catch (error) {
       return this.handleError(`${side.toUpperCase()} order`, error);
@@ -537,7 +520,7 @@ export class OrderExecutor {
       const position = this.findPosition(signal.coin, currentPositions);
 
       if (!position) {
-        return { success: false, error: `No position found for ${signal.coin}` };
+        return this.createErrorResult(`No position found for ${signal.coin}`, 'VALIDATION_FAILED');
       }
 
       const symbol = this.buildSymbol(signal.coin);
@@ -575,7 +558,7 @@ export class OrderExecutor {
         realizedPnl
       );
 
-      return { success: true, order, realizedPnl, fees: 0 };
+      return this.createSuccessResult(order, realizedPnl, 0);
     } catch (error) {
       return this.handleError('CLOSE order', error);
     }
@@ -611,7 +594,7 @@ export class OrderExecutor {
       }
       this.pushOrderAndTradeEvents(order, symbol, side, amount, source, reason, currentPrice);
 
-      return { success: true, order };
+      return this.createSuccessResult(order);
     } catch (error) {
       return this.handleError(context, error);
     }
@@ -658,5 +641,230 @@ export class OrderExecutor {
       );
       return false;
     }
+  }
+
+  /**
+   * Get current price with fallback to position mark/entry price
+   */
+  private async getCurrentPriceWithFallback(symbol: string, position: Position): Promise<number> {
+    try {
+      const ticker = await this.exchange.getTicker(symbol);
+      return (ticker as { price: number }).price;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to get price for partial close validation: ${symbol}`,
+        error instanceof Error ? { error: error.message } : { error: String(error) },
+        this.context
+      );
+      // Fallback: use mark price from position
+      return position.markPrice || position.entryPrice;
+    }
+  }
+
+  /**
+   * Validate and execute order with fallback rounding support
+   */
+  private async validateAndExecuteOrder(
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    price: number,
+    options: {
+      isReduceOnly: boolean;
+      positionSize: number;
+      leverage: number;
+      source: string;
+      reason: string;
+    }
+  ): Promise<OrderResult & { order?: Order }> {
+    // Validate order
+    const validation = validateOrderUtil(symbol, side, amount, price, {
+      isReduceOnly: options.isReduceOnly,
+      positionSize: options.positionSize,
+    });
+
+    if (!validation.valid) {
+      // Attempt fallback rounding
+      const fallback = attemptFallbackRounding(symbol, amount, price, options.isReduceOnly);
+      if (fallback?.valid && fallback.validatedQuantity) {
+        // Use fallback quantity if valid
+        const fallbackAmount = Math.min(fallback.validatedQuantity, options.positionSize);
+        const finalValidation = validateOrderUtil(symbol, side, fallbackAmount, price, {
+          isReduceOnly: options.isReduceOnly,
+          positionSize: options.positionSize,
+        });
+
+        if (finalValidation.valid && finalValidation.validatedQuantity) {
+          return this.placeOrderWithMetadata(
+            symbol,
+            side,
+            finalValidation.validatedQuantity,
+            undefined,
+            options.leverage,
+            options.source,
+            options.reason
+          );
+        }
+      }
+
+      return this.createErrorResult(
+        `Order validation failed: ${validation.reason || 'Unknown reason'}`,
+        'VALIDATION_FAILED'
+      );
+    }
+
+    // Use validated quantity
+    const validatedAmount = validation.validatedQuantity || amount;
+
+    // Place order
+    return this.placeOrderWithMetadata(
+      symbol,
+      side,
+      validatedAmount,
+      undefined,
+      options.leverage,
+      options.source,
+      options.reason
+    );
+  }
+
+  /**
+   * Place order and set metadata if applicable
+   */
+  private async placeOrderWithMetadata(
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    price: number | undefined,
+    leverage: number,
+    source: string,
+    reason: string
+  ): Promise<OrderResult & { order?: Order }> {
+    const order = await this.exchange.placeOrder(symbol, side, amount, price, leverage);
+
+    // Set metadata for simulator exchange if applicable
+    if (isSimulatorExchange(this.exchange)) {
+      this.exchange.setOrderMetadata?.(order.id, source, reason);
+    }
+
+    this.pushOrderEvent(order, symbol, side, amount, source, reason, undefined);
+
+    if (order.status === 'filled' || order.status === 'open') {
+      return this.createSuccessResult(order);
+    }
+
+    return this.createErrorResult(
+      `Order ${order.status || 'unknown'} on ${reason}`,
+      'EXECUTION_FAILED'
+    );
+  }
+
+  /**
+   * Handle batching logic for tiny partial closes
+   * Accumulates remainders until they reach minimum notional, then executes batched order
+   */
+  private handleTinyPartialBatching(
+    symbol: string,
+    clampedAmount: number,
+    currentPrice: number,
+    positionSize: number
+  ): { shouldProceed: boolean; effectiveAmount?: number; error?: string; errorCode?: OrderResult['errorCode'] } {
+    try {
+      // Effective min notional: prefer configured threshold if higher than symbol metadata
+      // Fall back to 5 if neither is available
+      const symbolMeta = getSymbolMetadata(symbol);
+      const configuredMin = this.minNotionalUsd ?? 5;
+      const minNotional = Math.max(configuredMin, symbolMeta?.minNotional ?? 5);
+      const notional = clampedAmount * currentPrice;
+      const existingRemainder = this.partialCloseRemainders.get(symbol) || 0;
+      const totalNotional = notional + existingRemainder;
+
+      // If current request is large enough, clear any remainder and proceed
+      if (minNotional === 0 || notional >= minNotional) {
+        if (existingRemainder > 0) {
+          this.partialCloseRemainders.delete(symbol);
+        }
+        return { shouldProceed: true, effectiveAmount: clampedAmount };
+      }
+
+      // Current request is too small - accumulate remainder
+      this.partialCloseRemainders.set(symbol, totalNotional);
+
+      // If accumulated remainder reaches minimum, try to execute batched order
+      if (totalNotional >= minNotional) {
+        return this.attemptBatchedExecution(symbol, totalNotional, currentPrice, positionSize, minNotional, notional);
+      }
+
+      // Still too small, just accumulate
+      this.skippedTinyPartialsCount++;
+      this.logger.debug(
+        `Accumulating tiny partial close: notional $${notional.toFixed(3)} < min $${minNotional.toFixed(2)}, total remainder: $${totalNotional.toFixed(3)}`,
+        { symbol, clampedAmount, price: currentPrice, remainder: totalNotional },
+        this.context
+      );
+      return {
+        shouldProceed: false,
+        error: `Tiny partial accumulated: notional ${notional.toFixed(3)} < ${minNotional.toFixed(2)}`,
+        errorCode: 'TINY_PARTIAL_ACCUMULATED',
+      };
+    } catch {
+      // If config read fails, ignore and proceed with original amount
+      return { shouldProceed: true, effectiveAmount: clampedAmount };
+    }
+  }
+
+  /**
+   * Attempt to execute a batched order from accumulated remainders
+   */
+  private attemptBatchedExecution(
+    symbol: string,
+    totalNotional: number,
+    currentPrice: number,
+    positionSize: number,
+    minNotional: number,
+    originalNotional: number
+  ): { shouldProceed: boolean; effectiveAmount?: number; error?: string; errorCode?: OrderResult['errorCode'] } {
+    // Calculate batched quantity from total notional
+    const batchedQty = Math.min(totalNotional / currentPrice, positionSize);
+    this.partialCloseRemainders.delete(symbol);
+
+    // Use batched quantity for validation and execution
+    const batchedClamped = clampReduceOnlyQuantity(batchedQty, positionSize, symbol);
+    const batchedNotional = batchedClamped * currentPrice;
+
+    // Check if batched notional (after clamping) still meets minimum
+    if (batchedClamped > 0 && batchedNotional >= minNotional) {
+      this.batchedTinyPartialsCount++;
+      this.logger.info(
+        `Batched tiny partial close: accumulated $${totalNotional.toFixed(3)} → executing $${batchedNotional.toFixed(3)}`,
+        { symbol, originalNotional, batchedNotional, price: currentPrice },
+        this.context
+      );
+      return { shouldProceed: true, effectiveAmount: batchedClamped };
+    }
+
+    // Batched quantity still too small after clamping, keep accumulating
+    // Put the remainder back since we couldn't execute
+    this.partialCloseRemainders.set(symbol, totalNotional);
+    this.logger.debug(
+      `Batched quantity too small after clamping (notional $${batchedNotional.toFixed(3)} < min $${minNotional.toFixed(2)}), continuing to accumulate`,
+      { symbol, batchedQty, batchedClamped, batchedNotional, totalNotional, minNotional },
+      this.context
+    );
+    return {
+      shouldProceed: false,
+      error: `Batched quantity too small after clamping: notional ${batchedNotional.toFixed(3)} < ${minNotional.toFixed(2)}`,
+      errorCode: 'BATCH_TOO_SMALL_AFTER_CLAMP',
+    };
+  }
+
+  /**
+   * Get statistics for skipped and batched tiny partial closes
+   */
+  getPartialCloseStats(): { skipped: number; batched: number } {
+    return {
+      skipped: this.skippedTinyPartialsCount,
+      batched: this.batchedTinyPartialsCount,
+    };
   }
 }

@@ -118,11 +118,13 @@ quanta trade backtest --start 2024-01-01 --end 2024-12-31 --coins BTC,ETH --init
 
 Backtest report includes:
 
-- Signal statistics (generated, accepted, rejected)
-- Performance summary (returns, Sharpe ratio, drawdown)
-- Trade statistics (win rate, profit factor, best/worst trades)
-- Risk metrics (volatility, VaR, max drawdown)
-- Equity curve analysis
+- **Signal Statistics**: Generated, accepted, rejected signals with breakdown by action type, rejection reasons, and confidence distribution
+- **Performance Summary**: Returns, Sharpe ratio, maximum drawdown, win rate
+- **Trade Statistics**: Win rate, profit factor, best/worst trades, average trade duration
+- **Risk Metrics**: Volatility, VaR, maximum drawdown
+- **Partial Close Statistics**: Skipped tiny partials (below min notional) and batched tiny partials (accumulated and executed)
+- **Initialization Environment**: AI configuration, data source, execution parameters, minimum notional settings
+- **Equity Curve Analysis**: Account value over time
 
 ## Trading Workflow
 
@@ -179,6 +181,21 @@ Quanta automatically enforces risk controls:
 
 - **Default**: 6% (2x stop loss)
 - **Strategy**: Fixed, trailing, or multi-level
+- **Multi-Level Strategy**: 
+  - TP1: Close 50% at 1R (risk-reward ratio of 1)
+  - TP2: Close 30% at 2R (of remaining position)
+  - TP3: Close 20% at 3R (of remaining position)
+
+### Partial Close Batching
+
+Quanta automatically batches tiny partial closes to meet exchange minimum notional requirements:
+
+- **Minimum Notional**: Configurable via `--min-notional-usd` (default: $5)
+- **Batching**: Tiny partials are accumulated until they reach minimum
+- **Execution**: When accumulated value meets minimum, batched order is executed
+- **Error Codes**: 
+  - `TINY_PARTIAL_ACCUMULATED`: Partial close too small, accumulating (logged at debug level)
+  - `BATCH_TOO_SMALL_AFTER_CLAMP`: Batched order still too small after rounding
 
 ### Portfolio Limits
 
