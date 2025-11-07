@@ -62,7 +62,6 @@ export class TradeCommands {
     startStr: string | undefined,
     endStr: string | undefined
   ): { startDate: string; endDate: string } {
-
     const now = new Date();
     let start = startStr;
     let end = endStr;
@@ -550,6 +549,7 @@ export class TradeCommands {
         {
           onPhase: phase => renderer.startPhase(phase),
           onProgress: (p, elapsed) => renderer.updateProgress(p, elapsed),
+          onLoadingProgress: info => renderer.updateLoadingProgress(info),
           onCycle: info => renderer.updateCycleLine(info),
           onSnapshot: () => renderer.heartbeat('Still running'),
         },

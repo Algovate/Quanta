@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { Candlestick } from '../../types/index.js';
 import { UnifiedLogger } from '../../logging/index.js';
-import type { IHistoricalProvider } from './base.js';
+import type { IHistoricalProvider, FetchProgress } from './base.js';
 import { generateCacheKey } from './cache-utils.js';
 
 /**
@@ -23,7 +23,8 @@ export class CachedHistoricalProvider implements IHistoricalProvider {
     symbol: string,
     timeframe: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    onProgress?: (progress: FetchProgress) => void
   ): Promise<Candlestick[]> {
     // Generate cache file path
     const cacheKey = generateCacheKey(symbol, timeframe, startDate, endDate);
@@ -49,12 +50,13 @@ export class CachedHistoricalProvider implements IHistoricalProvider {
       );
     }
 
-    // Fetch from provider
+    // Fetch from provider (pass through progress callback)
     const candles = await this.provider.getHistoricalCandlesticks(
       symbol,
       timeframe,
       startDate,
-      endDate
+      endDate,
+      onProgress
     );
 
     // Write to cache

@@ -748,14 +748,14 @@ export class PositionMonitorService implements PositionMonitor {
 
       if (isTinyPartial) {
         // Log at debug level instead of warning
-        this.logger.debug(`Tiny partial close accumulated for ${symbol}: ${result.error}`, {}, this.context);
-      } else {
-        // Actual failure - log as warning
-        this.logger.warn(
-          `Partial close failed for ${symbol}: ${result.error}`,
+        this.logger.debug(
+          `Tiny partial close accumulated for ${symbol}: ${result.error}`,
           {},
           this.context
         );
+      } else {
+        // Actual failure - log as warning
+        this.logger.warn(`Partial close failed for ${symbol}: ${result.error}`, {}, this.context);
       }
     }
   }

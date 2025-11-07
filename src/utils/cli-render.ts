@@ -74,6 +74,62 @@ export class BacktestRenderer {
     if (!this.spinner!.isSpinning) this.spinner!.start();
   }
 
+  updateLoadingProgress(info: {
+    symbol: string;
+    timeframe: string;
+    completed: number;
+    total: number;
+    elapsedSec: number;
+    paginationProgress?: {
+      pages: number;
+      candles: number;
+    };
+  }) {
+    if (!this.spinner) return;
+
+    // Always update spinner text for loading progress, even in quiet mode
+    // This provides essential feedback for long-running operations
+    const progressText = this.formatLoadingProgressText(info);
+    this.spinner.text = progressText;
+
+    // Use heartbeat mechanism for periodic updates during long operations (every 5 seconds)
+    // Heartbeat respects quiet mode, so it won't print in quiet mode
+    if (info.elapsedSec >= 5 && Math.floor(info.elapsedSec) % 5 === 0) {
+      this.heartbeat(
+        `Loading ${info.symbol} ${info.timeframe}... (${info.completed}/${info.total})`
+      );
+    }
+  }
+
+  /**
+   * Format loading progress text with pagination details
+   */
+  private formatLoadingProgressText(info: {
+    symbol: string;
+    timeframe: string;
+    completed: number;
+    total: number;
+    elapsedSec: number;
+    paginationProgress?: {
+      pages: number;
+      candles: number;
+    };
+  }): string {
+    let text = `Loading ${info.symbol} ${info.timeframe}... (${info.completed}/${info.total})`;
+
+    // Add pagination details if available (for long-running fetches)
+    if (info.paginationProgress) {
+      text += ` - Page ${info.paginationProgress.pages}, ${info.paginationProgress.candles.toLocaleString()} candles`;
+    }
+
+    // Add elapsed time
+    if (info.elapsedSec > 0) {
+      text += ` [${Math.floor(info.elapsedSec)}s]`;
+    }
+
+    return text;
+  }
+
   updateProgress(percent: number, elapsedSec: number) {
     if (!this.showProgress) return;
     const now = Date.now();

@@ -4,7 +4,7 @@ import { mapOHLCV } from '../../exchange/ccxt-helpers.js';
 import { UnifiedLogger } from '../../logging/index.js';
 import { normalizeTimeframe } from '../timeframes.js';
 import { paginateOHLCV } from './pagination.js';
-import type { IHistoricalProvider } from './base.js';
+import type { IHistoricalProvider, FetchProgress } from './base.js';
 
 export interface BinanceProviderConfig {
   apiKey?: string;
@@ -41,7 +41,8 @@ export class BinanceHistoricalProvider implements IHistoricalProvider {
     symbol: string,
     timeframe: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    onProgress?: (progress: FetchProgress) => void
   ): Promise<Candlestick[]> {
     try {
       // Binance uses standard symbol format (BTC/USDT)
@@ -60,6 +61,15 @@ export class BinanceHistoricalProvider implements IHistoricalProvider {
           fetch: async (since: number, limit: number) =>
             this.exchange.fetchOHLCV(binanceSymbol, tfNorm as string, since, limit),
           log: (msg, extra) => this.logger.warn(msg, extra ?? {}, this.context),
+          onProgress: onProgress
+            ? info => {
+                onProgress({
+                  pages: info.pages,
+                  candles: info.candles,
+                  elapsedSec: info.elapsedSec,
+                });
+              }
+            : undefined,
         },
         tfNorm as string
       );

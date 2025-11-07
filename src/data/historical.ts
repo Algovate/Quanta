@@ -1,5 +1,5 @@
 import { Candlestick } from '../types/index.js';
-import type { IHistoricalProvider } from './historical-providers/base.js';
+import type { IHistoricalProvider, FetchProgress } from './historical-providers/base.js';
 import { SimulatedHistoricalProvider } from './historical-providers/simulated.js';
 
 export class HistoricalDataProvider {
@@ -19,7 +19,8 @@ export class HistoricalDataProvider {
     symbol: string,
     timeframe: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    onProgress?: (progress: FetchProgress) => void
   ): Promise<Candlestick[]> {
     const cacheKey = `${symbol}_${timeframe}_${startDate.getTime()}_${endDate.getTime()}`;
 
@@ -31,12 +32,13 @@ export class HistoricalDataProvider {
       }
     }
 
-    // Fetch from provider
+    // Fetch from provider (pass through progress callback)
     const candlesticks = await this.provider.getHistoricalCandlesticks(
       symbol,
       timeframe,
       startDate,
-      endDate
+      endDate,
+      onProgress
     );
 
     // Cache the data

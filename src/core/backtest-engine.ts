@@ -49,6 +49,17 @@ type BacktestPhase = 'loading' | 'running' | 'finalizing' | 'completed';
 export interface BacktestEngineCallbacks {
   onPhase?: (phase: BacktestPhase) => void;
   onProgress?: (progressPercent: number, elapsedSec: number) => void;
+  onLoadingProgress?: (info: {
+    symbol: string;
+    timeframe: string;
+    completed: number;
+    total: number;
+    elapsedSec: number;
+    paginationProgress?: {
+      pages: number;
+      candles: number;
+    };
+  }) => void;
   onCycle?: (info: {
     cycleCount: number;
     timestamp: number;
@@ -311,10 +322,25 @@ export class BacktestEngine {
     const dataInfo: string[] = [];
     const failedLoads: string[] = [];
 
+    // Calculate total operations for progress tracking
+    const totalOperations = this.config.coins.length * timeframes.length;
+    const startTime = Date.now();
+    let completedOperations = 0;
+
     for (const coin of this.config.coins) {
       const symbol = `${coin}/USDT`;
-      const coinResult = await this.loadDataForCoin(symbol, coin, timeframes, startDate, endDate);
+      const coinResult = await this.loadDataForCoin(
+        symbol,
+        coin,
+        timeframes,
+        startDate,
+        endDate,
+        totalOperations,
+        completedOperations,
+        startTime
+      );
 
+      completedOperations += timeframes.length;
       totalCandles += coinResult.candleCount;
       dataInfo.push(coinResult.info);
       failedLoads.push(...coinResult.failed);
@@ -331,20 +357,31 @@ export class BacktestEngine {
     coin: string,
     timeframes: string[],
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    totalOperations: number,
+    completedOperations: number,
+    startTime: number
   ): Promise<{ candleCount: number; info: string; failed: string[] }> {
-    const framePromises = timeframes.map(timeframe =>
-      this.loadDataForTimeframe(symbol, timeframe, startDate, endDate)
-    );
+    const results = [];
+    let currentCompleted = completedOperations;
 
-    const results = await Promise.allSettled(framePromises);
-    const coinCandles = results.reduce(
-      (sum, r) => (r.status === 'fulfilled' ? sum + r.value.candleCount : sum),
-      0
-    );
-    const failed = results
-      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-      .map(r => r.reason?.symbolTimeframe || 'unknown');
+    // Load timeframes sequentially to emit progress for each
+    for (const timeframe of timeframes) {
+      const result = await this.loadDataForTimeframe(
+        symbol,
+        timeframe,
+        startDate,
+        endDate,
+        currentCompleted,
+        totalOperations,
+        startTime
+      );
+      results.push(result);
+      currentCompleted++;
+    }
+
+    const coinCandles = results.reduce((sum, r) => sum + r.candleCount, 0);
+    const failed = results.filter(r => r.candleCount === 0).map(r => r.symbolTimeframe);
 
     return {
       candleCount: coinCandles,
@@ -354,20 +391,83 @@ export class BacktestEngine {
   }
 
   /**
+   * Update loading progress with throttling
+   */
+  private updateLoadingProgress(
+    symbol: string,
+    timeframe: string,
+    completed: number,
+    total: number,
+    startTime: number,
+    paginationProgress?: { pages: number; candles: number },
+    lastUpdateRef?: { value: number }
+  ): void {
+    const now = Date.now();
+    const elapsedSec = (now - startTime) / 1000;
+
+    // Throttle updates to avoid excessive spinner updates (every 1 second)
+    if (lastUpdateRef && now - lastUpdateRef.value < 1000) {
+      return;
+    }
+
+    this.callbacks?.onLoadingProgress?.({
+      symbol,
+      timeframe,
+      completed,
+      total,
+      elapsedSec,
+      paginationProgress,
+    });
+
+    if (lastUpdateRef) {
+      lastUpdateRef.value = now;
+    }
+  }
+
+  /**
    * Load historical data for a single symbol/timeframe
    */
   private async loadDataForTimeframe(
     symbol: string,
     timeframe: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    completedOperations: number,
+    totalOperations: number,
+    startTime: number
   ): Promise<{ candleCount: number; symbolTimeframe: string }> {
     try {
+      // Emit initial progress update
+      this.updateLoadingProgress(
+        symbol,
+        timeframe,
+        completedOperations,
+        totalOperations,
+        startTime
+      );
+
+      // Create throttled progress callback for pagination updates
+      const lastProgressUpdate = { value: 0 };
+
       const candlesticks = await this.historicalDataProvider.getHistoricalCandlesticks(
         symbol,
         timeframe,
         startDate,
-        endDate
+        endDate,
+        progress => {
+          this.updateLoadingProgress(
+            symbol,
+            timeframe,
+            completedOperations,
+            totalOperations,
+            startTime,
+            {
+              pages: progress.pages,
+              candles: progress.candles,
+            },
+            lastProgressUpdate
+          );
+        }
       );
 
       if (candlesticks.length === 0) {
@@ -376,7 +476,7 @@ export class BacktestEngine {
           { symbol, timeframe, startDate, endDate },
           this.context
         );
-        throw { symbolTimeframe: `${symbol} ${timeframe}` };
+        return { candleCount: 0, symbolTimeframe: `${symbol} ${timeframe}` };
       }
 
       // Load data into exchange
@@ -392,7 +492,7 @@ export class BacktestEngine {
         },
         this.context
       );
-      throw { symbolTimeframe: `${symbol} ${timeframe}` };
+      return { candleCount: 0, symbolTimeframe: `${symbol} ${timeframe}` };
     }
   }
 

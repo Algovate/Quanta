@@ -181,7 +181,7 @@ Quanta automatically enforces risk controls:
 
 - **Default**: 6% (2x stop loss)
 - **Strategy**: Fixed, trailing, or multi-level
-- **Multi-Level Strategy**: 
+- **Multi-Level Strategy**:
   - TP1: Close 50% at 1R (risk-reward ratio of 1)
   - TP2: Close 30% at 2R (of remaining position)
   - TP3: Close 20% at 3R (of remaining position)
@@ -193,7 +193,7 @@ Quanta automatically batches tiny partial closes to meet exchange minimum notion
 - **Minimum Notional**: Configurable via `--min-notional-usd` (default: $5)
 - **Batching**: Tiny partials are accumulated until they reach minimum
 - **Execution**: When accumulated value meets minimum, batched order is executed
-- **Error Codes**: 
+- **Error Codes**:
   - `TINY_PARTIAL_ACCUMULATED`: Partial close too small, accumulating (logged at debug level)
   - `BATCH_TOO_SMALL_AFTER_CLAMP`: Batched order still too small after rounding
 

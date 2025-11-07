@@ -26,7 +26,11 @@ export interface OrderResult {
   success: boolean;
   order?: Order;
   error?: string;
-  errorCode?: 'TINY_PARTIAL_ACCUMULATED' | 'BATCH_TOO_SMALL_AFTER_CLAMP' | 'VALIDATION_FAILED' | 'EXECUTION_FAILED';
+  errorCode?:
+    | 'TINY_PARTIAL_ACCUMULATED'
+    | 'BATCH_TOO_SMALL_AFTER_CLAMP'
+    | 'VALIDATION_FAILED'
+    | 'EXECUTION_FAILED';
   realizedPnl?: number;
   fees?: number;
 }
@@ -163,10 +167,7 @@ export class OrderExecutor {
   /**
    * Create an error result with optional error code
    */
-  private createErrorResult(
-    error: string,
-    errorCode?: OrderResult['errorCode']
-  ): OrderResult {
+  private createErrorResult(error: string, errorCode?: OrderResult['errorCode']): OrderResult {
     return { success: false, error, errorCode };
   }
 
@@ -768,7 +769,12 @@ export class OrderExecutor {
     clampedAmount: number,
     currentPrice: number,
     positionSize: number
-  ): { shouldProceed: boolean; effectiveAmount?: number; error?: string; errorCode?: OrderResult['errorCode'] } {
+  ): {
+    shouldProceed: boolean;
+    effectiveAmount?: number;
+    error?: string;
+    errorCode?: OrderResult['errorCode'];
+  } {
     try {
       // Effective min notional: prefer configured threshold if higher than symbol metadata
       // Fall back to 5 if neither is available
@@ -792,7 +798,14 @@ export class OrderExecutor {
 
       // If accumulated remainder reaches minimum, try to execute batched order
       if (totalNotional >= minNotional) {
-        return this.attemptBatchedExecution(symbol, totalNotional, currentPrice, positionSize, minNotional, notional);
+        return this.attemptBatchedExecution(
+          symbol,
+          totalNotional,
+          currentPrice,
+          positionSize,
+          minNotional,
+          notional
+        );
       }
 
       // Still too small, just accumulate
@@ -823,7 +836,12 @@ export class OrderExecutor {
     positionSize: number,
     minNotional: number,
     originalNotional: number
-  ): { shouldProceed: boolean; effectiveAmount?: number; error?: string; errorCode?: OrderResult['errorCode'] } {
+  ): {
+    shouldProceed: boolean;
+    effectiveAmount?: number;
+    error?: string;
+    errorCode?: OrderResult['errorCode'];
+  } {
     // Calculate batched quantity from total notional
     const batchedQty = Math.min(totalNotional / currentPrice, positionSize);
     this.partialCloseRemainders.delete(symbol);

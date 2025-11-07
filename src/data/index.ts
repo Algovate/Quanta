@@ -6,6 +6,7 @@ export {
   type TechnicalIndicators,
   type Candlestick,
 } from './market.js';
+export { IndicatorCache } from './indicator-cache.js';
 export {
   StreamingIngestion,
   type StreamingConfig,

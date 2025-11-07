@@ -1,5 +1,5 @@
 import { Candlestick } from '../../types/index.js';
-import type { IHistoricalProvider } from './base.js';
+import type { IHistoricalProvider, FetchProgress } from './base.js';
 
 /**
  * Simulated historical data provider (original implementation)
@@ -15,8 +15,11 @@ export class SimulatedHistoricalProvider implements IHistoricalProvider {
     symbol: string,
     timeframe: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    _onProgress?: (progress: FetchProgress) => void
   ): Promise<Candlestick[]> {
+    // Simulated provider generates data synchronously, so no progress updates needed
+    // But we still accept the parameter for interface compatibility
     return this.generateHistoricalData(symbol, timeframe, startDate, endDate);
   }
 

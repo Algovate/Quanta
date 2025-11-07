@@ -4,7 +4,7 @@ import { mapOHLCV } from '../../exchange/ccxt-helpers.js';
 import { UnifiedLogger } from '../../logging/index.js';
 import { normalizeTimeframe } from '../timeframes.js';
 import { paginateOHLCV } from './pagination.js';
-import type { IHistoricalProvider } from './base.js';
+import type { IHistoricalProvider, FetchProgress } from './base.js';
 
 export interface OKXProviderConfig {
   apiKey?: string;
@@ -40,7 +40,8 @@ export class OKXHistoricalProvider implements IHistoricalProvider {
     symbol: string,
     timeframe: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    onProgress?: (progress: FetchProgress) => void
   ): Promise<Candlestick[]> {
     try {
       // Convert symbol to OKX format (e.g., BTC/USDT -> BTC/USDT:USDT for perpetuals)
@@ -59,6 +60,15 @@ export class OKXHistoricalProvider implements IHistoricalProvider {
           fetch: async (since: number, limit: number) =>
             this.exchange.fetchOHLCV(okxSymbol, tfNorm as string, since, limit),
           log: (msg, extra) => this.logger.warn(msg, extra ?? {}, this.context),
+          onProgress: onProgress
+            ? info => {
+                onProgress({
+                  pages: info.pages,
+                  candles: info.candles,
+                  elapsedSec: info.elapsedSec,
+                });
+              }
+            : undefined,
         },
         tfNorm as string
       );

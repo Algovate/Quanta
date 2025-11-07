@@ -55,17 +55,20 @@ Signal  P&L Update  Stop Loss/Take Profit
 Quanta supports partial position closes with intelligent batching:
 
 **Multi-Level Take Profit Strategy:**
+
 - **TP1**: Close 50% at 1R (risk-reward ratio of 1)
 - **TP2**: Close 30% at 2R (of remaining position)
 - **TP3**: Close 20% at 3R (of remaining position)
 
 **Tiny Partial Batching:**
+
 - Partial closes below minimum notional are accumulated
 - When accumulated value reaches minimum, batched order is executed
 - Prevents spam from tiny orders while ensuring execution
 - Minimum notional: Max of configured value (default $5) and symbol metadata
 
 **Error Handling:**
+
 - `TINY_PARTIAL_ACCUMULATED`: Partial close too small, accumulating
 - `BATCH_TOO_SMALL_AFTER_CLAMP`: Batched order still too small after rounding
 - `VALIDATION_FAILED`: Order validation failed

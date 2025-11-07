@@ -1,6 +1,9 @@
 import { Exchange } from '../exchange/types.js';
 import { UnifiedLogger } from '../logging/index.js';
 import { RequestDeduplicator } from '../utils/request-deduplication.js';
+import { CacheManager } from '../utils/cache-manager.js';
+import { IndicatorCache } from './indicator-cache.js';
+import { generateMarketDataKey, generateSimpleKey } from '../utils/cache-keys.js';
 
 export interface Candlestick {
   timestamp: number;
@@ -68,10 +71,14 @@ export interface MarketData {
 interface CachedMarketData {
   data: MarketData;
   timestamp: number;
+  candlestickHash?: string; // Content hash for smart invalidation
 }
 
 export class MarketDataProvider {
-  private cache: Map<string, CachedMarketData> = new Map();
+  // Unified cache manager with LRU/LFU/TTL hybrid strategy
+  private cache: CacheManager<CachedMarketData>;
+  // Separate indicator cache for content-aware invalidation
+  private indicatorCache: IndicatorCache;
   private readonly MAX_CACHE_AGE = 5 * 60 * 1000; // 5 minutes - still useful for fallback
   private readonly CACHE_FRESH_THRESHOLD = 1 * 60 * 1000; // 1 minute - consider cache fresh if within this
   private readonly logger = UnifiedLogger.getInstance();
@@ -80,8 +87,65 @@ export class MarketDataProvider {
   private readonly candlestickDeduplicator = new RequestDeduplicator<Candlestick[]>();
   // Track reported cache misses to prevent spam
   private readonly reportedCacheMisses = new Set<string>();
+  // Cleanup interval for expired entries
+  private cleanupInterval?: NodeJS.Timeout;
 
-  constructor(private exchange: Exchange) {}
+  constructor(
+    private exchange: Exchange,
+    options: {
+      maxCacheSize?: number;
+      cacheTTL?: number;
+      indicatorCacheSize?: number;
+    } = {}
+  ) {
+    // Initialize unified cache manager
+    this.cache = new CacheManager<CachedMarketData>({
+      maxSize: options.maxCacheSize ?? 1000,
+      defaultTTL: options.cacheTTL ?? this.CACHE_FRESH_THRESHOLD,
+      strategy: 'hybrid',
+      enableStatistics: true,
+    });
+
+    // Initialize indicator cache
+    this.indicatorCache = new IndicatorCache({
+      maxSize: options.indicatorCacheSize ?? 500,
+      defaultTTL: options.cacheTTL ?? this.CACHE_FRESH_THRESHOLD,
+    });
+
+    // Setup periodic cleanup
+    this.startCleanup();
+  }
+
+  /**
+   * Start periodic cleanup of expired cache entries
+   */
+  private startCleanup(): void {
+    // Cleanup every 5 minutes
+    this.cleanupInterval = setInterval(
+      () => {
+        const cleaned = this.cache.cleanup();
+        const indicatorCleaned = this.indicatorCache.cleanup();
+        if (cleaned > 0 || indicatorCleaned > 0) {
+          this.logger.debug(
+            `Cache cleanup: removed ${cleaned} market data entries, ${indicatorCleaned} indicator entries`,
+            {},
+            this.context
+          );
+        }
+      },
+      5 * 60 * 1000
+    );
+  }
+
+  /**
+   * Stop periodic cleanup
+   */
+  private stopCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+    }
+  }
 
   async getMarketData(coin: string, timeframes: string[] = ['3m', '4h']): Promise<MarketData[]> {
     // Separate cached and uncached timeframes
@@ -90,8 +154,8 @@ export class MarketDataProvider {
 
     // First pass: check cache for all timeframes
     for (const timeframe of timeframes) {
-      const cacheKey = `${coin}:${timeframe}`;
-      const cached = this.getCachedData(cacheKey);
+      const simpleKey = generateSimpleKey(coin, timeframe);
+      const cached = this.getCachedData(simpleKey);
       if (cached) {
         cachedResults.push(cached);
       } else {
@@ -106,8 +170,8 @@ export class MarketDataProvider {
 
     // Parallelize fetching for uncached timeframes
     const fetchPromises = uncachedTimeframes.map(async timeframe => {
-      const cacheKey = `${coin}:${timeframe}`;
-      return this.fetchMarketDataForTimeframe(coin, timeframe, cacheKey);
+      const simpleKey = generateSimpleKey(coin, timeframe);
+      return this.fetchMarketDataForTimeframe(coin, timeframe, simpleKey);
     });
 
     const results = await Promise.allSettled(fetchPromises);
@@ -121,8 +185,8 @@ export class MarketDataProvider {
         fetchedResults.push(result.value);
       } else {
         // Try fallback cache for failed fetch
-        const cacheKey = `${coin}:${timeframe}`;
-        const fallbackCached = this.getCachedData(cacheKey, true);
+        const simpleKey = generateSimpleKey(coin, timeframe);
+        const fallbackCached = this.getCachedData(simpleKey, true);
         if (fallbackCached) {
           this.logger.warn(
             'Using stale cached data due to fetch failure',
@@ -174,18 +238,18 @@ export class MarketDataProvider {
   private async fetchMarketDataForTimeframe(
     coin: string,
     timeframe: string,
-    cacheKey: string
+    simpleKey: string
   ): Promise<MarketData | null> {
     try {
       // Use deduplication to prevent concurrent duplicate requests for same symbol/timeframe
       const candlesticks = await this.candlestickDeduplicator.execute(
-        cacheKey,
+        simpleKey,
         () => this.exchange.getCandlesticks(coin, timeframe, 100) as Promise<Candlestick[]>
       );
 
       if (candlesticks.length < 50) {
         // Try to use cached data if available (even if expired, as fallback)
-        const fallbackCached = this.getCachedData(cacheKey, true);
+        const fallbackCached = this.getCachedData(simpleKey, true);
         if (fallbackCached) {
           this.logger.warn(
             'Insufficient fresh candles, using cached data',
@@ -203,8 +267,20 @@ export class MarketDataProvider {
         return null;
       }
 
-      // Calculate technical indicators
-      const indicators = this.calculateIndicators(candlesticks);
+      // Try to get cached indicators first (content-aware)
+      let indicators = this.indicatorCache.get(coin, timeframe, candlesticks);
+
+      if (!indicators) {
+        // Calculate technical indicators (cache miss)
+        indicators = this.calculateIndicators(candlesticks);
+        // Cache the calculated indicators
+        this.indicatorCache.set(coin, timeframe, candlesticks, indicators);
+        this.logger.debug(
+          `Calculated indicators for ${coin} ${timeframe}`,
+          { candlestickCount: candlesticks.length },
+          this.context
+        );
+      }
 
       // Determine trend and volatility
       const trend = this.determineTrend(candlesticks, indicators);
@@ -214,6 +290,7 @@ export class MarketDataProvider {
       // This ensures getTicker() uses the same prices as signal generation
       this.syncMarketDataToExchange(coin, timeframe, candlesticks);
 
+      const now = Date.now();
       const data: MarketData = {
         coin,
         timeframe,
@@ -224,11 +301,18 @@ export class MarketDataProvider {
         volatility,
       };
 
-      // Cache the successful fetch
-      this.cache.set(cacheKey, {
+      // Cache with both content-based and simple keys for different lookup patterns
+      const cachedEntry: CachedMarketData = {
         data,
-        timestamp: Date.now(),
-      });
+        timestamp: now,
+      };
+
+      // Content-based key for content-aware caching
+      const contentKey = generateMarketDataKey(coin, timeframe, candlesticks);
+      this.cache.set(contentKey, cachedEntry, this.CACHE_FRESH_THRESHOLD);
+
+      // Simple key for quick lookups
+      this.cache.set(simpleKey, cachedEntry, this.CACHE_FRESH_THRESHOLD);
 
       return data;
     } catch (error) {
@@ -297,17 +381,91 @@ export class MarketDataProvider {
    */
   clearCache(): void {
     this.cache.clear();
+    this.indicatorCache.clear();
     this.logger.info('Market data cache cleared', {}, this.context);
   }
 
   /**
    * Get cache statistics
    */
-  getCacheStats(): { size: number; keys: string[] } {
-    return {
-      size: this.cache.size,
-      keys: Array.from(this.cache.keys()),
+  getCacheStats(): {
+    marketData: {
+      size: number;
+      stats: ReturnType<typeof this.cache.getStatistics>;
     };
+    indicators: {
+      size: number;
+      stats: ReturnType<typeof this.indicatorCache.getStatistics>;
+    };
+  } {
+    return {
+      marketData: {
+        size: this.cache.size(),
+        stats: this.cache.getStatistics(),
+      },
+      indicators: {
+        size: this.indicatorCache.size(),
+        stats: this.indicatorCache.getStatistics(),
+      },
+    };
+  }
+
+  /**
+   * Warm cache for frequently accessed symbols/timeframes
+   * Preloads data to improve initial query performance
+   * @param symbols - Array of symbols to warm
+   * @param timeframes - Array of timeframes to warm
+   * @returns Promise that resolves when warming is complete
+   */
+  async warmCache(symbols: string[], timeframes: string[] = ['3m', '4h']): Promise<void> {
+    this.logger.info(
+      `Warming cache for ${symbols.length} symbols and ${timeframes.length} timeframes`,
+      { symbols, timeframes },
+      this.context
+    );
+
+    // Warm cache in parallel for all symbol/timeframe combinations
+    const warmPromises: Promise<void>[] = [];
+
+    for (const symbol of symbols) {
+      for (const timeframe of timeframes) {
+        warmPromises.push(
+          this.getMarketData(symbol, [timeframe])
+            .then(() => {
+              this.logger.debug(`Cache warmed for ${symbol} ${timeframe}`, {}, this.context);
+            })
+            .catch(error => {
+              this.logger.warn(
+                `Failed to warm cache for ${symbol} ${timeframe}`,
+                { error: error instanceof Error ? error.message : String(error) },
+                this.context
+              );
+            })
+        );
+      }
+    }
+
+    await Promise.allSettled(warmPromises);
+
+    const stats = this.getCacheStats();
+    this.logger.info(
+      `Cache warming complete. Market data: ${stats.marketData.size}, Indicators: ${stats.indicators.size}`,
+      {
+        marketDataHitRate: stats.marketData.stats?.hitRate.toFixed(2),
+        indicatorHitRate: stats.indicators.stats?.hitRate.toFixed(2),
+      },
+      this.context
+    );
+  }
+
+  /**
+   * Cleanup and stop periodic tasks
+   * Should be called when shutting down
+   */
+  destroy(): void {
+    this.stopCleanup();
+    this.cache.clear();
+    this.indicatorCache.clear();
   }
 
   private calculateIndicators(candlesticks: Candlestick[]): TechnicalIndicators {

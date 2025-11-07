@@ -7,3 +7,12 @@ export * from './retry.js';
 export * from './circuit-breaker.js';
 export * from './time.js';
 export { RequestDeduplicator } from './request-deduplication.js';
+export { CacheManager, type CacheStrategy, type CacheManagerOptions } from './cache-manager.js';
+export { CacheStatistics, type CacheStats, type CachePerformanceMetrics } from './cache-stats.js';
+export {
+  hashCandlesticks,
+  generateMarketDataKey,
+  generateIndicatorKey,
+  generateSimpleKey,
+  parseCacheKey,
+} from './cache-keys.js';

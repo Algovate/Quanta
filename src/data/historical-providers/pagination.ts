@@ -9,18 +9,22 @@ export interface PaginateParams {
   maxPages?: number;
   log?: (msg: string, extra?: Record<string, unknown>) => void;
   map: (raw: number[]) => Candlestick;
+  onProgress?: (info: { pages: number; candles: number; elapsedSec: number }) => void;
 }
 
 export async function paginateOHLCV(
   params: PaginateParams,
   timeframe: string
 ): Promise<Candlestick[]> {
-  const { fetch, startMs, endMs, limitPerPage, maxPages = 1000, map, log } = params;
+  const { fetch, startMs, endMs, limitPerPage, maxPages = 1000, map, log, onProgress } = params;
   const all: Candlestick[] = [];
   const seen = new Set<number>();
   let since = startMs;
   let pages = 0;
   const step = timeframeToMs(timeframe);
+  const startTime = Date.now();
+  let lastProgressUpdate = 0;
+  const PROGRESS_UPDATE_INTERVAL_MS = 1000;
 
   while (since < endMs && pages < maxPages) {
     pages++;
@@ -34,6 +38,22 @@ export async function paginateOHLCV(
         seen.add(c.timestamp);
         all.push(c);
         added++;
+      }
+    }
+
+    // Emit progress callback (throttled to every 1 second or on first page)
+    if (onProgress) {
+      const now = Date.now();
+      const elapsedSec = (now - startTime) / 1000;
+      const shouldUpdate = pages === 1 || now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL_MS;
+
+      if (shouldUpdate) {
+        onProgress({
+          pages,
+          candles: all.length,
+          elapsedSec,
+        });
+        lastProgressUpdate = now;
       }
     }
 
@@ -51,6 +71,16 @@ export async function paginateOHLCV(
     }
     since = next;
     await new Promise(r => setTimeout(r, 100));
+  }
+
+  // Emit final progress update
+  if (onProgress) {
+    const elapsedSec = (Date.now() - startTime) / 1000;
+    onProgress({
+      pages,
+      candles: all.length,
+      elapsedSec,
+    });
   }
 
   return all.sort((a, b) => a.timestamp - b.timestamp);
