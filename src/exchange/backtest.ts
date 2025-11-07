@@ -8,6 +8,7 @@ import {
   clampReduceOnlyQuantity,
   attemptFallbackRounding,
 } from '../utils/order-validation.js';
+import { UnifiedLogger } from '../logging/index.js';
 
 /**
  * BacktestExchange - Time-aware exchange for historical data replay
@@ -363,32 +364,39 @@ export class BacktestExchange implements Exchange {
     }
   }
 
-  private closePosition(position: Position): void {
+  private async closePosition(position: Position): Promise<void> {
     // Check if position was already closed
     const positionIndex = this.positions.indexOf(position);
     if (positionIndex < 0) {
       return; // Already closed
     }
 
-    const currentPrice = this.getCurrentPrice(position.symbol);
+    // Use placeOrder() to close the position - this ensures consistency with normal trading:
+    // - Applies slippage (same as normal market orders)
+    // - Uses executeOrder() which handles fees correctly
+    // - Maintains consistency in P&L calculation
     const side = position.side === 'long' ? 'sell' : 'buy'; // Opposite side to close
 
-    // Apply taker fee on closing notional (common in most venues)
-    const closeNotional = Math.abs(position.size) * currentPrice;
-    const closeFee = closeNotional * this.cfg.takerFeeRate;
-    this.account.balance -= closeFee;
-    this.account.equity -= closeFee;
-    this.totalFees += closeFee;
-
-    // Use position manager to close the position properly
-    // This ensures all account updates, margin calculations, and trade recording are consistent
-    this.positionManager.updatePosition(
-      position.symbol,
-      side,
-      position.size,
-      currentPrice,
-      position.leverage
-    );
+    try {
+      // placeOrder() will automatically detect this is a reduce-only order
+      // (because opposite position exists) and handle it correctly
+      await this.placeOrder(
+        position.symbol,
+        side,
+        position.size,
+        undefined, // Market order (no price = market order)
+        position.leverage
+      );
+    } catch (error) {
+      // If order placement fails, log error but don't throw
+      // This prevents one failed close from stopping all closes
+      const logger = UnifiedLogger.getInstance();
+      logger.warn(
+        `Failed to close position ${position.symbol} ${position.side} at end of backtest`,
+        error instanceof Error ? { error: error.message } : { error: String(error) },
+        'BacktestExchange'
+      );
+    }
   }
 
   private getCurrentPrice(symbol: string): number {
