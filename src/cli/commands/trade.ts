@@ -17,6 +17,7 @@ import { parseUTCDateString } from '../../utils/time.js';
 import type { Config } from '../../config/settings.js';
 import type { WorkflowConfig, BacktestConfig } from '../../types/index.js';
 import { UserFriendlyError } from '../../types/index.js';
+import { extractDynamicReserveConfig } from '../../config/risk-config-utils.js';
 
 /**
  * Raw CLI options for backtest command
@@ -166,6 +167,8 @@ export class TradeCommands {
         maxLeverage: config.trading.leverageRange[1],
         minLeverage: config.trading.leverageRange[0],
         maxPositions: config.trading.maxPositions,
+        // Dynamic reserve configuration from config.trading.risk.dynamicReserve
+        ...(extractDynamicReserveConfig(config) || {}),
       },
     };
   }

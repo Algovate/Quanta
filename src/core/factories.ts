@@ -5,6 +5,7 @@ import { Exchange } from '../exchange/types.js';
 import { UnifiedLogger } from '../logging/index.js';
 import type { Config } from '../config/settings.js';
 import type { WorkflowConfig } from '../types/index.js';
+import { extractDynamicReserveConfig } from '../config/risk-config-utils.js';
 
 export function createWorkflowDeps(
   exchange: Exchange,
@@ -72,6 +73,8 @@ export function createWorkflowDeps(
       maxLeverage: effLevMax,
       minLeverage: effLevMin,
       maxPositions: effMaxPos,
+      // Dynamic reserve configuration from config.trading.risk.dynamicReserve
+      ...(extractDynamicReserveConfig(config) || {}),
     },
   };
   // Emit warnings when clamping altered user-provided values

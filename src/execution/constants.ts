@@ -52,6 +52,25 @@ export const POSITION_SIZING = {
   TREND_REGIME_THRESHOLD: 0.015, // 1.5% EMA slope change over 10 periods
   /** Bollinger bandwidth threshold for ranging (narrow = ranging) */
   RANGING_BANDWIDTH_THRESHOLD: 0.02, // 2% bandwidth
+  /** Dynamic reserve management */
+  /** Enable dynamic reserve calculation */
+  DYNAMIC_RESERVE_ENABLED: true,
+  /** Minimum reserve percentage (safety floor) */
+  MIN_DYNAMIC_RESERVE_PERCENT: 0.2, // 20%
+  /** Maximum reserve percentage (safety ceiling) */
+  MAX_DYNAMIC_RESERVE_PERCENT: 0.6, // 60%
+  /** Base reserve percentage for dynamic calculation */
+  BASE_RESERVE_PERCENT: 0.4, // 40%
+  /** Reserve adjustment for low volatility (reduction) */
+  LOW_VOLATILITY_RESERVE_REDUCTION: 0.1, // 10% reduction
+  /** Reserve adjustment for high volatility (increase) */
+  HIGH_VOLATILITY_RESERVE_INCREASE: 0.1, // 10% increase
+  /** Reserve adjustment for high position count (increase) */
+  HIGH_POSITION_COUNT_RESERVE_INCREASE: 0.1, // 10% increase
+  /** Reserve adjustment for drawdown (increase) */
+  DRAWDOWN_RESERVE_INCREASE: 0.1, // 10% increase
+  /** Position count threshold for high position count adjustment (80% of max) */
+  HIGH_POSITION_COUNT_THRESHOLD: 0.8,
 } as const;
 
 /**

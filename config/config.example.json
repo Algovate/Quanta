@@ -139,6 +139,19 @@
     "funding": {
       "warnings": true,
       "_comment_warnings": "Enable warnings about estimated funding drag for perpetual swaps"
+    },
+    "risk": {
+      "_comment": "Risk management and dynamic reserve configuration",
+      "dynamicReserve": {
+        "enabled": true,
+        "_comment_enabled": "Enable dynamic reserve calculation (adjusts reserve based on market conditions)",
+        "minReservePercent": 0.2,
+        "_comment_minReservePercent": "Minimum reserve percentage (0.2 = 20%, safety floor)",
+        "maxReservePercent": 0.6,
+        "_comment_maxReservePercent": "Maximum reserve percentage (0.6 = 60%, safety ceiling)",
+        "baseReservePercent": 0.4,
+        "_comment_baseReservePercent": "Base reserve percentage (0.4 = 40%, default starting point)"
+      }
     }
   },
 

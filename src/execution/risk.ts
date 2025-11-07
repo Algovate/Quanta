@@ -23,6 +23,7 @@ import { SymbolPerformanceTracker } from './symbol-performance.js';
 import { SignalValidator } from './risk/signal-validator.js';
 import { KellyCriterionCalculator } from './kelly-criterion.js';
 import { MarketRegimeAnalyzer } from '../analytics/market-regime.js';
+import { DynamicReserveCalculator, type DynamicReserveConfig } from './risk/dynamic-reserve.js';
 
 export interface RiskParams {
   maxRiskPerTrade: number; // 0.05 = 5%
@@ -31,6 +32,10 @@ export interface RiskParams {
   defaultStopLoss: number; // 0.03 = 3%
   maxLeverage: number;
   minLeverage: number;
+  /** Dynamic reserve configuration */
+  dynamicReserveEnabled?: boolean;
+  minReservePercent?: number;
+  maxReservePercent?: number;
 }
 
 export interface PositionSizing {
@@ -50,6 +55,7 @@ export class RiskManager {
   private signalValidator: SignalValidator;
   private kellyCalculator: KellyCriterionCalculator;
   private marketRegimeAnalyzer: MarketRegimeAnalyzer;
+  private dynamicReserveCalculator: DynamicReserveCalculator;
 
   constructor(params: RiskParams) {
     this.params = params;
@@ -58,6 +64,13 @@ export class RiskManager {
     this.signalValidator = new SignalValidator(this.performanceTracker);
     this.kellyCalculator = new KellyCriterionCalculator(this.performanceTracker);
     this.marketRegimeAnalyzer = new MarketRegimeAnalyzer();
+    // Initialize dynamic reserve calculator
+    const reserveConfig: DynamicReserveConfig = {
+      enabled: params.dynamicReserveEnabled,
+      minReservePercent: params.minReservePercent,
+      maxReservePercent: params.maxReservePercent,
+    };
+    this.dynamicReserveCalculator = new DynamicReserveCalculator(reserveConfig);
   }
 
   /**
@@ -213,6 +226,63 @@ export class RiskManager {
       initialMargin: roundToPrecision(initialMargin, EXCHANGE_PRECISION.USDT),
       liquidationPrice: roundToPrecision(liquidationPrice, EXCHANGE_PRECISION.USDT),
     };
+  }
+
+  /**
+   * Calculate dynamic reserve percentage based on market conditions and portfolio state
+   * Adjusts reserve between MIN_DYNAMIC_RESERVE_PERCENT and MAX_DYNAMIC_RESERVE_PERCENT
+   * based on volatility, drawdown state, position count, and other risk factors
+   */
+  calculateDynamicReserve(
+    _account: Account,
+    positions: Position[],
+    _indicators?: TechnicalIndicators,
+    drawdownState?: 'normal' | 'reduced' | 'paused',
+    atr14?: number,
+    currentPrice?: number
+  ): number {
+    const reserve = this.dynamicReserveCalculator.calculate({
+      positions,
+      positionCount: positions.length,
+      maxPositions: this.params.maxPositions,
+      drawdownState,
+      atr14,
+      currentPrice,
+    });
+
+    // Log adjustment if reserve differs from base
+    const baseReserve = POSITION_SIZING.BASE_RESERVE_PERCENT;
+    const adjustmentReasons = this.dynamicReserveCalculator.getAdjustmentReasons({
+      positions,
+      positionCount: positions.length,
+      maxPositions: this.params.maxPositions,
+      drawdownState,
+      atr14,
+      currentPrice,
+    });
+
+    if (reserve !== baseReserve || adjustmentReasons.length > 0) {
+      const positionRatio =
+        this.params.maxPositions > 0 ? positions.length / this.params.maxPositions : 0;
+      this.logger.debug(
+        'Dynamic reserve calculated',
+        {
+          baseReserve: (baseReserve * 100).toFixed(1) + '%',
+          dynamicReserve: (reserve * 100).toFixed(1) + '%',
+          minReserve: (this.dynamicReserveCalculator.getMinReserve() * 100).toFixed(1) + '%',
+          maxReserve: (this.dynamicReserveCalculator.getMaxReserve() * 100).toFixed(1) + '%',
+          positionCount: positions.length,
+          positionRatio: (positionRatio * 100).toFixed(1) + '%',
+          drawdownState: drawdownState || 'normal',
+          atr14: atr14?.toFixed(4),
+          currentPrice: currentPrice?.toFixed(2),
+          adjustmentReasons: adjustmentReasons.join(', ') || 'none',
+        },
+        this.context
+      );
+    }
+
+    return reserve;
   }
 
   calculatePositionSizing(
@@ -541,8 +611,16 @@ export class RiskManager {
 
       // Step 2: Limit position size to avoid over-leveraging using precision-safe arithmetic
       // Use max 30% of available capital per trade to ensure we can open multiple positions
-      // But ensure we leave at least 40% available for other trades
-      const reservePercent = safeSubtract(1, POSITION_SIZING.MIN_RESERVE_PERCENT, 6).toNumber();
+      // Calculate dynamic reserve based on market conditions and portfolio state
+      const dynamicReserve = this.calculateDynamicReserve(
+        account,
+        currentPositions,
+        indicators,
+        drawdownState,
+        atr14,
+        currentPrice
+      );
+      const reservePercent = safeSubtract(1, dynamicReserve, 6).toNumber();
       const availableForTrade = safeMultiply(account.availableMargin, reservePercent).toNumber();
       const maxCapitalBasedValue = safePercentage(
         availableForTrade,

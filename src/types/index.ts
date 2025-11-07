@@ -487,6 +487,10 @@ export interface WorkflowConfig {
     maxLeverage: number;
     minLeverage: number;
     maxPositions: number;
+    /** Dynamic reserve configuration */
+    dynamicReserveEnabled?: boolean;
+    minReservePercent?: number;
+    maxReservePercent?: number;
   };
 }
 
