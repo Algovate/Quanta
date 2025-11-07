@@ -388,19 +388,46 @@ export class PerformanceAnalytics {
 
       // Calculate max drawdown for this symbol
       // Note: EquitySnapshot may not have symbol field, so we'll calculate from trades
-      const symbolPnLs = symbolTrades.map(t => t.pnl);
+      // Calculate cumulative P&L to track equity curve
+      const cumulativePnLs: number[] = [];
+      let runningPnL = 0;
+      for (const trade of symbolTrades) {
+        runningPnL += trade.pnl;
+        cumulativePnLs.push(runningPnL);
+      }
+
+      // Calculate max drawdown for this symbol
+      // Use total investment as baseline to avoid division by tiny peak values
+      const totalInvestment = symbolTrades.reduce(
+        (sum, t) => sum + Math.abs(t.size * t.entryPrice),
+        0
+      );
+
       let maxDrawdown = 0;
-      let peakEquity = 0;
-      let runningEquity = 0;
-      for (const pnl of symbolPnLs) {
-        runningEquity += pnl;
-        if (runningEquity > peakEquity) {
-          peakEquity = runningEquity;
+      let peak = 0;
+      let maxAbsoluteDrawdown = 0;
+
+      for (const cumPnL of cumulativePnLs) {
+        if (cumPnL > peak) {
+          peak = cumPnL;
         }
-        const drawdown = peakEquity > 0 ? ((peakEquity - runningEquity) / peakEquity) * 100 : 0;
-        if (drawdown > maxDrawdown) {
-          maxDrawdown = drawdown;
+
+        // Calculate absolute drawdown (peak - current)
+        const absoluteDrawdown = peak - cumPnL;
+        if (absoluteDrawdown > maxAbsoluteDrawdown) {
+          maxAbsoluteDrawdown = absoluteDrawdown;
         }
+      }
+
+      // Calculate percentage drawdown using total investment as baseline
+      // This provides stable and meaningful percentages regardless of peak size
+      if (totalInvestment > 0.01) {
+        // Use total investment as denominator to avoid extreme percentages
+        const drawdownPercent = (maxAbsoluteDrawdown / totalInvestment) * 100;
+        maxDrawdown = -Math.min(drawdownPercent, 100); // Cap at -100%
+      } else if (maxAbsoluteDrawdown > 0) {
+        // For edge cases with very small investment, cap at -100%
+        maxDrawdown = -100;
       }
 
       // Calculate quality score (0-1): combination of win rate, profit factor, and Sharpe ratio
@@ -418,7 +445,15 @@ export class PerformanceAnalytics {
         losingTrades: losingTrades.length,
         winRate,
         totalPnL,
-        totalReturn: (totalPnL / (symbolTrades[0]?.entryPrice || 1)) * 100, // Simplified return calculation
+        // Calculate total return based on total investment (sum of all entry notional values)
+        // This is more accurate than using a single entry price
+        totalReturn: (() => {
+          const totalInvestment = symbolTrades.reduce(
+            (sum, t) => sum + Math.abs(t.size * t.entryPrice),
+            0
+          );
+          return totalInvestment > 0 ? (totalPnL / totalInvestment) * 100 : 0;
+        })(),
         avgWin,
         avgLoss,
         profitFactor,
@@ -485,24 +520,41 @@ export class PerformanceAnalytics {
       const sharpeRatio = stdDev > 0 ? meanReturn / stdDev : 0;
 
       // Calculate max drawdown for this period
+      // Use total investment as baseline to avoid division by tiny peaks
+      const periodInvestment = periodTrades.reduce(
+        (sum, t) => sum + Math.abs(t.size * t.entryPrice),
+        0
+      );
+
       const periodPnLs = periodTrades.map(t => t.pnl);
       let maxDrawdown = 0;
       let peakEquity = 0;
       let runningEquity = 0;
+      let maxAbsoluteDrawdown = 0;
+
       for (const pnl of periodPnLs) {
         runningEquity += pnl;
         if (runningEquity > peakEquity) {
           peakEquity = runningEquity;
         }
-        const drawdown = peakEquity > 0 ? ((peakEquity - runningEquity) / peakEquity) * 100 : 0;
-        if (drawdown > maxDrawdown) {
-          maxDrawdown = drawdown;
+        // Track absolute drawdown
+        const absoluteDrawdown = peakEquity - runningEquity;
+        if (absoluteDrawdown > maxAbsoluteDrawdown) {
+          maxAbsoluteDrawdown = absoluteDrawdown;
         }
       }
 
-      // Calculate initial balance for return calculation (simplified)
-      const initialBalance = periodTrades[0]?.entryPrice || 1;
-      const totalReturn = (totalPnL / initialBalance) * 100;
+      // Calculate percentage drawdown using period investment as baseline
+      if (periodInvestment > 0.01) {
+        const drawdownPercent = (maxAbsoluteDrawdown / periodInvestment) * 100;
+        maxDrawdown = -Math.min(drawdownPercent, 100); // Cap at -100%
+      } else if (maxAbsoluteDrawdown > 0) {
+        maxDrawdown = -100; // Cap at -100% for edge cases
+      }
+
+      // Calculate total return based on total investment (reuse periodInvestment calculated above)
+      // This is more accurate than using a single entry price
+      const totalReturn = periodInvestment > 0 ? (totalPnL / periodInvestment) * 100 : 0;
 
       periodMap.set(period, {
         period,

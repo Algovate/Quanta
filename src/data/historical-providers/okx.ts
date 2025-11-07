@@ -43,6 +43,13 @@ export class OKXHistoricalProvider implements IHistoricalProvider {
     endDate: Date,
     onProgress?: (progress: FetchProgress) => void
   ): Promise<Candlestick[]> {
+    // Log when we actually fetch from exchange (this should only happen on cache miss)
+    this.logger.info(
+      `🔄 Fetching ${symbol} ${timeframe} from OKX exchange`,
+      { symbol, timeframe, startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+      this.context
+    );
+
     try {
       // Convert symbol to OKX format (e.g., BTC/USDT -> BTC/USDT:USDT for perpetuals)
       const okxSymbol = this.toOKXSymbol(symbol);

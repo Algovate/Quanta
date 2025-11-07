@@ -305,19 +305,25 @@ export class QueryInterface {
 
   /**
    * Get snapshots in time range
+   * @deprecated Use StateSnapshotService.getSnapshotsInRange() instead
+   * This method is a placeholder and returns empty array.
+   * For actual snapshot queries, use StateSnapshotService which maintains in-memory snapshots.
    */
   async getSnapshotsInRange(_startTime: number, _endTime: number): Promise<SystemSnapshot[]> {
-    // TODO: Implement snapshot query from storage
-    // For now, return empty array
+    // Note: QueryInterface focuses on operation logs, not system snapshots.
+    // Use StateSnapshotService for snapshot queries instead.
     return [];
   }
 
   /**
    * Get latest snapshot
+   * @deprecated Use StateSnapshotService.getLastSnapshot() instead
+   * This method is a placeholder and returns null.
+   * For actual snapshot queries, use StateSnapshotService which maintains in-memory snapshots.
    */
   async getLatestSnapshot(): Promise<SystemSnapshot | null> {
-    // TODO: Implement latest snapshot query
-    // For now, return null
+    // Note: QueryInterface focuses on operation logs, not system snapshots.
+    // Use StateSnapshotService for snapshot queries instead.
     return null;
   }
 

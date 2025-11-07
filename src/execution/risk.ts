@@ -228,33 +228,34 @@ export class RiskManager {
     try {
       // Validate inputs
       if (account.equity <= ACCOUNT_VALIDATION.MIN_EQUITY) {
-        this.logger.warn('Account equity too low for trading', {
-          equity: account.equity,
-          minimum: ACCOUNT_VALIDATION.MIN_EQUITY,
-        });
-        return null;
+        const reason = `Account equity too low: $${account.equity.toFixed(2)} (minimum: $${ACCOUNT_VALIDATION.MIN_EQUITY})`;
+        // Use debug level to avoid log spam - this is expected validation and will be tracked in rejection reasons
+        this.logger.debug(
+          'Account equity too low for trading',
+          {
+            equity: account.equity,
+            minimum: ACCOUNT_VALIDATION.MIN_EQUITY,
+          },
+          this.context
+        );
+        throw new Error(reason);
       }
 
       if (currentPrice <= ACCOUNT_VALIDATION.MIN_VALID_PRICE) {
-        this.logger.error(
-          'Invalid current price',
-          new Error(`Current price ${currentPrice} for ${signal.coin} is invalid`),
-          this.context
-        );
-        return null;
+        const reason = `Invalid current price: $${currentPrice} for ${signal.coin}`;
+        this.logger.error('Invalid current price', new Error(reason), this.context);
+        throw new Error(reason);
       }
 
       if (signal.entry_price && signal.entry_price <= ACCOUNT_VALIDATION.MIN_VALID_PRICE) {
-        this.logger.error(
-          'Invalid entry price in signal',
-          new Error(`Entry price ${signal.entry_price} for ${signal.coin} is invalid`),
-          this.context
-        );
-        return null;
+        const reason = `Invalid entry price: $${signal.entry_price} for ${signal.coin}`;
+        this.logger.error('Invalid entry price in signal', new Error(reason), this.context);
+        throw new Error(reason);
       }
 
       // Check if we can open new positions
       if (currentPositions.length >= this.params.maxPositions) {
+        const reason = `Maximum positions limit reached: ${currentPositions.length}/${this.params.maxPositions}`;
         this.logger.debug(
           'Position sizing rejected: maximum positions limit reached',
           {
@@ -265,7 +266,7 @@ export class RiskManager {
           },
           this.context
         );
-        return null;
+        throw new Error(reason);
       }
 
       // Check total margin usage to prevent over-leveraging using optimized aggregation
@@ -276,6 +277,7 @@ export class RiskManager {
         6
       ).toNumber();
       if (currentMarginUsage >= this.params.maxTotalRisk) {
+        const reason = `Margin limit reached: ${(currentMarginUsage * 100).toFixed(2)}% >= ${(this.params.maxTotalRisk * 100).toFixed(2)}%`;
         this.logger.debug(
           'Position sizing rejected: margin limit reached',
           {
@@ -288,7 +290,7 @@ export class RiskManager {
           },
           this.context
         );
-        return null;
+        throw new Error(reason);
       }
 
       // Calculate position size based on risk using precision-safe arithmetic
@@ -570,14 +572,21 @@ export class RiskManager {
 
       // Ensure minimum position value (1% of account or $200, whichever is higher) using precision
       // This scales with account size and prevents tiny positions
+      // When equity drops significantly, adaptively reduce minimum to prevent impossible sizing requirements
       const minPositionValueFromPercent = safePercentage(
         account.equity,
         POSITION_SIZING.MIN_POSITION_PERCENT
       ).toNumber();
-      const minPositionValue = Math.max(
-        POSITION_SIZING.MIN_POSITION_VALUE_USD,
-        minPositionValueFromPercent
-      );
+      // Adaptive minimum: when equity is low, cap minimum at 5% of equity to prevent impossible requirements
+      // Otherwise use the higher of absolute minimum ($200) or percentage-based minimum (1%)
+      const adaptiveMinimumCap = safePercentage(account.equity, 0.05).toNumber(); // 5% of equity as upper bound
+      const minPositionValue =
+        account.equity < 4000
+          ? Math.max(
+              minPositionValueFromPercent,
+              Math.min(POSITION_SIZING.MIN_POSITION_VALUE_USD, adaptiveMinimumCap)
+            )
+          : Math.max(POSITION_SIZING.MIN_POSITION_VALUE_USD, minPositionValueFromPercent);
       const adjustedPositionValue = Math.max(minPositionValue, positionValueWithUtil);
 
       // Step 4: Apply drawdown protection multiplier to position size
@@ -591,6 +600,11 @@ export class RiskManager {
 
         if (drawdownMultiplier <= 0) {
           // Trading paused due to drawdown
+          const drawdownPercent =
+            peakEquity && peakEquity > 0
+              ? (((peakEquity - account.equity) / peakEquity) * 100).toFixed(2)
+              : 'unknown';
+          const reason = `Trading paused due to drawdown protection (drawdown: ${drawdownPercent}%, state: ${drawdownState})`;
           this.logger.debug(
             'Position sizing rejected: trading paused due to drawdown',
             {
@@ -601,7 +615,7 @@ export class RiskManager {
             },
             this.context
           );
-          return null;
+          throw new Error(reason);
         }
 
         this.logger.debug(
@@ -629,7 +643,9 @@ export class RiskManager {
       // Step 5.5: Apply Kelly Criterion multiplier if available
       const symbol = `${signal.coin}/USDT`;
       const kellyMultiplier = this.kellyCalculator.getPositionSizeMultiplier(symbol);
+      let kellyApplied = false;
       if (kellyMultiplier !== 1.0) {
+        kellyApplied = true;
         const beforeKelly = drawdownAdjustedValue;
         drawdownAdjustedValue = safeMultiply(drawdownAdjustedValue, kellyMultiplier).toNumber();
         this.logger.debug(
@@ -669,18 +685,51 @@ export class RiskManager {
       // Final validation
       if (!isFinite(cappedSize)) {
         // Only treat non有限/NaN为异常，输出error并带上下文
+        const reason = `Invalid position size calculated (non-finite) for ${signal.coin}: cappedSize=${cappedSize}, adjustedPositionValue=${adjustedPositionValue.toFixed(2)}, pricePerUnit=${pricePerUnit.toFixed(2)}`;
         this.logger.error(
           'Invalid position size calculated (non-finite)',
-          new Error(
-            `Position size calculation failed for ${signal.coin}: cappedSize=${cappedSize}, adjustedPositionValue=${adjustedPositionValue}, pricePerUnit=${pricePerUnit}`
-          ),
+          new Error(reason),
           this.context
         );
-        return null;
+        throw new Error(reason);
       }
       if (cappedSize <= 0) {
-        // 正常风控拒绝或多重约束压缩为0，静默返回即可（由上层做聚合统计）
-        return null;
+        // Position size reduced to zero or negative due to multiple constraints
+        // Calculate which constraints contributed
+        const constraints: string[] = [];
+        if (positionValueWithUtil < minPositionValue) {
+          constraints.push(`below minimum position value ($${minPositionValue.toFixed(2)})`);
+        }
+        if (utilizationFactor < 1.0) {
+          constraints.push(
+            `utilization factor ${(utilizationFactor * 100).toFixed(1)}% (${currentPositions.length}/${this.params.maxPositions} positions)`
+          );
+        }
+        if (drawdownMultiplier < 1.0) {
+          constraints.push(`drawdown multiplier ${(drawdownMultiplier * 100).toFixed(1)}%`);
+        }
+        if (volatilityScale < 1.0) {
+          constraints.push(`volatility scaling ${(volatilityScale * 100).toFixed(1)}%`);
+        }
+        if (kellyApplied && kellyMultiplier < 1.0) {
+          constraints.push(`Kelly criterion multiplier ${(kellyMultiplier * 100).toFixed(1)}%`);
+        }
+        const reason =
+          constraints.length > 0
+            ? `Position size reduced to zero for ${signal.coin} due to: ${constraints.join(', ')} (equity: $${account.equity.toFixed(2)})`
+            : `Position size reduced to zero for ${signal.coin} (equity: $${account.equity.toFixed(2)}, calculated size: ${cappedSize.toFixed(8)})`;
+        this.logger.debug(
+          'Position sizing rejected: size reduced to zero',
+          {
+            coin: signal.coin,
+            cappedSize,
+            adjustedPositionValue,
+            accountEquity: account.equity,
+            constraints,
+          },
+          this.context
+        );
+        throw new Error(reason);
       }
 
       return {
@@ -692,12 +741,31 @@ export class RiskManager {
         leverage, // This is for reference, actual leverage applied by exchange
       };
     } catch (error) {
+      // Re-throw errors that contain detailed rejection reasons
+      // These are thrown intentionally to provide context to callers
+      if (error instanceof Error && error.message) {
+        // Log the error but re-throw so caller can extract the reason
+        this.logger.debug(
+          'Position sizing calculation rejected',
+          {
+            coin: signal.coin,
+            reason: error.message,
+          },
+          this.context
+        );
+        // Store error message in a way callers can access it
+        // Since we can't modify return type easily, we'll throw and let callers catch
+        throw error;
+      }
+      // For unexpected errors, log and return null
       this.logger.error(
         'Error calculating position sizing',
         error instanceof Error ? error : new Error(String(error)),
         this.context
       );
-      return null;
+      throw new Error(
+        `Unexpected error in position sizing calculation: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 

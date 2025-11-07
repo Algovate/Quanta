@@ -34,6 +34,7 @@ export class BacktestExchange implements Exchange {
   private positionManager: PositionUpdateManager;
   private rng: () => number;
   private candleIndex: Map<string, number> = new Map();
+  private totalFees: number = 0; // Track total fees paid
 
   private cfg: Required<BacktestExecutionConfig>;
 
@@ -345,6 +346,13 @@ export class BacktestExchange implements Exchange {
   }
 
   /**
+   * Get total fees paid during backtest
+   */
+  getTotalFees(): number {
+    return this.totalFees;
+  }
+
+  /**
    * Force close all positions (used at end of backtest)
    */
   async closeAllPositions(): Promise<void> {
@@ -370,6 +378,7 @@ export class BacktestExchange implements Exchange {
     const closeFee = closeNotional * this.cfg.takerFeeRate;
     this.account.balance -= closeFee;
     this.account.equity -= closeFee;
+    this.totalFees += closeFee;
 
     // Use position manager to close the position properly
     // This ensures all account updates, margin calculations, and trade recording are consistent
@@ -543,6 +552,7 @@ export class BacktestExchange implements Exchange {
         const fee = notionalValue * feeRate;
         this.account.balance -= fee;
         this.account.equity -= fee;
+        this.totalFees += fee;
       } else {
         order.status = 'rejected';
       }

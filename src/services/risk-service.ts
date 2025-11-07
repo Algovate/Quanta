@@ -21,15 +21,21 @@ export class RiskServiceImpl implements RiskService {
     atr14?: number,
     indicators?: TechnicalIndicators
   ): PositionSizing | null {
-    // Delegate to risk manager
-    return this.riskManager.calculatePositionSizing(
-      signal,
-      account,
-      positions,
-      currentPrice,
-      atr14,
-      indicators
-    );
+    // Delegate to risk manager - catch errors to return null with detailed reason in error message
+    try {
+      return this.riskManager.calculatePositionSizing(
+        signal,
+        account,
+        positions,
+        currentPrice,
+        atr14,
+        indicators
+      );
+    } catch (error) {
+      // Errors contain detailed rejection reasons - return null to maintain interface
+      // Callers should check error messages for details
+      return null;
+    }
   }
 
   validateRisk(signal: TradingSignal, account: Account, positions: Position[]): boolean {

@@ -793,16 +793,25 @@ export class TradingWorkflow {
         };
       }
 
-      const sizing = this.riskManager.calculatePositionSizing(
-        signal,
-        account,
-        positions,
-        currentPrice,
-        atr14,
-        indicators,
-        this.state.drawdownState,
-        this.state.peakEquity
-      );
+      let sizing: import('../execution/risk.js').PositionSizing | null;
+      let sizingErrorReason: string | undefined;
+      try {
+        sizing = this.riskManager.calculatePositionSizing(
+          signal,
+          account,
+          positions,
+          currentPrice,
+          atr14,
+          indicators,
+          this.state.drawdownState,
+          this.state.peakEquity
+        );
+      } catch (error) {
+        // Extract detailed rejection reason from error message
+        sizingErrorReason =
+          error instanceof Error ? error.message : 'Position sizing calculation failed';
+        sizing = null;
+      }
 
       // Detect market regime for decision path (simplified logic)
       let regime: 'trending' | 'ranging' | 'unknown' = 'unknown';
@@ -818,7 +827,8 @@ export class TradingWorkflow {
       this.unifiedLogger.recordValidationCheck(cycleOperationId, 'execute_signals', {
         name: 'position_sizing',
         passed: sizing !== null,
-        reason: sizing === null ? 'Risk limit or max positions reached' : undefined,
+        reason:
+          sizing === null ? sizingErrorReason || 'Risk limit or max positions reached' : undefined,
         details: sizing
           ? {
               suggestedSize: sizing.suggestedSize,
@@ -833,19 +843,20 @@ export class TradingWorkflow {
       if (!sizing) {
         this.state.rejectedSignals++;
         this.state.rejectedSignalsCycle++;
+        const errorMessage = sizingErrorReason || 'Position sizing calculation failed';
         this.emitLog(
           'warn',
-          `⚠️  ${signal.coin}: ${signal.action} signal rejected (risk limit or max positions reached)`
+          `⚠️  ${signal.coin}: ${signal.action} signal rejected (${errorMessage})`
         );
         return {
           success: false,
-          error: 'Position sizing calculation failed',
+          error: errorMessage,
           decisionInfo: this.buildRejectionDecisionInfo(
             signal,
             currentPrice,
             true,
             false,
-            'Risk limit or max positions reached'
+            errorMessage
           ),
         };
       }
@@ -1295,7 +1306,8 @@ export class TradingWorkflow {
   }> {
     // Access circuit breaker from AI agent via reflection if needed
     // For now, return empty array as circuit breaker is private
-    // TODO: Add public method to OpenRouterClient to get circuit breaker stats
+    // Note: Circuit breaker stats are internal to the AI client implementation.
+    // If needed, expose a public method on OpenRouterClient to get circuit breaker stats.
     return [];
   }
 

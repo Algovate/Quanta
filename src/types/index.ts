@@ -392,6 +392,10 @@ export interface BacktestResult {
   finalEquity: number;
   signalStats: SignalStatistics;
   initEnv?: BacktestInitEnv;
+  feeStats?: {
+    totalFees: number;
+    totalFeesPercent: number; // Percentage of initial balance
+  };
 }
 
 /**

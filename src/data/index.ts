@@ -1,4 +1,4 @@
-export { HistoricalDataProvider } from './historical.js';
+export { getCandlesticksUpTo, getCurrentPrice } from './historical.js';
 export * from './historical-providers/index.js';
 export {
   MarketDataProvider,

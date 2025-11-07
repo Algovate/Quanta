@@ -273,10 +273,10 @@ export class BacktestReport {
     console.log(chalk.gray('━'.repeat(70)));
 
     const totalReturnColor = this.metrics.totalReturn >= 0 ? chalk.green : chalk.red;
-    const pnlSign = this.metrics.totalPnL >= 0 ? '+' : '';
+    const pnlSign = this.metrics.totalPnL >= 0 ? '+' : '-';
 
     console.log(
-      `  Total Return:     ${totalReturnColor.bold(`${pnlSign}${this.metrics.totalReturn.toFixed(2)}%`)}`
+      `  Total Return:     ${totalReturnColor.bold(`${pnlSign}${Math.abs(this.metrics.totalReturn).toFixed(2)}%`)}`
     );
     console.log(
       `  Total P&L:        ${totalReturnColor.bold(`${pnlSign}${fmtMoney(Math.abs(this.metrics.totalPnL))}`)}`
@@ -346,6 +346,46 @@ export class BacktestReport {
     console.log(
       `  Largest Loss:     ${chalk.red.bold('$' + Math.abs(this.metrics.largestLoss).toFixed(2))}`
     );
+
+    // Display fee statistics if available
+    if (this.result.feeStats) {
+      console.log(chalk.gray('  ' + '─'.repeat(68)));
+      console.log(
+        `  Total Fees:       ${chalk.yellow.bold(fmtMoney(this.result.feeStats.totalFees))} (${chalk.yellow(this.result.feeStats.totalFeesPercent.toFixed(2) + '%')} of initial)`
+      );
+
+      // Calculate breakdown: fees vs price P&L
+      // Note: symbolPnLSum only includes price P&L (excludes fees)
+      // totalPnL includes all costs (price P&L + fees + slippage + other costs)
+      const symbolPnLSum = Array.from(
+        this.analytics
+          .calculateSymbolPerformance(this.result.trades, this.result.equitySnapshots)
+          .values()
+      ).reduce((sum, perf) => sum + perf.totalPnL, 0);
+
+      // Other costs = total loss - price P&L - fees
+      // This includes slippage and any other unaccounted costs
+      const otherCosts = this.metrics.totalPnL - symbolPnLSum - this.result.feeStats.totalFees;
+      if (Math.abs(otherCosts) > 0.01) {
+        const otherCostsSign = otherCosts >= 0 ? '+' : '';
+        console.log(
+          `  Other Costs:      ${chalk.yellow(`${otherCostsSign}${fmtMoney(otherCosts)}`)} (slippage, etc.)`
+        );
+      }
+
+      // Show breakdown summary
+      console.log(chalk.gray('  ' + '─'.repeat(68)));
+      console.log(`  Price P&L:        ${chalk.white(fmtMoney(symbolPnLSum))} (trades only)`);
+      console.log(
+        `  Fees Impact:      ${chalk.yellow(`-${fmtMoney(this.result.feeStats.totalFees)}`)}`
+      );
+      if (Math.abs(otherCosts) > 0.01) {
+        console.log(
+          `  Other Costs:      ${chalk.yellow(`${otherCosts >= 0 ? '+' : ''}${fmtMoney(otherCosts)}`)}`
+        );
+      }
+      console.log(`  Total P&L:        ${chalk.white.bold(fmtMoney(this.metrics.totalPnL))}`);
+    }
 
     console.log('');
   }

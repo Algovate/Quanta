@@ -85,17 +85,13 @@ export class OrderExecutor {
       // Get current price for validation
       const currentPrice = await this.getCurrentPriceWithFallback(symbol, position);
 
-      // Clamp reduce-only quantity to position size and validate
+      // Clamp reduce-only quantity to position size
+      // Note: We allow clampedAmount to be 0 or very small - batching logic will handle accumulation
       const clampedAmount = clampReduceOnlyQuantity(requestedAmount, position.size, symbol);
-      if (clampedAmount <= 0) {
-        return this.createErrorResult(
-          'Quantity below minimum after rounding and clamping to position size',
-          'VALIDATION_FAILED'
-        );
-      }
 
       // Enforce minimum notional for partial closes (to avoid spammy tiny orders)
       // Batch tiny remainders until they reach minimum
+      // This will handle cases where clampedAmount is 0 or below minQty by accumulating them
       const batchingResult = this.handleTinyPartialBatching(
         symbol,
         clampedAmount,
@@ -297,12 +293,20 @@ export class OrderExecutor {
       }
 
       // Calculate position sizing (ATR not available at this level, will use default)
-      const sizing = this.riskManager.calculatePositionSizing(
-        signal,
-        account,
-        currentPositions,
-        currentPrice
-      );
+      let sizing: PositionSizing | null;
+      try {
+        sizing = this.riskManager.calculatePositionSizing(
+          signal,
+          account,
+          currentPositions,
+          currentPrice
+        );
+      } catch (error) {
+        // Extract detailed rejection reason from error message
+        const reason =
+          error instanceof Error ? error.message : 'Position sizing calculation failed';
+        return this.createErrorResult(reason, 'VALIDATION_FAILED');
+      }
 
       if (!sizing) {
         return this.createErrorResult('Position sizing calculation failed', 'VALIDATION_FAILED');

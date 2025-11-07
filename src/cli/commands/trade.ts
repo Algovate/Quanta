@@ -433,6 +433,14 @@ export class TradeCommands {
     await manager.start(exchange, marketProvider, aiClient, workflowConfig);
   }
 
+  /**
+   * Cleanup resources and exit the process
+   */
+  private static async cleanupAndExit(logger: UnifiedLogger, exitCode: number): Promise<never> {
+    await logger.flush();
+    process.exit(exitCode);
+  }
+
   private static async runBacktest(options: BacktestCLIOptions): Promise<void> {
     const { BacktestEngine } = await import('../../core/backtest-engine.js');
     const { BacktestReport } = await import('../../analytics/report.js');
@@ -512,6 +520,8 @@ export class TradeCommands {
 
     // Configuration will be printed after dates are resolved below
 
+    let exitCode = 0;
+
     try {
       const mode: 'verbose' | 'normal' | 'quiet' = options.quiet
         ? 'quiet'
@@ -574,6 +584,7 @@ export class TradeCommands {
         logger.info(chalk.green('✅ Backtest completed successfully!'), {}, 'TradeCommands');
       }
     } catch (error) {
+      exitCode = 1;
       if (error instanceof Error) {
         logger.error(chalk.red(`\n❌ Error: ${error.message}`), error, 'TradeCommands');
       } else {
@@ -584,8 +595,9 @@ export class TradeCommands {
       logger.info(chalk.gray('  1. Verify date format is YYYY-MM-DD'), {}, 'TradeCommands');
       logger.info(chalk.gray('  2. Ensure start date is before end date'), {}, 'TradeCommands');
       logger.info(chalk.gray('  3. Check coin symbols are valid'), {}, 'TradeCommands');
-
-      throw error;
+    } finally {
+      // Always flush logger to close file streams and allow process to exit
+      await TradeCommands.cleanupAndExit(logger, exitCode);
     }
   }
 

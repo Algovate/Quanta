@@ -5,7 +5,6 @@ import {
   type TradingSignal,
 } from '../exchange/index.js';
 import {
-  HistoricalDataProvider,
   MarketDataProvider,
   type MarketData,
   OKXHistoricalProvider,
@@ -13,6 +12,7 @@ import {
   CachedHistoricalProvider,
   SimulatedHistoricalProvider,
   type IHistoricalProvider,
+  type FetchProgress,
 } from '../data/index.js';
 import { MockAIAgent } from '../ai/index.js';
 import { RiskManager, OrderExecutor, PositionMonitorService } from '../execution/index.js';
@@ -82,7 +82,7 @@ export interface BacktestEngineOptions {
 export class BacktestEngine {
   private exchange: BacktestExchange;
   private marketDataProvider: MarketDataProvider;
-  private historicalDataProvider: HistoricalDataProvider;
+  private historicalDataProvider: IHistoricalProvider;
   private aiAgent: MockAIAgent;
   private riskManager: RiskManager;
   private orderExecutor: OrderExecutor;
@@ -145,8 +145,9 @@ export class BacktestEngine {
     }
 
     // Initialize historical data provider based on config
-    const provider = this.createHistoricalProvider();
-    this.historicalDataProvider = new HistoricalDataProvider(provider, this.rng);
+    // Directly use IHistoricalProvider (which may be wrapped with CachedHistoricalProvider)
+    // No need for additional HistoricalDataProvider wrapper layer
+    this.historicalDataProvider = this.createHistoricalProvider();
 
     this.exchange = new BacktestExchange(
       config.initialBalance,
@@ -437,37 +438,46 @@ export class BacktestEngine {
     startTime: number
   ): Promise<{ candleCount: number; symbolTimeframe: string }> {
     try {
-      // Emit initial progress update
-      this.updateLoadingProgress(
-        symbol,
-        timeframe,
-        completedOperations,
-        totalOperations,
-        startTime
-      );
+      // Track whether we're actually loading (not from cache)
+      // Only show progress updates when we're actually fetching data
+      let isLoadingFromNetwork = false;
 
       // Create throttled progress callback for pagination updates
       const lastProgressUpdate = { value: 0 };
+
+      const progressCallback = (progress: FetchProgress) => {
+        // First progress update indicates we're loading from network
+        if (!isLoadingFromNetwork) {
+          isLoadingFromNetwork = true;
+          // Emit initial progress update when we know we're loading
+          this.updateLoadingProgress(
+            symbol,
+            timeframe,
+            completedOperations,
+            totalOperations,
+            startTime
+          );
+        }
+        this.updateLoadingProgress(
+          symbol,
+          timeframe,
+          completedOperations,
+          totalOperations,
+          startTime,
+          {
+            pages: progress.pages,
+            candles: progress.candles,
+          },
+          lastProgressUpdate
+        );
+      };
 
       const candlesticks = await this.historicalDataProvider.getHistoricalCandlesticks(
         symbol,
         timeframe,
         startDate,
         endDate,
-        progress => {
-          this.updateLoadingProgress(
-            symbol,
-            timeframe,
-            completedOperations,
-            totalOperations,
-            startTime,
-            {
-              pages: progress.pages,
-              candles: progress.candles,
-            },
-            lastProgressUpdate
-          );
-        }
+        progressCallback
       );
 
       if (candlesticks.length === 0) {
@@ -750,6 +760,25 @@ export class BacktestEngine {
     for (const signal of signals) {
       if (signal.action === 'HOLD') continue;
 
+      // Early filter: Skip LONG/SHORT signals for coins that already have positions
+      // This prevents unnecessary execution attempts that will be rejected
+      if (signal.action === 'LONG' || signal.action === 'SHORT') {
+        const positionSymbol = `${signal.coin}/USDT`;
+        const existingPosition = context.positions.find(p => p.symbol === positionSymbol);
+        if (existingPosition) {
+          // Signal would be rejected by validator anyway, skip execution
+          this.signalStats.rejected++;
+          const action = signal.action;
+          if (this.signalStats.byAction[action]) {
+            this.signalStats.byAction[action].rejected++;
+          }
+          const reason = `Position already exists for ${signal.coin} (${existingPosition.side} ${existingPosition.size} ${signal.coin})`;
+          this.signalStats.rejectionReasons[reason] =
+            (this.signalStats.rejectionReasons[reason] || 0) + 1;
+          continue;
+        }
+      }
+
       try {
         const symbol = `${signal.coin}/USDT`;
         const ticker = await this.exchange.getTicker(symbol);
@@ -953,6 +982,14 @@ export class BacktestEngine {
       metrics: {} as PerformanceMetrics, // Will be overwritten
     });
 
+    // Get total fees from exchange
+    const totalFees = this.exchange.getTotalFees ? this.exchange.getTotalFees() : 0;
+    const feeStats = {
+      totalFees,
+      totalFeesPercent:
+        this.config.initialBalance > 0 ? (totalFees / this.config.initialBalance) * 100 : 0,
+    };
+
     return {
       config: this.config,
       startTime,
@@ -965,6 +1002,7 @@ export class BacktestEngine {
       finalEquity: finalAccount.equity,
       signalStats: finalSignalStats,
       initEnv,
+      feeStats,
     };
   }
 }

@@ -39,6 +39,8 @@ export class CachedHistoricalProvider implements IHistoricalProvider {
           { symbol, timeframe, count: cached.length, cachePath },
           this.context
         );
+        // Cache hit - return immediately without calling provider
+        // This prevents duplicate network requests
         return cached;
       }
     } catch (error) {
@@ -49,6 +51,13 @@ export class CachedHistoricalProvider implements IHistoricalProvider {
         this.context
       );
     }
+
+    // Cache miss - log before fetching from provider
+    this.logger.debug(
+      `Cache miss: ${symbol} ${timeframe}, fetching from provider`,
+      { symbol, timeframe, cachePath },
+      this.context
+    );
 
     // Fetch from provider (pass through progress callback)
     const candles = await this.provider.getHistoricalCandlesticks(

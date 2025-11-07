@@ -39,7 +39,9 @@ export class MockAIAgent {
     const { coin, indicators, trend, volatility, currentPrice } = marketData;
 
     // Check if we already have a position in this coin
-    const existingPosition = existingPositions.find(p => p.symbol === coin);
+    // Normalize symbol comparison: coin is "BTC", position.symbol is "BTC/USDT"
+    const positionSymbol = `${coin}/USDT`;
+    const existingPosition = existingPositions.find(p => p.symbol === positionSymbol);
 
     // Generate deterministic signals based on technical indicators
     const signal = this.analyzeMarketConditions(
