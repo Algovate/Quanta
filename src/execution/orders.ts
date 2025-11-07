@@ -857,7 +857,7 @@ export class OrderExecutor {
     // Check if batched notional (after clamping) still meets minimum
     if (batchedClamped > 0 && batchedNotional >= minNotional) {
       this.batchedTinyPartialsCount++;
-      this.logger.info(
+      this.logger.debug(
         `Batched tiny partial close: accumulated $${totalNotional.toFixed(3)} → executing $${batchedNotional.toFixed(3)}`,
         { symbol, originalNotional, batchedNotional, price: currentPrice },
         this.context
