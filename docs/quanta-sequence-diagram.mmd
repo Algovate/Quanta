@@ -3,61 +3,102 @@ sequenceDiagram
     participant TM as TradingManager
     participant TW as TradingWorkflow
     participant EX as Exchange
+    participant SS as SnapshotService
     participant MDP as MarketDataProvider
     participant AIClient as IAIClient (Multi-Provider)
+    participant Strategy as AIStrategy
     participant RM as RiskManager
     participant OE as OrderExecutor
     participant PM as PositionMonitorService
+    participant SP as SignalProcessor
     participant EB as EventBus
 
-    CLI->>TM: trade start
-    Note over TM: createAIClient(config)<br/>Creates provider-specific client<br/>(OpenRouter/OpenAI/DashScope/Deepseek/Ollama)
-    TM->>TW: create & start (with IAIClient)
-    TW->>EB: emit cycle:start
+    CLI->>CLI: createAIClient(config)<br/>Creates provider-specific client<br/>(OpenRouter/OpenAI/DashScope/Deepseek/Ollama)
+    CLI->>TM: trade start (exchange, marketProvider, aiClient, config)
+    Note over TM: Create AIStrategy instance<br/>(preferred over direct AI calls)
+    TM->>Strategy: new AIStrategy(aiAgent, config)
+    TM->>TW: create & start (exchange, marketProvider, aiAgent, config, strategy)
+    TW->>SS: new ExchangeSnapshotService(exchange)
 
     loop Trading Cycle
-        TW->>EX: getAccount()
-        TW->>EX: getPositions()
+        TW->>EB: emit cycle:start
+        TW->>SS: getSnapshot()
+        SS->>EX: getAccount() + getPositions()<br/>(parallel or native snapshot)
+        EX-->>SS: { account, positions }
+        SS-->>TW: { account, positions }
 
         rect lightgray
-        Note over TW: Stage 1 – MonitorPositions
-        TW->>PM: monitorPositions()
-        PM->>EX: check positions
-        PM->>OE: execute exit orders
+        Note over TW: Stage 1 – MonitorPositionsStage
+        TW->>PM: monitorPositions(positions)
+        PM->>SS: getTicker(symbol)
+        SS->>EX: getTicker()
+        EX-->>SS: ticker price
+        SS-->>PM: ticker price
+        PM->>OE: execute exit orders (if needed)
         end
 
         rect lightgray
-        Note over TW: Stage 2 – FetchMarketData
-        TW->>MDP: fetchMarketData()
+        Note over TW: Stage 2 – FetchMarketDataStage
+        TW->>MDP: fetchMarketData(coins, timeframes)
         MDP->>EX: getCandlesticks()
+        EX-->>MDP: candlestick data
+        MDP-->>TW: MarketData[]
         end
 
         rect lightgray
-        Note over TW: Stage 3 – GenerateSignals
-        TW->>AIClient: generateTradingSignal()<br/>(marketData, account, positions, context)
-        Note over AIClient: BaseAIClient.buildPrompt()<br/>+ provider-specific API call
-        AIClient-->>TW: TradingSignal[]
+        Note over TW: Stage 3 – FetchNewsDataStage<br/>(optional, no-op when disabled)
+        TW->>TW: fetchNewsData()<br/>(if enabled in config)
+        end
+
+        rect lightgray
+        Note over TW: Stage 4 – GenerateSignalsStage
+        alt Strategy available
+            TW->>Strategy: generateSignals(context)
+            Strategy->>AIClient: generateTradingSignal()<br/>(marketData, account, positions, context)
+            Note over AIClient: BaseAIClient.buildPrompt()<br/>+ provider-specific API call
+            AIClient-->>Strategy: TradingSignal[]
+            Strategy-->>TW: TradingSignal[]
+        else Fallback to direct AI call
+            TW->>AIClient: generateTradingSignal()<br/>(marketData, account, positions, context)
+            Note over AIClient: BaseAIClient.buildPrompt()<br/>+ provider-specific API call
+            AIClient-->>TW: TradingSignal[]
+        end
         TW->>EB: emit cycle:signals
         end
 
-        loop For each signal
-            rect lightgray
-            Note over TW: Stage 4 – ProcessSignals
-            TW->>RM: validateSignal()
-            TW->>RM: calculatePositionSizing()
-            end
-
-            rect lightgray
-            Note over TW: Stage 5 – ExecuteSignals
-            TW->>OE: executeSignal()
-            OE->>EX: placeOrder()
-            EX-->>OE: Order result
-            end
+        rect lightgray
+        Note over TW: Stage 5 – ProcessSignalsStage<br/>(process & display signals)
+        TW->>SP: processSignals(signals)
+        SP-->>TW: (signals processed & displayed)
         end
 
         rect lightgray
-        Note over TW: Stage 6 – FinalizeCycle
+        Note over TW: Stage 6 – ExecuteSignalsStage<br/>(validate, size, execute)
+        TW->>TW: calculateSignalQuality(signals, marketData)
+        TW->>TW: sort signals by quality score
+        loop For each signal (sorted by quality)
+            TW->>RM: validateSignal(signal)
+            RM-->>TW: validation result
+            TW->>RM: calculatePositionSizing(signal)
+            RM-->>TW: position size
+            TW->>OE: executeSignal(signal, size)
+            OE->>EX: placeOrder()
+            EX-->>OE: Order result
+            OE-->>TW: execution result
+            alt If execution successful (LONG/SHORT/CLOSE)
+                TW->>SS: getSnapshot()<br/>(refresh positions/account)
+                SS-->>TW: updated snapshot
+            end
+        end
         TW->>EB: emit cycle:execution
+        TW->>SS: getSnapshot()<br/>(final refresh after all signals)
+        end
+
+        rect lightgray
+        Note over TW: Stage 7 – FinalizeCycleStage<br/>(metrics, snapshots, summary)
+        TW->>TW: updatePerformanceMetrics()
+        TW->>TW: logCycleSummary()
+        TW->>TW: createSnapshot()
         TW->>EB: emit cycle:complete
         end
     end
