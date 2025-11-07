@@ -73,6 +73,7 @@ export interface BacktestEngineCallbacks {
     unrealizedPnl: number;
   }) => void;
   onSnapshot?: (snapshot: EquitySnapshot) => void;
+  onLogMessage?: (message: string) => void;
 }
 
 export interface BacktestEngineOptions {
@@ -226,10 +227,18 @@ export class BacktestEngine {
 
     // Wrap with disk cache if cache directory is specified
     if (this.config.dataCacheDir) {
-      provider = new CachedHistoricalProvider(provider, this.config.dataCacheDir);
+      provider = this.wrapWithCache(provider);
     }
 
     return provider;
+  }
+
+  /**
+   * Wrap provider with disk cache, coordinating log output with spinner if available
+   */
+  private wrapWithCache(provider: IHistoricalProvider): IHistoricalProvider {
+    const onLogMessage = this.callbacks?.onLogMessage;
+    return new CachedHistoricalProvider(provider, this.config.dataCacheDir!, onLogMessage);
   }
 
   /**

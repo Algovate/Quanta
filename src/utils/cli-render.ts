@@ -41,6 +41,7 @@ export class BacktestRenderer {
   };
   private drawdownSteps: number[];
   private ddTracker: DrawdownTracker;
+  private spinnerWasRunning: boolean = false; // Track spinner state before pause
 
   constructor(options?: BacktestRendererOptions) {
     this.mode = options?.mode || 'normal';
@@ -62,6 +63,7 @@ export class BacktestRenderer {
     if (phase === 'completed') {
       this.spinner?.succeed('Completed');
       this.spinner = null;
+      this.spinnerWasRunning = false;
       this.stopProgress();
       return;
     }
@@ -71,7 +73,9 @@ export class BacktestRenderer {
       finalizing: 'Finalizing (closing positions)...',
     };
     this.spinner!.text = textMap[phase] || phase;
-    if (!this.spinner!.isSpinning) this.spinner!.start();
+    if (!this.spinner!.isSpinning) {
+      this.spinner!.start();
+    }
   }
 
   updateLoadingProgress(info: {
@@ -232,5 +236,39 @@ export class BacktestRenderer {
       this.progressBar.stop();
       this.progressBar = null;
     }
+  }
+
+  /**
+   * Pause the spinner to allow other output without interference
+   * Saves the current spinner state so it can be restored later
+   */
+  private pauseSpinner(): void {
+    if (this.spinner && this.spinner.isSpinning) {
+      this.spinnerWasRunning = true;
+      this.spinner.stop();
+      // Clear the current line to prevent text overlap
+      process.stdout.write('\r\x1b[K');
+    } else {
+      this.spinnerWasRunning = false;
+    }
+  }
+
+  /**
+   * Resume the spinner if it was running before pause
+   */
+  private resumeSpinner(): void {
+    if (this.spinner && this.spinnerWasRunning && !this.spinner.isSpinning) {
+      this.spinner.start();
+    }
+  }
+
+  /**
+   * Log a message while ensuring spinner doesn't interfere
+   * Pauses spinner, outputs message, then resumes spinner
+   */
+  logMessage(message: string): void {
+    this.pauseSpinner();
+    console.log(message);
+    this.resumeSpinner();
   }
 }

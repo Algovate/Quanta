@@ -562,6 +562,7 @@ export class TradeCommands {
           onLoadingProgress: info => renderer.updateLoadingProgress(info),
           onCycle: info => renderer.updateCycleLine(info),
           onSnapshot: () => renderer.heartbeat('Still running'),
+          onLogMessage: message => renderer.logMessage(message),
         },
         {
           monitoringVerbosity,

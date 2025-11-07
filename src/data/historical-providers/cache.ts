@@ -13,10 +13,16 @@ export class CachedHistoricalProvider implements IHistoricalProvider {
   private cacheDir: string;
   private logger = UnifiedLogger.getInstance();
   private readonly context = 'CachedHistoricalProvider';
+  private onLogMessage?: (message: string) => void;
 
-  constructor(provider: IHistoricalProvider, cacheDir: string) {
+  constructor(
+    provider: IHistoricalProvider,
+    cacheDir: string,
+    onLogMessage?: (message: string) => void
+  ) {
     this.provider = provider;
     this.cacheDir = cacheDir;
+    this.onLogMessage = onLogMessage;
   }
 
   async getHistoricalCandlesticks(
@@ -34,11 +40,7 @@ export class CachedHistoricalProvider implements IHistoricalProvider {
       // Try to read from cache
       const cached = await this.readCache(cachePath);
       if (cached) {
-        this.logger.info(
-          `💾 Cache hit: ${symbol} ${timeframe} (${cached.length} candles)`,
-          { symbol, timeframe, count: cached.length, cachePath },
-          this.context
-        );
+        this.logCacheHit(symbol, timeframe, cached.length, cachePath);
         // Cache hit - return immediately without calling provider
         // This prevents duplicate network requests
         return cached;
@@ -126,5 +128,25 @@ export class CachedHistoricalProvider implements IHistoricalProvider {
 
     // Write JSON file
     await fs.writeFile(cachePath, JSON.stringify(candles, null, 2), 'utf-8');
+  }
+
+  /**
+   * Log cache hit message using appropriate output method
+   * Uses onLogMessage callback if provided (for spinner coordination), otherwise falls back to logger
+   */
+  private logCacheHit(
+    symbol: string,
+    timeframe: string,
+    candleCount: number,
+    cachePath: string
+  ): void {
+    const message = `💾 Cache hit: ${symbol} ${timeframe} (${candleCount} candles)`;
+    if (this.onLogMessage) {
+      // Use callback for coordinated output (e.g., with spinner in backtest)
+      this.onLogMessage(message);
+    } else {
+      // Fall back to standard logger
+      this.logger.info(message, { symbol, timeframe, count: candleCount, cachePath }, this.context);
+    }
   }
 }
