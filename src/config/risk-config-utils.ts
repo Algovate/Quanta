@@ -7,9 +7,6 @@ import type { Config } from './settings.js';
 
 export { type DynamicReserveConfig } from '../execution/risk/dynamic-reserve.js';
 
-/**
- * Extract dynamic reserve configuration from Config
- */
 export function extractDynamicReserveConfig(config: Config) {
   const riskConfig = config.trading.risk;
   if (!riskConfig?.dynamicReserve) {
