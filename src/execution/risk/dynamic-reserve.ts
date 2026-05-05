@@ -11,6 +11,7 @@ export interface DynamicReserveConfig {
   enabled?: boolean;
   minReservePercent?: number;
   maxReservePercent?: number;
+  baseReservePercent?: number;
 }
 
 export interface ReserveAdjustmentContext {
@@ -27,6 +28,12 @@ export interface ReserveAdjustment {
   reason: string;
 }
 
+export interface ReserveCalculationResult {
+  reserve: number;
+  reasons: string[];
+  wasClamped: boolean;
+}
+
 /**
  * Calculate dynamic reserve percentage based on market conditions
  */
@@ -40,24 +47,27 @@ export class DynamicReserveCalculator {
     this.config = config;
     this.minReserve = config.minReservePercent ?? POSITION_SIZING.MIN_DYNAMIC_RESERVE_PERCENT;
     this.maxReserve = config.maxReservePercent ?? POSITION_SIZING.MAX_DYNAMIC_RESERVE_PERCENT;
-    this.baseReserve = POSITION_SIZING.BASE_RESERVE_PERCENT;
+    this.baseReserve = config.baseReservePercent ?? POSITION_SIZING.BASE_RESERVE_PERCENT;
   }
 
   /**
    * Calculate reserve percentage based on context
+   * Returns both the reserve value and adjustment reasons in a single pass
    */
-  calculate(context: ReserveAdjustmentContext): number {
+  calculate(context: ReserveAdjustmentContext): ReserveCalculationResult {
     const enabled = this.config.enabled ?? POSITION_SIZING.DYNAMIC_RESERVE_ENABLED;
     if (!enabled) {
-      return POSITION_SIZING.MIN_RESERVE_PERCENT;
+      return { reserve: POSITION_SIZING.MIN_RESERVE_PERCENT, reasons: [], wasClamped: false };
     }
 
     let reserve: number = this.baseReserve;
+    const reasons: string[] = [];
 
     // Apply adjustments in order
     const drawdownAdjustment = this.adjustForDrawdown(context.drawdownState);
     if (drawdownAdjustment) {
       reserve = this.applyAdjustment(reserve, drawdownAdjustment);
+      reasons.push('drawdown');
     }
 
     const positionAdjustment = this.adjustForPositionCount(
@@ -66,17 +76,21 @@ export class DynamicReserveCalculator {
     );
     if (positionAdjustment) {
       reserve = this.applyAdjustment(reserve, positionAdjustment);
+      reasons.push('position_count');
     }
 
     const volatilityAdjustment = this.adjustForVolatility(context.atr14, context.currentPrice);
     if (volatilityAdjustment) {
       reserve = this.applyAdjustment(reserve, volatilityAdjustment);
+      reasons.push('volatility');
     }
 
-    // Clamp to min/max bounds
+    // Clamp to min/max bounds and track if clamping occurred
+    const unclamped = reserve;
     reserve = Math.max(this.minReserve, Math.min(this.maxReserve, reserve));
+    const wasClamped = reserve !== unclamped;
 
-    return reserve;
+    return { reserve, reasons, wasClamped };
   }
 
   /**
@@ -106,7 +120,6 @@ export class DynamicReserveCalculator {
       };
     }
     if (drawdownState === 'paused') {
-      // Use maximum reserve when paused
       return {
         amount: this.maxReserve - this.baseReserve,
         reason: 'drawdown_paused',
@@ -165,26 +178,8 @@ export class DynamicReserveCalculator {
    */
   private applyAdjustment(reserve: number, adjustment: ReserveAdjustment): number {
     if (adjustment.reason === 'drawdown_paused') {
-      // Special case: set to max reserve
       return this.maxReserve;
     }
     return reserve + adjustment.amount;
-  }
-
-  /**
-   * Get adjustment reasons for logging
-   */
-  getAdjustmentReasons(context: ReserveAdjustmentContext): string[] {
-    const reasons: string[] = [];
-    if (this.adjustForDrawdown(context.drawdownState)) {
-      reasons.push('drawdown');
-    }
-    if (this.adjustForPositionCount(context.positionCount, context.maxPositions)) {
-      reasons.push('position_count');
-    }
-    if (this.adjustForVolatility(context.atr14, context.currentPrice)) {
-      reasons.push('volatility');
-    }
-    return reasons;
   }
 }

@@ -491,6 +491,7 @@ export interface WorkflowConfig {
     dynamicReserveEnabled?: boolean;
     minReservePercent?: number;
     maxReservePercent?: number;
+    baseReservePercent?: number;
   };
 }
 

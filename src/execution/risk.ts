@@ -36,6 +36,7 @@ export interface RiskParams {
   dynamicReserveEnabled?: boolean;
   minReservePercent?: number;
   maxReservePercent?: number;
+  baseReservePercent?: number;
 }
 
 export interface PositionSizing {
@@ -69,6 +70,7 @@ export class RiskManager {
       enabled: params.dynamicReserveEnabled,
       minReservePercent: params.minReservePercent,
       maxReservePercent: params.maxReservePercent,
+      baseReservePercent: params.baseReservePercent,
     };
     this.dynamicReserveCalculator = new DynamicReserveCalculator(reserveConfig);
   }
@@ -230,8 +232,8 @@ export class RiskManager {
 
   /**
    * Calculate dynamic reserve percentage based on market conditions and portfolio state
-   * Adjusts reserve between MIN_DYNAMIC_RESERVE_PERCENT and MAX_DYNAMIC_RESERVE_PERCENT
-   * based on volatility, drawdown state, position count, and other risk factors
+   * Adjusts reserve between min and max bounds based on volatility, drawdown state,
+   * position count, and other risk factors
    */
   calculateDynamicReserve(
     _account: Account,
@@ -241,7 +243,7 @@ export class RiskManager {
     atr14?: number,
     currentPrice?: number
   ): number {
-    const reserve = this.dynamicReserveCalculator.calculate({
+    const result = this.dynamicReserveCalculator.calculate({
       positions,
       positionCount: positions.length,
       maxPositions: this.params.maxPositions,
@@ -250,25 +252,13 @@ export class RiskManager {
       currentPrice,
     });
 
-    // Log adjustment if reserve differs from base
-    const baseReserve = POSITION_SIZING.BASE_RESERVE_PERCENT;
-    const adjustmentReasons = this.dynamicReserveCalculator.getAdjustmentReasons({
-      positions,
-      positionCount: positions.length,
-      maxPositions: this.params.maxPositions,
-      drawdownState,
-      atr14,
-      currentPrice,
-    });
-
-    if (reserve !== baseReserve || adjustmentReasons.length > 0) {
+    if (result.reasons.length > 0 || result.wasClamped) {
       const positionRatio =
         this.params.maxPositions > 0 ? positions.length / this.params.maxPositions : 0;
       this.logger.debug(
         'Dynamic reserve calculated',
         {
-          baseReserve: (baseReserve * 100).toFixed(1) + '%',
-          dynamicReserve: (reserve * 100).toFixed(1) + '%',
+          dynamicReserve: (result.reserve * 100).toFixed(1) + '%',
           minReserve: (this.dynamicReserveCalculator.getMinReserve() * 100).toFixed(1) + '%',
           maxReserve: (this.dynamicReserveCalculator.getMaxReserve() * 100).toFixed(1) + '%',
           positionCount: positions.length,
@@ -276,13 +266,14 @@ export class RiskManager {
           drawdownState: drawdownState || 'normal',
           atr14: atr14?.toFixed(4),
           currentPrice: currentPrice?.toFixed(2),
-          adjustmentReasons: adjustmentReasons.join(', ') || 'none',
+          adjustmentReasons: result.reasons.join(', ') || 'none',
+          clamped: result.wasClamped,
         },
         this.context
       );
     }
 
-    return reserve;
+    return result.reserve;
   }
 
   calculatePositionSizing(

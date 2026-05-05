@@ -254,6 +254,30 @@ const ConfigSchema = z.object({
         warnings: z.boolean().default(true),
       })
       .default({ warnings: true }),
+    risk: z
+      .object({
+        dynamicReserve: z
+          .object({
+            enabled: z.boolean().default(true),
+            minReservePercent: z.number().min(0).max(1).default(0.2),
+            maxReservePercent: z.number().min(0).max(1).default(0.6),
+            baseReservePercent: z.number().min(0).max(1).default(0.4),
+          })
+          .default({
+            enabled: true,
+            minReservePercent: 0.2,
+            maxReservePercent: 0.6,
+            baseReservePercent: 0.4,
+          }),
+      })
+      .default({
+        dynamicReserve: {
+          enabled: true,
+          minReservePercent: 0.2,
+          maxReservePercent: 0.6,
+          baseReservePercent: 0.4,
+        },
+      }),
   }),
   backtest: z
     .object({
@@ -517,6 +541,14 @@ const DEFAULT_CONFIG: Partial<Config> = {
     },
     funding: {
       warnings: true,
+    },
+    risk: {
+      dynamicReserve: {
+        enabled: true,
+        minReservePercent: 0.2,
+        maxReservePercent: 0.6,
+        baseReservePercent: 0.4,
+      },
     },
   },
   backtest: {
